@@ -39,10 +39,13 @@ export async function analyzeMessageForAiTasks(
   const trimmed = text.trim();
   if (!trimmed) return [];
 
+  const ruleSuggestions = analyzeWithRules(trimmed, senderRole);
+  if (ruleSuggestions.length) return enrichSuggestionsWithContext(ruleSuggestions, trimmed, senderRole, context);
+
   const openAiSuggestions = await analyzeWithOpenAi(trimmed, senderRole, context);
   if (openAiSuggestions.length) return enrichSuggestionsWithContext(openAiSuggestions, trimmed, senderRole, context);
 
-  return enrichSuggestionsWithContext(analyzeWithRules(trimmed, senderRole), trimmed, senderRole, context);
+  return [];
 }
 
 async function analyzeWithOpenAi(
@@ -54,9 +57,13 @@ async function analyzeWithOpenAi(
   const model = process.env.OPENAI_MODEL;
   if (!apiKey || !model) return [];
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
@@ -115,6 +122,8 @@ async function analyzeWithOpenAi(
       }));
   } catch {
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
