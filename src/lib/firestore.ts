@@ -27,6 +27,7 @@ import type {
   MilestoneInput,
   LineGroup,
   LineGroupInput,
+  LinePendingGroup,
   LineMember,
   LineMemberInput,
   Message,
@@ -49,6 +50,7 @@ const TASKS_COLLECTION = "tasks";
 const PROJECT_STAGES_COLLECTION = "projectStages";
 const MILESTONES_COLLECTION = "milestones";
 const LINE_GROUPS_COLLECTION = "line_groups";
+const LINE_PENDING_GROUPS_COLLECTION = "line_pending_groups";
 const LINE_MEMBERS_COLLECTION = "line_members";
 const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
@@ -228,6 +230,24 @@ function lineGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineGr
     allowAssistantReplies: Boolean(data.allowAssistantReplies ?? false),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function linePendingGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LinePendingGroup {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    groupId: data.groupId ?? "",
+    groupName: data.groupName ?? "",
+    sourceType: data.sourceType ?? "group",
+    lastEventType: data.lastEventType ?? "",
+    lastMessageText: data.lastMessageText ?? "",
+    lastSenderName: data.lastSenderName ?? "",
+    messageCount: Number(data.messageCount ?? 0),
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt),
+    lastSeenAt: readTimestamp(data.lastSeenAt)
   };
 }
 
@@ -744,6 +764,27 @@ export async function listLineGroupsByProject(projectId: string) {
     .sort((a, b) => a.groupName.localeCompare(b.groupName));
 }
 
+export async function listLinePendingGroups() {
+  const database = requireDb();
+  const snapshot = await getDocs(collection(database, LINE_PENDING_GROUPS_COLLECTION));
+
+  return snapshot.docs
+    .map(linePendingGroupFromDoc)
+    .sort((a, b) => (b.lastSeenAt?.getTime() ?? 0) - (a.lastSeenAt?.getTime() ?? 0));
+}
+
+async function deleteLinePendingGroupsByGroupId(groupId: string) {
+  const database = requireDb();
+  const normalized = groupId.trim();
+  if (!normalized) return;
+
+  const snapshot = await getDocs(
+    query(collection(database, LINE_PENDING_GROUPS_COLLECTION), where("groupId", "==", normalized))
+  );
+
+  await Promise.all(snapshot.docs.map((pendingGroup) => deleteDoc(pendingGroup.ref)));
+}
+
 export async function createLineGroup(input: LineGroupInput) {
   const database = requireDb();
   const ref = await addDoc(collection(database, LINE_GROUPS_COLLECTION), {
@@ -751,6 +792,7 @@ export async function createLineGroup(input: LineGroupInput) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  await deleteLinePendingGroupsByGroupId(input.groupId);
 
   return ref.id;
 }
@@ -761,6 +803,7 @@ export async function updateLineGroup(id: string, input: LineGroupInput) {
     ...input,
     updatedAt: serverTimestamp()
   });
+  await deleteLinePendingGroupsByGroupId(input.groupId);
 }
 
 export async function deleteLineGroup(id: string) {

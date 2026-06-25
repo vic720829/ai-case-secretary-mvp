@@ -8,10 +8,12 @@ import { Button, ErrorMessage } from "./Ui";
 export function LineGroupForm({
   projects,
   initialGroupId,
+  initialGroupName,
   onSubmit
 }: {
   projects: Project[];
   initialGroupId?: string;
+  initialGroupName?: string;
   onSubmit: (value: LineGroupInput) => Promise<void>;
 }) {
   const [value, setValue] = useState<LineGroupInput>({
@@ -24,8 +26,8 @@ export function LineGroupForm({
 
   useEffect(() => {
     if (!initialGroupId) return;
-    setValue((current) => ({ ...current, groupId: initialGroupId }));
-  }, [initialGroupId]);
+    setValue((current) => ({ ...current, groupId: initialGroupId, groupName: initialGroupName || current.groupName }));
+  }, [initialGroupId, initialGroupName]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

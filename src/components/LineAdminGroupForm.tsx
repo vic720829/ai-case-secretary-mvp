@@ -7,9 +7,11 @@ import { Button, ErrorMessage } from "./Ui";
 
 export function LineAdminGroupForm({
   initialGroupId,
+  initialGroupName,
   onSubmit
 }: {
   initialGroupId?: string;
+  initialGroupName?: string;
   onSubmit: (value: LineGroupInput) => Promise<void>;
 }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
@@ -20,7 +22,8 @@ export function LineAdminGroupForm({
   useEffect(() => {
     if (!initialGroupId) return;
     setGroupId(initialGroupId);
-  }, [initialGroupId]);
+    if (initialGroupName) setGroupName(initialGroupName);
+  }, [initialGroupId, initialGroupName]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

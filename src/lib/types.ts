@@ -119,6 +119,20 @@ export type LineGroup = LineGroupInput & {
   updatedAt: Date | null;
 };
 
+export type LinePendingGroup = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  sourceType: string;
+  lastEventType: string;
+  lastMessageText: string;
+  lastSenderName: string;
+  messageCount: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  lastSeenAt: Date | null;
+};
+
 export type LineMemberInput = {
   lineUserId: string;
   displayName: string;

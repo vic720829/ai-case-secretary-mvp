@@ -77,7 +77,16 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   }
 
   if (event.type !== "message" || !event.message) {
-    return { skipped: true, reason: "Unsupported event" };
+    const pendingGroup = await syncLinePendingGroup(db, null, event);
+
+    return pendingGroup
+      ? {
+          ok: true,
+          reason: "LINE group recorded for binding",
+          groupId: pendingGroup.groupId,
+          groupName: pendingGroup.groupName
+        }
+      : { skipped: true, reason: "Unsupported event" };
   }
 
   const groupId = getEventGroupId(event);
@@ -111,6 +120,11 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const member = await findLineMember(db, event.source?.userId ?? "", projectId);
   const senderName = member.displayName || lineSenderName;
   const senderRole = member.role;
+  await syncLinePendingGroup(db, lineGroupDoc, event, {
+    lastMessageText: event.message.text ?? `[${messageType}]`,
+    lastSenderName: senderName,
+    incrementMessageCount: true
+  });
   const fileUrl = messageType === "text" ? "" : await saveLineMessageFile(event, groupId, messageType);
   const messageRef = await db.collection("messages").add({
     projectId,
@@ -646,6 +660,68 @@ async function syncLineGroupName(
     },
     { merge: true }
   );
+}
+
+async function syncLinePendingGroup(
+  db: FirebaseFirestore.Firestore,
+  lineGroupDoc: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData> | null,
+  event: LineWebhookEvent,
+  input?: {
+    lastMessageText?: string;
+    lastSenderName?: string;
+    incrementMessageCount?: boolean;
+  }
+) {
+  const sourceType = event.source?.type ?? "";
+  const groupId = event.source?.groupId ?? event.source?.roomId ?? "";
+
+  if (!groupId || (sourceType !== "group" && sourceType !== "room")) return null;
+
+  const snapshot = await db.collection("line_pending_groups").where("groupId", "==", groupId).limit(10).get();
+
+  if (lineGroupDoc) {
+    await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
+    return null;
+  }
+
+  const existing = snapshot.empty ? null : snapshot.docs[0];
+  const existingGroupName = existing ? String(existing.data().groupName ?? "").trim() : "";
+  const groupName =
+    existingGroupName ||
+    (sourceType === "group" ? await getLineGroupName(event) : "") ||
+    (sourceType === "room" ? "LINE 多人聊天室" : "");
+  const ref = existing?.ref ?? db.collection("line_pending_groups").doc(sanitizePathSegment(groupId));
+  const payload: FirebaseFirestore.DocumentData = {
+    groupId,
+    sourceType,
+    lastEventType: event.type ?? "",
+    updatedAt: FieldValue.serverTimestamp(),
+    lastSeenAt: event.timestamp ? Timestamp.fromMillis(event.timestamp) : FieldValue.serverTimestamp()
+  };
+
+  if (!existing) {
+    payload.createdAt = FieldValue.serverTimestamp();
+    payload.messageCount = 0;
+  }
+  if (groupName) {
+    payload.groupName = groupName;
+  }
+  if (input?.lastMessageText !== undefined) {
+    payload.lastMessageText = input.lastMessageText.slice(0, 500);
+  }
+  if (input?.lastSenderName !== undefined) {
+    payload.lastSenderName = input.lastSenderName.slice(0, 120);
+  }
+  if (input?.incrementMessageCount) {
+    payload.messageCount = FieldValue.increment(1);
+  }
+
+  await ref.set(payload, { merge: true });
+
+  return {
+    groupId,
+    groupName
+  };
 }
 
 async function createAiTaskDrafts(

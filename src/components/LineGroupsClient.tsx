@@ -13,25 +13,32 @@ import {
   createLineGroup,
   deleteLineGroup,
   listLineGroups,
+  listLinePendingGroups,
   listMessages,
   listProjects,
   updateLineGroup
 } from "@/lib/firestore";
-import type { LineGroup, LineGroupInput, Message, Project } from "@/lib/types";
+import type { LineGroup, LineGroupInput, LinePendingGroup, Message, Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type UnboundGroup = {
   groupId: string;
+  groupName: string;
+  sourceType: string;
   messageCount: number;
   lastText: string;
+  lastSeenAt: Date | null;
 };
 
 export function LineGroupsClient() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [lineGroups, setLineGroups] = useState<LineGroup[]>([]);
+  const [pendingGroups, setPendingGroups] = useState<LinePendingGroup[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedProjectGroupId, setSelectedProjectGroupId] = useState("");
+  const [selectedProjectGroupName, setSelectedProjectGroupName] = useState("");
   const [selectedAdminGroupId, setSelectedAdminGroupId] = useState("");
+  const [selectedAdminGroupName, setSelectedAdminGroupName] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editValue, setEditValue] = useState<LineGroupInput | null>(null);
   const [savingId, setSavingId] = useState("");
@@ -43,13 +50,15 @@ export function LineGroupsClient() {
     setError("");
 
     try {
-      const [nextProjects, nextLineGroups, nextMessages] = await Promise.all([
+      const [nextProjects, nextLineGroups, nextPendingGroups, nextMessages] = await Promise.all([
         listProjects(),
         listLineGroups(),
+        listLinePendingGroups(),
         listMessages()
       ]);
       setProjects(nextProjects);
       setLineGroups(nextLineGroups);
+      setPendingGroups(nextPendingGroups);
       setMessages(nextMessages);
     } catch (caught) {
       setError(getReadableError(caught));
@@ -78,19 +87,43 @@ export function LineGroupsClient() {
     const boundGroupIds = new Set(lineGroups.map((group) => group.groupId));
     const byGroupId = new Map<string, UnboundGroup>();
 
+    pendingGroups.forEach((group) => {
+      if (!group.groupId || boundGroupIds.has(group.groupId)) return;
+
+      byGroupId.set(group.groupId, {
+        groupId: group.groupId,
+        groupName: group.groupName,
+        sourceType: group.sourceType,
+        messageCount: group.messageCount,
+        lastText: group.lastMessageText || `[${group.lastEventType || "line event"}]`,
+        lastSeenAt: group.lastSeenAt ?? group.updatedAt
+      });
+    });
+
     messages.forEach((message) => {
       if (!message.groupId || boundGroupIds.has(message.groupId)) return;
 
       const current = byGroupId.get(message.groupId);
+      const messageSeenAt = message.timestamp ?? message.createdAt;
       byGroupId.set(message.groupId, {
         groupId: message.groupId,
-        messageCount: (current?.messageCount ?? 0) + 1,
-        lastText: current?.lastText || message.text || `[${message.messageType}]`
+        groupName: current?.groupName ?? "",
+        sourceType: current?.sourceType ?? "group",
+        messageCount: current ? Math.max(current.messageCount, 1) : 1,
+        lastText: current?.lastText || message.text || `[${message.messageType}]`,
+        lastSeenAt:
+          current?.lastSeenAt && messageSeenAt
+            ? current.lastSeenAt.getTime() >= messageSeenAt.getTime()
+              ? current.lastSeenAt
+              : messageSeenAt
+            : current?.lastSeenAt ?? messageSeenAt
       });
     });
 
-    return Array.from(byGroupId.values()).sort((a, b) => b.messageCount - a.messageCount);
-  }, [lineGroups, messages]);
+    return Array.from(byGroupId.values()).sort(
+      (a, b) => (b.lastSeenAt?.getTime() ?? 0) - (a.lastSeenAt?.getTime() ?? 0) || b.messageCount - a.messageCount
+    );
+  }, [lineGroups, messages, pendingGroups]);
 
   async function handleCreateProjectGroup(value: LineGroupInput) {
     assertGroupIdIsNew(value.groupId);
@@ -100,6 +133,7 @@ export function LineGroupsClient() {
       allowAssistantReplies: false
     });
     setSelectedProjectGroupId("");
+    setSelectedProjectGroupName("");
     await loadData();
   }
 
@@ -112,7 +146,18 @@ export function LineGroupsClient() {
       allowAssistantReplies: true
     });
     setSelectedAdminGroupId("");
+    setSelectedAdminGroupName("");
     await loadData();
+  }
+
+  function useProjectGroup(group: UnboundGroup) {
+    setSelectedProjectGroupId(group.groupId);
+    setSelectedProjectGroupName(group.groupName);
+  }
+
+  function useAdminGroup(group: UnboundGroup) {
+    setSelectedAdminGroupId(group.groupId);
+    setSelectedAdminGroupName(group.groupName);
   }
 
   async function handleDeleteLineGroup(id: string) {
@@ -201,16 +246,25 @@ export function LineGroupsClient() {
 
       <UnboundGroupsSection
         groups={unboundGroups}
-        onUseProjectGroup={setSelectedProjectGroupId}
-        onUseAdminGroup={setSelectedAdminGroupId}
+        onUseProjectGroup={useProjectGroup}
+        onUseAdminGroup={useAdminGroup}
       />
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-        <LineGroupForm projects={projects} initialGroupId={selectedProjectGroupId} onSubmit={handleCreateProjectGroup} />
+        <LineGroupForm
+          projects={projects}
+          initialGroupId={selectedProjectGroupId}
+          initialGroupName={selectedProjectGroupName}
+          onSubmit={handleCreateProjectGroup}
+        />
       </section>
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-        <LineAdminGroupForm initialGroupId={selectedAdminGroupId} onSubmit={handleCreateAdminGroup} />
+        <LineAdminGroupForm
+          initialGroupId={selectedAdminGroupId}
+          initialGroupName={selectedAdminGroupName}
+          onSubmit={handleCreateAdminGroup}
+        />
       </section>
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
@@ -400,8 +454,8 @@ function UnboundGroupsSection({
   onUseAdminGroup
 }: {
   groups: UnboundGroup[];
-  onUseProjectGroup: (groupId: string) => void;
-  onUseAdminGroup: (groupId: string) => void;
+  onUseProjectGroup: (group: UnboundGroup) => void;
+  onUseAdminGroup: (group: UnboundGroup) => void;
 }) {
   if (!groups.length) {
     return (
@@ -424,15 +478,21 @@ function UnboundGroupsSection({
       <div className="grid gap-3 md:grid-cols-2">
         {groups.map((group) => (
           <div key={group.groupId} className="rounded-md border border-amber-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-950">
+              {group.groupName || (group.sourceType === "room" ? "LINE 多人聊天室" : "尚未取得群組名稱")}
+            </div>
             <div className="text-xs font-medium text-slate-500">groupId</div>
             <div className="mt-1 break-all font-mono text-sm text-slate-950">{group.groupId}</div>
+            {group.lastSeenAt ? (
+              <div className="mt-1 text-xs text-slate-500">最近事件：{formatDateTime(group.lastSeenAt)}</div>
+            ) : null}
             <div className="mt-3 text-xs text-slate-500">收到 {group.messageCount} 則紀錄</div>
             <div className="mt-1 line-clamp-2 text-sm text-slate-700">{group.lastText}</div>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => onUseAdminGroup(group.groupId)}>
+              <Button type="button" variant="secondary" onClick={() => onUseAdminGroup(group)}>
                 設為後台群組
               </Button>
-              <Button type="button" variant="secondary" onClick={() => onUseProjectGroup(group.groupId)}>
+              <Button type="button" variant="secondary" onClick={() => onUseProjectGroup(group)}>
                 帶入案件綁定
               </Button>
             </div>
