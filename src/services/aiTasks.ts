@@ -87,6 +87,8 @@ async function analyzeWithOpenAi(
           "- 內部人員或身份未登記者回覆「好明天給你」「明天給您」「今晚傳給你」，建立 promise 或 followup。",
           "- 若內部人員的承諾需要上下文，請參考最近訊息，讓 title/description 寫出要回覆哪一件事。",
           "- 客戶提出改顏色、改尺寸、新增、取消、不要做，建立 change。",
+          "- 客戶提到設計修改、設計變更、調整設計，建立 change。",
+          "- 客戶提到缺失、修補、很爛、品質不好、不滿意、抱怨、客訴，建立 followup，通常需要立即處理。",
           "- 款項、請款、尾款、二期款建立 payment。",
           "- 發票、統編、報帳建立 invoice。",
           "",
@@ -149,7 +151,16 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     });
   }
 
-  if (/(改|變更|新增|取消|不要|不做|顏色|尺寸|抽屜|電視牆|門片|磁磚|木地板|特殊塗料)/.test(text)) {
+  if (isExternalSender(senderRole) && hasComplaintOrDefectWords(text)) {
+    suggestions.push({
+      title: makeTitle(text, "客訴/缺失處理"),
+      description: text,
+      taskType: "followup",
+      dueDate: dueDate ?? datePlusDays(0)
+    });
+  }
+
+  if (hasDesignChangeWords(text)) {
     suggestions.push({
       title: makeTitle(text, "客戶變更"),
       description: text,
@@ -200,6 +211,18 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
   }
 
   return dedupeSuggestions(suggestions);
+}
+
+function isExternalSender(senderRole: LineSenderRole) {
+  return senderRole === "client" || senderRole === "unknown" || senderRole === "vendor";
+}
+
+function hasComplaintOrDefectWords(text: string) {
+  return /(缺失|瑕疵|缺點|修補|補漆|補土|補強|漏水|滲水|裂縫|刮傷|破損|脫落|歪掉|歪斜|不平|粗糙|收邊不好|品質不好|品質很差|品質差|做得不好|做不好|很爛|太爛|爛|不滿意|失望|抱怨|客訴|不OK|不ok|不行|有問題)/.test(text);
+}
+
+function hasDesignChangeWords(text: string) {
+  return /(設計修改|修改設計|設計變更|調整設計|改設計|改|變更|新增|取消|不要|不做|顏色|尺寸|抽屜|電視牆|門片|磁磚|木地板|特殊塗料)/.test(text);
 }
 
 function hasCommitmentWords(text: string) {
