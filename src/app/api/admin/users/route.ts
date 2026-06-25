@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "請選擇有效的角色。" }, { status: 400 });
     }
 
-    const auth = getAdminAuth();
+    const auth = await getAdminAuth();
     const db = getAdminDb();
     const userRecord = await auth.createUser({
       email,
@@ -109,7 +109,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: "不能把目前登入中的自己改成非管理角色。" }, { status: 400 });
     }
 
-    const auth = getAdminAuth();
+    const auth = await getAdminAuth();
     const db = getAdminDb();
     const userRecord = await auth.updateUser(id, {
       displayName,
@@ -146,7 +146,7 @@ async function verifyAdminCaller(request: Request): Promise<
   }
 
   try {
-    const auth = getAdminAuth();
+    const auth = await getAdminAuth();
     const decoded = await auth.verifyIdToken(token);
     const userSnapshot = await getAdminDb().collection("users").doc(decoded.uid).get();
     const user = userSnapshot.data();
