@@ -45,6 +45,7 @@ export type ProjectStageInput = {
   endDate: string;
   status: ProjectStageStatus;
   sortOrder: number;
+  reminderDaysBefore: number;
 };
 
 export type ProjectStage = ProjectStageInput & {

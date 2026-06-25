@@ -1,12 +1,12 @@
 "use client";
 
-import { AlertCircle, CalendarDays, Flag, Filter, Gauge } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Flag, Filter, Gauge, Plus } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
-import { formatDate, isDateOverdue } from "@/lib/date";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
+import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import { createProjectStage, listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress } from "@/lib/progress";
 import type { Milestone, Project, ProjectStage, ProjectStageStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,28 +25,28 @@ export function ScheduleClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    async function loadData() {
-      setError("");
+  const loadData = useCallback(async () => {
+    setError("");
 
-      try {
-        const [nextProjects, nextStages, nextMilestones] = await Promise.all([
-          listProjects(),
-          listProjectStages(),
-          listMilestones()
-        ]);
-        setProjects(nextProjects);
-        setStages(nextStages);
-        setMilestones(nextMilestones);
-      } catch (caught) {
-        setError(getReadableError(caught));
-      } finally {
-        setLoading(false);
-      }
+    try {
+      const [nextProjects, nextStages, nextMilestones] = await Promise.all([
+        listProjects(),
+        listProjectStages(),
+        listMilestones()
+      ]);
+      setProjects(nextProjects);
+      setStages(nextStages);
+      setMilestones(nextMilestones);
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setLoading(false);
     }
-
-    void loadData();
   }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const stagesByProject = useMemo(() => groupStagesByProject(stages), [stages]);
@@ -87,6 +87,28 @@ export function ScheduleClient() {
     [stages]
   );
 
+  async function handleCreateStage(input: {
+    projectId: string;
+    stageName: string;
+    startDate: string;
+    endDate: string;
+    reminderDaysBefore: number;
+  }) {
+    const projectStages = stagesByProject.get(input.projectId) ?? [];
+    const nextSortOrder = Math.max(0, ...projectStages.map((stage) => stage.sortOrder)) + 1;
+
+    await createProjectStage({
+      projectId: input.projectId,
+      stageName: input.stageName,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      status: "todo",
+      sortOrder: nextSortOrder,
+      reminderDaysBefore: input.reminderDaysBefore
+    });
+    await loadData();
+  }
+
   if (loading) {
     return <LoadingState label="正在讀取工期總表" />;
   }
@@ -108,6 +130,8 @@ export function ScheduleClient() {
 
       {!error ? (
         <>
+          <ScheduleCalendarCreator projects={projects} stages={stages} onCreateStage={handleCreateStage} />
+
           <div className="grid gap-4 md:grid-cols-4">
             <MetricCard title="有工期案件" value={scheduledProjectCount} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
             <MetricCard title="工期節點" value={stages.length} icon={<Gauge className="h-5 w-5" aria-hidden />} />
@@ -162,6 +186,207 @@ export function ScheduleClient() {
   );
 }
 
+function ScheduleCalendarCreator({
+  projects,
+  stages,
+  onCreateStage
+}: {
+  projects: Project[];
+  stages: ProjectStage[];
+  onCreateStage: (input: {
+    projectId: string;
+    stageName: string;
+    startDate: string;
+    endDate: string;
+    reminderDaysBefore: number;
+  }) => Promise<void>;
+}) {
+  const [monthDate, setMonthDate] = useState(() => monthStartFromDateString(todayInputValue()));
+  const [projectId, setProjectId] = useState("");
+  const [stageName, setStageName] = useState("木工進場");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(3);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const calendarDays = useMemo(() => buildCalendarDays(monthDate), [monthDate]);
+  const stagesByDate = useMemo(() => groupStagesByDate(stages), [stages]);
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+
+  function changeMonth(offset: number) {
+    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  }
+
+  function handleDateClick(date: string) {
+    if (!startDate || (startDate && endDate)) {
+      setStartDate(date);
+      setEndDate("");
+      return;
+    }
+
+    if (date < startDate) {
+      setEndDate(startDate);
+      setStartDate(date);
+      return;
+    }
+
+    setEndDate(date);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      if (!projectId) throw new Error("請先選擇案件。");
+      if (!stageName.trim()) throw new Error("請填寫工程名稱。");
+      if (!startDate) throw new Error("請在月曆選擇開始日。");
+
+      await onCreateStage({
+        projectId,
+        stageName: stageName.trim(),
+        startDate,
+        endDate: endDate || startDate,
+        reminderDaysBefore
+      });
+      setStageName("");
+      setStartDate("");
+      setEndDate("");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "新增工期失敗。";
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <form className="w-full space-y-4 lg:max-w-sm" onSubmit={handleSubmit}>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+            <CalendarDays className="h-4 w-4 text-teal-700" aria-hidden />
+            月曆新增工程表
+          </div>
+          <ErrorMessage message={error} />
+          <Field label="案件">
+            <select className={inputClassName} value={projectId} onChange={(event) => setProjectId(event.target.value)} required>
+              <option value="">選擇案件</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name} / {project.clientName}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="工程名稱">
+            <input
+              className={inputClassName}
+              value={stageName}
+              onChange={(event) => setStageName(event.target.value)}
+              placeholder="例如：木工進場"
+              required
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="開始日">
+              <input className={inputClassName} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </Field>
+            <Field label="結束日">
+              <input className={inputClassName} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            </Field>
+          </div>
+          <Field label="進場前提醒">
+            <div className="flex items-center gap-2">
+              <input
+                className={inputClassName}
+                min={0}
+                type="number"
+                value={reminderDaysBefore}
+                onChange={(event) => setReminderDaysBefore(Number(event.target.value))}
+              />
+              <span className="shrink-0 text-sm text-slate-600">天</span>
+            </div>
+          </Field>
+          <Button type="submit" disabled={submitting}>
+            <Plus className="h-4 w-4" aria-hidden />
+            {submitting ? "新增中" : "新增工程"}
+          </Button>
+        </form>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+              type="button"
+              onClick={() => changeMonth(-1)}
+              aria-label="上一個月"
+              title="上一個月"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            </button>
+            <div className="text-sm font-semibold text-slate-950">
+              {monthDate.getFullYear()} 年 {monthDate.getMonth() + 1} 月
+            </div>
+            <button
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+              type="button"
+              onClick={() => changeMonth(1)}
+              aria-label="下一個月"
+              title="下一個月"
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
+            {["日", "一", "二", "三", "四", "五", "六"].map((weekday) => (
+              <div key={weekday} className="py-2">
+                {weekday}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day) => {
+              const dayStages = stagesByDate.get(day.date) ?? [];
+              const selected = isDateSelected(day.date, startDate, endDate || startDate);
+
+              return (
+                <button
+                  key={day.date}
+                  className={cn(
+                    "min-h-24 rounded-md border p-2 text-left transition hover:border-teal-400 hover:bg-teal-50",
+                    day.inCurrentMonth ? "border-stone-200 bg-white" : "border-stone-100 bg-stone-50 text-slate-400",
+                    selected && "border-teal-600 bg-teal-50 ring-1 ring-teal-600"
+                  )}
+                  type="button"
+                  onClick={() => handleDateClick(day.date)}
+                >
+                  <div className="text-xs font-semibold">{Number(day.date.slice(-2))}</div>
+                  <div className="mt-2 space-y-1">
+                    {dayStages.slice(0, 2).map((stage) => {
+                      const project = projectById.get(stage.projectId);
+
+                      return (
+                        <div key={stage.id} className="truncate rounded bg-stone-100 px-1.5 py-1 text-[11px] text-slate-700">
+                          {stage.stageName}
+                          {project ? ` / ${project.name}` : ""}
+                        </div>
+                      );
+                    })}
+                    {dayStages.length > 2 ? <div className="text-[11px] text-slate-500">+{dayStages.length - 2}</div> : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ScheduleTable({
   rows,
   projectById,
@@ -192,6 +417,7 @@ function ScheduleTable({
               <th className="px-4 py-3">設計師</th>
               <th className="px-4 py-3">工期節點</th>
               <th className="px-4 py-3">日期</th>
+              <th className="px-4 py-3">提醒</th>
               <th className="px-4 py-3">狀態</th>
               <th className="px-4 py-3">關鍵節點</th>
               <th className="px-4 py-3 text-right">操作</th>
@@ -233,6 +459,9 @@ function ScheduleTable({
                   <td className="min-w-44 px-4 py-4 align-top">
                     <div className="text-slate-600">{formatDate(stage.startDate)} - {formatDate(stage.endDate)}</div>
                     {overdue ? <div className="mt-1 text-xs font-semibold text-red-700">逾期未完成</div> : null}
+                  </td>
+                  <td className="px-4 py-4 align-top text-slate-600">
+                    {stage.reminderDaysBefore > 0 ? `進場前 ${stage.reminderDaysBefore} 天` : "不提醒"}
                   </td>
                   <td className="px-4 py-4 align-top">
                     <ProjectStageStatusBadge status={stage.status} />
@@ -403,6 +632,70 @@ function groupMilestonesByStage(milestones: Milestone[]) {
   });
 
   return groups;
+}
+
+function monthStartFromDateString(date: string) {
+  const parsed = parseDateString(date);
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+}
+
+function buildCalendarDays(monthDate: Date) {
+  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const start = new Date(firstDay);
+  start.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+
+    return {
+      date: toDateInputValue(date),
+      inCurrentMonth: date.getMonth() === monthDate.getMonth()
+    };
+  });
+}
+
+function groupStagesByDate(stages: ProjectStage[]) {
+  const groups = new Map<string, ProjectStage[]>();
+
+  stages.forEach((stage) => {
+    if (!stage.startDate) return;
+
+    const start = parseDateString(stage.startDate);
+    const end = stage.endDate ? parseDateString(stage.endDate) : start;
+    const maxDays = 120;
+
+    for (let index = 0; index < maxDays; index += 1) {
+      const current = new Date(start);
+      current.setDate(start.getDate() + index);
+      if (current > end) break;
+
+      const key = toDateInputValue(current);
+      const currentStages = groups.get(key) ?? [];
+      currentStages.push(stage);
+      groups.set(key, currentStages);
+    }
+  });
+
+  return groups;
+}
+
+function isDateSelected(date: string, startDate: string, endDate: string) {
+  if (!startDate) return false;
+  return date >= startDate && date <= endDate;
+}
+
+function parseDateString(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 const inputClassName =

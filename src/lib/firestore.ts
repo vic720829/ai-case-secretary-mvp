@@ -105,6 +105,7 @@ function projectStageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Pro
     endDate: data.endDate ?? "",
     status: data.status ?? "todo",
     sortOrder: Number(data.sortOrder ?? 0),
+    reminderDaysBefore: Number(data.reminderDaysBefore ?? 0),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };

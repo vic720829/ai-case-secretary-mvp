@@ -26,7 +26,8 @@ export function ProjectStageForm({
       startDate: "",
       endDate: "",
       status: "todo",
-      sortOrder: 1
+      sortOrder: 1,
+      reminderDaysBefore: 3
     }
   );
   const [error, setError] = useState("");
@@ -46,7 +47,8 @@ export function ProjectStageForm({
         ...value,
         projectId,
         stageName: value.stageName.trim(),
-        sortOrder: Number(value.sortOrder || 0)
+        sortOrder: Number(value.sortOrder || 0),
+        reminderDaysBefore: Number(value.reminderDaysBefore || 0)
       });
 
       if (!initialValue) {
@@ -56,7 +58,8 @@ export function ProjectStageForm({
           startDate: "",
           endDate: "",
           status: "todo",
-          sortOrder: value.sortOrder + 1
+          sortOrder: value.sortOrder + 1,
+          reminderDaysBefore: value.reminderDaysBefore
         });
       }
     } catch (caught) {
@@ -70,7 +73,7 @@ export function ProjectStageForm({
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       <ErrorMessage message={error} />
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-6">
         <Field label="節點名稱">
           <input
             className={inputClassName}
@@ -116,6 +119,18 @@ export function ProjectStageForm({
             value={value.sortOrder}
             onChange={(event) => updateField("sortOrder", Number(event.target.value))}
           />
+        </Field>
+        <Field label="進場前提醒">
+          <div className="flex items-center gap-2">
+            <input
+              className={inputClassName}
+              min={0}
+              type="number"
+              value={value.reminderDaysBefore}
+              onChange={(event) => updateField("reminderDaysBefore", Number(event.target.value))}
+            />
+            <span className="shrink-0 text-sm text-slate-600">天</span>
+          </div>
         </Field>
       </div>
       <div className="flex justify-end gap-2">

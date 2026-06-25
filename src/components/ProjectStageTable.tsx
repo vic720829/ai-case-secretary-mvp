@@ -22,6 +22,7 @@ export function ProjectStageTable({
               <th className="px-4 py-3">工期節點</th>
               <th className="px-4 py-3">開始日</th>
               <th className="px-4 py-3">結束日</th>
+              <th className="px-4 py-3">提醒</th>
               <th className="px-4 py-3">狀態</th>
               <th className="px-4 py-3 text-right">操作</th>
             </tr>
@@ -39,6 +40,9 @@ export function ProjectStageTable({
                     <span className={overdue ? "font-semibold text-red-700" : "text-slate-600"}>
                       {formatDate(stage.endDate)}
                     </span>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {stage.reminderDaysBefore > 0 ? `進場前 ${stage.reminderDaysBefore} 天` : "不提醒"}
                   </td>
                   <td className="px-4 py-4">
                     <ProjectStageStatusBadge status={stage.status} />

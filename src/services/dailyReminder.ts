@@ -62,6 +62,7 @@ export async function buildDailyReminderText() {
   });
 
   const dueToday: ReminderItem[] = [];
+  const stageStartReminders: ReminderItem[] = [];
   const overdue: ReminderItem[] = [];
   const highRisk: ReminderItem[] = [];
 
@@ -92,10 +93,18 @@ export async function buildDailyReminderText() {
   stageSnapshot.docs.forEach((doc) => {
     const stage = doc.data();
     const status = String(stage.status ?? "todo");
+    const startDate = String(stage.startDate ?? "");
     const endDate = String(stage.endDate ?? "");
+    const reminderDaysBefore = Number(stage.reminderDaysBefore ?? 0);
 
     if (status !== "done" && endDate && endDate < today) {
       overdue.push(toReminderItem(stage.projectId, "工期節點", stage.stageName, endDate));
+    }
+
+    if (status !== "done" && startDate && reminderDaysBefore > 0 && dateMinusDays(startDate, reminderDaysBefore) === today) {
+      stageStartReminders.push(
+        toReminderItem(stage.projectId, `進場提醒：${reminderDaysBefore} 天後`, stage.stageName, startDate)
+      );
     }
   });
 
@@ -111,6 +120,7 @@ export async function buildDailyReminderText() {
   });
 
   const sections = [
+    formatSection("進場提醒", stageStartReminders, projects),
     formatSection("今天到期", dueToday, projects),
     formatSection("已逾期", overdue, projects),
     formatSection("高風險", highRisk, projects)
@@ -168,6 +178,14 @@ function timestampToTaipeiDate(value: unknown) {
   }
 
   return "";
+}
+
+function dateMinusDays(date: string, days: number) {
+  const parsed = new Date(`${date}T00:00:00+08:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  parsed.setDate(parsed.getDate() - days);
+  return taipeiDateString(parsed);
 }
 
 function taipeiDateString(date = new Date()) {
