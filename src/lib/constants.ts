@@ -1,4 +1,12 @@
-import type { AiTaskType, LineMessageType, ProjectStageStatus, RiskLevel, TaskSource, TaskStatus } from "./types";
+import type {
+  AiTaskType,
+  LineMemberRole,
+  LineMessageType,
+  ProjectStageStatus,
+  RiskLevel,
+  TaskSource,
+  TaskStatus
+} from "./types";
 
 export const taskStatusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: "todo", label: "待辦" },
@@ -29,6 +37,12 @@ export const lineMessageTypeOptions: Array<{ value: LineMessageType; label: stri
   { value: "text", label: "文字" },
   { value: "image", label: "圖片" },
   { value: "audio", label: "語音" }
+];
+
+export const lineMemberRoleOptions: Array<{ value: LineMemberRole; label: string }> = [
+  { value: "internal", label: "內部人員" },
+  { value: "client", label: "客戶" },
+  { value: "vendor", label: "廠商" }
 ];
 
 export const aiTaskTypeOptions: Array<{ value: AiTaskType; label: string }> = [

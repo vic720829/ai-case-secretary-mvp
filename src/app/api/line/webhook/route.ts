@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
+import type { LineSenderRole } from "@/lib/types";
 import { analyzeMessageForAiTasks, dateStringToTimestamp } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import {
@@ -51,13 +52,17 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
   const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
-  const senderName = await getLineSenderName(event);
+  const lineSenderName = await getLineSenderName(event);
+  const member = await findLineMember(db, event.source?.userId ?? "", projectId);
+  const senderName = member.displayName || lineSenderName;
+  const senderRole = member.role;
   const fileUrl = messageType === "text" ? "" : await saveLineMessageFile(event, groupId, messageType);
   const messageRef = await db.collection("messages").add({
     projectId,
     groupId,
     senderId: event.source?.userId ?? "",
     senderName,
+    senderRole,
     messageType,
     text: event.message.text ?? "",
     fileUrl,
@@ -68,7 +73,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
   if (messageType === "text" && event.message.text) {
     const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
-    const suggestions = shouldCreateAiDrafts ? await analyzeMessageForAiTasks(event.message.text) : [];
+    const suggestions = shouldCreateAiDrafts
+      ? await analyzeMessageForAiTasks(event.message.text, senderRole)
+      : [];
 
     await Promise.all(
       suggestions.map((suggestion) =>
@@ -77,6 +84,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           sourceMessageId: messageRef.id,
           sourceGroupId: groupId,
           sourceSenderName: senderName,
+          sourceSenderRole: senderRole,
           title: suggestion.title,
           description: suggestion.description,
           taskType: suggestion.taskType,
@@ -180,6 +188,34 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   await replyLineText(event.replyToken, `已保留待處理：${title}`);
 
   return { ok: true, action, key };
+}
+
+async function findLineMember(
+  db: FirebaseFirestore.Firestore,
+  lineUserId: string,
+  projectId: string
+): Promise<{ displayName: string; role: LineSenderRole }> {
+  if (!lineUserId) return { displayName: "", role: "unknown" };
+
+  const snapshot = await db.collection("line_members").where("lineUserId", "==", lineUserId).get();
+  if (snapshot.empty) return { displayName: "", role: "unknown" };
+
+  const members = snapshot.docs.map((doc) => doc.data());
+  const matched =
+    members.find((member) => String(member.projectId ?? "") === projectId) ??
+    members.find((member) => !member.projectId) ??
+    members[0];
+  const role = normalizeSenderRole(String(matched.role ?? "unknown"));
+
+  return {
+    displayName: String(matched.displayName ?? ""),
+    role
+  };
+}
+
+function normalizeSenderRole(role: string): LineSenderRole {
+  if (role === "internal" || role === "client" || role === "vendor") return role;
+  return "unknown";
 }
 
 function normalizeMessageType(type: string): "text" | "image" | "audio" {

@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase-admin/firestore";
-import type { AiTaskType } from "@/lib/types";
+import type { AiTaskType, LineSenderRole } from "@/lib/types";
 
 export type AiTaskSuggestion = {
   title: string;
@@ -20,17 +20,20 @@ export function dateStringToTimestamp(value?: string) {
   return Timestamp.fromDate(parsed);
 }
 
-export async function analyzeMessageForAiTasks(text: string): Promise<AiTaskSuggestion[]> {
+export async function analyzeMessageForAiTasks(
+  text: string,
+  senderRole: LineSenderRole = "unknown"
+): Promise<AiTaskSuggestion[]> {
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  const openAiSuggestions = await analyzeWithOpenAi(trimmed);
+  const openAiSuggestions = await analyzeWithOpenAi(trimmed, senderRole);
   if (openAiSuggestions.length) return openAiSuggestions;
 
-  return analyzeWithRules(trimmed);
+  return analyzeWithRules(trimmed, senderRole);
 }
 
-async function analyzeWithOpenAi(text: string): Promise<AiTaskSuggestion[]> {
+async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Promise<AiTaskSuggestion[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL;
   if (!apiKey || !model) return [];
@@ -44,7 +47,24 @@ async function analyzeWithOpenAi(text: string): Promise<AiTaskSuggestion[]> {
       },
       body: JSON.stringify({
         model,
-        input: `你是室內設計公司案件秘書。請只輸出 JSON array。若訊息沒有任務，輸出 []。每個 item 欄位：title, description, taskType, assignedTo, dueDate。taskType 只能是 promise, change, followup, payment, invoice。dueDate 若無法判斷請省略，若可判斷用 YYYY-MM-DD。\n\nLINE 訊息：${text}`
+        input: [
+          "你是室內設計公司的案件秘書，請只回 JSON array。",
+          "若訊息不需要追蹤，回 []。",
+          "item 欄位只能包含 title, description, taskType, assignedTo, dueDate。",
+          "taskType 只能是 promise, change, followup, payment, invoice。",
+          "dueDate 若可推論才填 YYYY-MM-DD。",
+          "",
+          "判斷規則：",
+          "- senderRole=internal：我確認、我回覆、我安排、我提供，通常是公司承諾 promise。",
+          "- senderRole=client：我回覆、我確認、我挑好，通常是等待客戶回覆 followup，不是公司承諾。",
+          "- senderRole=vendor：我安排、我確認，通常是追蹤廠商承諾 followup。",
+          "- 客戶提出改顏色、改尺寸、新增、取消、不要做，建立 change。",
+          "- 款項、請款、尾款、二期款建立 payment。",
+          "- 發票、統編、報帳建立 invoice。",
+          "",
+          `senderRole: ${senderRole}`,
+          `LINE 訊息: ${text}`
+        ].join("\n")
       })
     });
 
@@ -74,50 +94,112 @@ async function analyzeWithOpenAi(text: string): Promise<AiTaskSuggestion[]> {
   }
 }
 
-function analyzeWithRules(text: string): AiTaskSuggestion[] {
+function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSuggestion[] {
   const suggestions: AiTaskSuggestion[] = [];
+  const dueDate = inferDueDate(text);
 
-  if (/(確認|回覆|提供|安排|處理|幫您|我再|我明天|明天回覆)/.test(text)) {
-    suggestions.push({
-      title: makeTitle(text, "承諾追蹤"),
-      description: text,
-      taskType: "promise"
-    });
-  }
-
-  if (/(改顏色|改尺寸|新增|不做|變更|修改|換成|取消)/.test(text)) {
-    suggestions.push({
-      title: makeTitle(text, "客戶變更"),
-      description: text,
-      taskType: "change"
-    });
-  }
-
-  if (/(尚未確認|尚未回覆|再追|追蹤|等客戶|提醒)/.test(text)) {
-    suggestions.push({
-      title: makeTitle(text, "待追蹤事項"),
-      description: text,
-      taskType: "followup"
-    });
-  }
-
-  if (/(第二期款|尾款|請款|收款|付款|匯款)/.test(text)) {
-    suggestions.push({
-      title: makeTitle(text, "收款事項"),
-      description: text,
-      taskType: "payment"
-    });
-  }
-
-  if (/(發票|統編|報帳|抬頭)/.test(text)) {
+  if (/(發票|統編|報帳|收據)/.test(text)) {
     suggestions.push({
       title: makeTitle(text, "發票事項"),
       description: text,
-      taskType: "invoice"
+      taskType: "invoice",
+      dueDate
     });
   }
 
-  return suggestions;
+  if (/(請款|付款|收款|尾款|二期款|第二期|訂金|款項)/.test(text)) {
+    suggestions.push({
+      title: makeTitle(text, "收款事項"),
+      description: text,
+      taskType: "payment",
+      dueDate
+    });
+  }
+
+  if (/(改|變更|新增|取消|不要|不做|顏色|尺寸|抽屜|電視牆|門片|磁磚|木地板|特殊塗料)/.test(text)) {
+    suggestions.push({
+      title: makeTitle(text, "客戶變更"),
+      description: text,
+      taskType: "change",
+      dueDate
+    });
+  }
+
+  if (hasCommitmentWords(text)) {
+    if (senderRole === "internal") {
+      suggestions.push({
+        title: makeTitle(text, "公司承諾"),
+        description: text,
+        taskType: "promise",
+        dueDate
+      });
+    } else if (senderRole === "client") {
+      suggestions.push({
+        title: makeTitle(text, "等待客戶回覆"),
+        description: text,
+        taskType: "followup",
+        dueDate
+      });
+    } else if (senderRole === "vendor") {
+      suggestions.push({
+        title: makeTitle(text, "追蹤廠商承諾"),
+        description: text,
+        taskType: "followup",
+        dueDate
+      });
+    } else {
+      suggestions.push({
+        title: makeTitle(text, "待判斷承諾"),
+        description: text,
+        taskType: "followup",
+        dueDate
+      });
+    }
+  }
+
+  return dedupeSuggestions(suggestions);
+}
+
+function hasCommitmentWords(text: string) {
+  return /(我|我們|這邊|師傅|廠商).{0,8}(確認|回覆|提供|安排|處理|報價|給你|給您|再看|挑好)|明天.{0,8}(確認|回覆|提供|安排|處理)|今晚.{0,8}(確認|回覆|提供|安排|處理)|等一下.{0,8}(確認|回覆|提供|安排|處理)/.test(text);
+}
+
+function inferDueDate(text: string) {
+  if (/今天|等一下|稍後/.test(text)) return datePlusDays(0);
+  if (/明天/.test(text)) return datePlusDays(1);
+  if (/後天/.test(text)) return datePlusDays(2);
+  return undefined;
+}
+
+function datePlusDays(days: number) {
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? "1970");
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? "1");
+  const day = Number(parts.find((part) => part.type === "day")?.value ?? "1");
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function dedupeSuggestions(suggestions: AiTaskSuggestion[]) {
+  const seen = new Set<string>();
+
+  return suggestions.filter((suggestion) => {
+    const key = `${suggestion.taskType}-${suggestion.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function makeTitle(text: string, prefix: string) {

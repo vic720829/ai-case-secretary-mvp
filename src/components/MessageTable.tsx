@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatDateTime } from "@/lib/date";
-import type { LineGroup, Message, Project } from "@/lib/types";
+import type { LineGroup, LineSenderRole, Message, Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function MessageTable({
@@ -52,7 +52,10 @@ export function MessageTable({
                     <div className="font-medium text-slate-700">{group?.groupName || "未知群組"}</div>
                     <div className="mt-1 max-w-48 truncate text-xs text-slate-500">{message.groupId}</div>
                   </td>
-                  <td className="px-4 py-4 text-slate-600">{message.senderName || message.senderId || "未知"}</td>
+                  <td className="px-4 py-4 text-slate-600">
+                    <div>{message.senderName || message.senderId || "未知"}</div>
+                    <div className="mt-1 text-xs text-slate-500">{getSenderRoleLabel(message.senderRole)}</div>
+                  </td>
                   <td className="px-4 py-4">
                     <div className="max-w-md text-slate-800">
                       <MessageContent message={message} />
@@ -78,6 +81,15 @@ export function MessageTable({
       </div>
     </div>
   );
+}
+
+function getSenderRoleLabel(role: LineSenderRole) {
+  return {
+    internal: "內部人員",
+    client: "客戶",
+    vendor: "廠商",
+    unknown: "身份未登記"
+  }[role];
 }
 
 function MessageContent({ message }: { message: Message }) {

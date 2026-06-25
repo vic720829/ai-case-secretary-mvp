@@ -3,6 +3,8 @@ export type TaskSource = "manual" | "line" | "ai" | "voice";
 export type RiskLevel = "low" | "medium" | "high";
 export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
+export type LineMemberRole = "internal" | "client" | "vendor";
+export type LineSenderRole = LineMemberRole | "unknown";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
@@ -94,11 +96,26 @@ export type LineGroup = LineGroupInput & {
   updatedAt: Date | null;
 };
 
+export type LineMemberInput = {
+  lineUserId: string;
+  displayName: string;
+  role: LineMemberRole;
+  projectId: string;
+  note: string;
+};
+
+export type LineMember = LineMemberInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 export type MessageInput = {
   projectId: string;
   groupId: string;
   senderId: string;
   senderName: string;
+  senderRole: LineSenderRole;
   messageType: LineMessageType;
   text: string;
   fileUrl: string;
@@ -117,6 +134,7 @@ export type AiTaskInput = {
   sourceMessageId: string;
   sourceGroupId: string;
   sourceSenderName: string;
+  sourceSenderRole: LineSenderRole;
   title: string;
   description: string;
   taskType: AiTaskType;

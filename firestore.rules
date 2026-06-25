@@ -73,6 +73,11 @@ service cloud.firestore {
       allow create, update, delete: if canManageSystemSettings();
     }
 
+    match /line_members/{lineMemberId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
     match /messages/{messageId} {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();

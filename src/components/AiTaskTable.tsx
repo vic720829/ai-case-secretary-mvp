@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
-import type { AiTask, Project } from "@/lib/types";
+import type { AiTask, LineSenderRole, Project } from "@/lib/types";
 
 export function AiTaskTable({
   aiTasks,
@@ -41,6 +41,9 @@ export function AiTaskTable({
                         {task.description}
                       </div>
                     ) : null}
+                    <div className="mt-2 text-xs text-slate-500">
+                      {task.sourceSenderName || "未知來源"} · {getSenderRoleLabel(task.sourceSenderRole)}
+                    </div>
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     {project ? (
@@ -65,4 +68,13 @@ export function AiTaskTable({
       </div>
     </div>
   );
+}
+
+function getSenderRoleLabel(role: LineSenderRole) {
+  return {
+    internal: "內部人員",
+    client: "客戶",
+    vendor: "廠商",
+    unknown: "身份未登記"
+  }[role];
 }

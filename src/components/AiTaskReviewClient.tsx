@@ -9,7 +9,7 @@ import { aiTaskTypeOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { approveAiTask, listAiTasks, listProjects, rejectAiTask } from "@/lib/firestore";
-import type { AiTask, AiTaskReviewStatus, AiTaskType, Project, RiskLevel, TaskInput } from "@/lib/types";
+import type { AiTask, AiTaskReviewStatus, AiTaskType, LineSenderRole, Project, RiskLevel, TaskInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
@@ -181,7 +181,9 @@ function AiTaskReviewTable({
                       </div>
                     ) : null}
                     {task.sourceSenderName ? (
-                      <div className="mt-2 text-xs text-slate-500">來源：{task.sourceSenderName}</div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        來源：{task.sourceSenderName} · {getSenderRoleLabel(task.sourceSenderRole)}
+                      </div>
                     ) : null}
                   </td>
                   <td className="px-4 py-4 text-slate-600">
@@ -318,6 +320,15 @@ function ReviewStatusBadge({ status }: { status: AiTaskReviewStatus }) {
       {label}
     </span>
   );
+}
+
+function getSenderRoleLabel(role: LineSenderRole) {
+  return {
+    internal: "內部人員",
+    client: "客戶",
+    vendor: "廠商",
+    unknown: "身份未登記"
+  }[role];
 }
 
 function toTaskInput(task: AiTask): TaskInput {

@@ -23,6 +23,8 @@ import type {
   MilestoneInput,
   LineGroup,
   LineGroupInput,
+  LineMember,
+  LineMemberInput,
   Message,
   Project,
   ProjectInput,
@@ -39,6 +41,7 @@ const TASKS_COLLECTION = "tasks";
 const PROJECT_STAGES_COLLECTION = "projectStages";
 const MILESTONES_COLLECTION = "milestones";
 const LINE_GROUPS_COLLECTION = "line_groups";
+const LINE_MEMBERS_COLLECTION = "line_members";
 const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
 const REMINDER_LOGS_COLLECTION = "reminder_logs";
@@ -148,6 +151,21 @@ function lineGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineGr
   };
 }
 
+function lineMemberFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineMember {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    lineUserId: data.lineUserId ?? "",
+    displayName: data.displayName ?? "",
+    role: data.role ?? "client",
+    projectId: data.projectId ?? "",
+    note: data.note ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
 function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message {
   const data = snapshot.data();
 
@@ -157,6 +175,7 @@ function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message 
     groupId: data.groupId ?? "",
     senderId: data.senderId ?? "",
     senderName: data.senderName ?? "",
+    senderRole: data.senderRole ?? "unknown",
     messageType: data.messageType ?? "text",
     text: data.text ?? "",
     fileUrl: data.fileUrl ?? "",
@@ -175,6 +194,7 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     sourceMessageId: data.sourceMessageId ?? "",
     sourceGroupId: data.sourceGroupId ?? "",
     sourceSenderName: data.sourceSenderName ?? "",
+    sourceSenderRole: data.sourceSenderRole ?? "unknown",
     title: data.title ?? "",
     description: data.description ?? "",
     taskType: data.taskType ?? "followup",
@@ -260,6 +280,7 @@ export async function deleteProject(id: string) {
     linkedMilestones,
     linkedLineGroups,
     linkedMessages,
+    linkedLineMembers,
     linkedAiTasks,
     linkedReminderLogs
   ] = await Promise.all([
@@ -268,6 +289,7 @@ export async function deleteProject(id: string) {
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_GROUPS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MESSAGES_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, LINE_MEMBERS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id)))
   ]);
@@ -287,6 +309,9 @@ export async function deleteProject(id: string) {
   });
   linkedMessages.docs.forEach((messageSnapshot) => {
     batch.delete(messageSnapshot.ref);
+  });
+  linkedLineMembers.docs.forEach((lineMemberSnapshot) => {
+    batch.delete(lineMemberSnapshot.ref);
   });
   linkedAiTasks.docs.forEach((aiTaskSnapshot) => {
     batch.delete(aiTaskSnapshot.ref);
@@ -494,6 +519,39 @@ export async function updateLineGroup(id: string, input: LineGroupInput) {
 export async function deleteLineGroup(id: string) {
   const database = requireDb();
   await deleteDoc(doc(database, LINE_GROUPS_COLLECTION, id));
+}
+
+export async function listLineMembers() {
+  const database = requireDb();
+  const snapshot = await getDocs(collection(database, LINE_MEMBERS_COLLECTION));
+
+  return snapshot.docs
+    .map(lineMemberFromDoc)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-TW"));
+}
+
+export async function createLineMember(input: LineMemberInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, LINE_MEMBERS_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function updateLineMember(id: string, input: LineMemberInput) {
+  const database = requireDb();
+  await updateDoc(doc(database, LINE_MEMBERS_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteLineMember(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, LINE_MEMBERS_COLLECTION, id));
 }
 
 export async function listMessages() {

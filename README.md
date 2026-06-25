@@ -11,10 +11,11 @@
 - 工期總表：依指定日期查看當天有哪些案場與工程，並可集中查看全部案件的工期節點、逾期狀態與關鍵節點。
 - 關鍵節點：可綁定案件與工期，設定到期日、風險等級、提前提醒天數。
 - LINE 群組管理：可綁定案件群組與公司後台群組。
+- LINE 成員身份：標記 LINE 發話者為內部人員、客戶或廠商。
 - LINE 訊息中心：接收 LINE Webhook，儲存文字、圖片、語音訊息，並可依案件與群組篩選。
 - LINE 回覆限制：客戶群只同步與記錄，助理只在公司後台群組回答問題與發提醒。
 - LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「仍待處理」。
-- AI 任務審核：案件 LINE 群組會產生 AI 草稿，人工核准後才轉成正式任務。
+- AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，人工核准後才轉成正式任務。
 - Firebase Authentication：Email/Password 登入。
 - Firestore Rules：MVP4 角色權限版，支援 `owner` / `admin` / `staff` / `viewer`。
 - Netlify 部署與排程提醒。
@@ -148,12 +149,23 @@ OPENAI_MODEL=
 - createdAt
 - updatedAt
 
+### line_members
+
+- lineUserId
+- displayName
+- role: `internal` / `client` / `vendor`
+- projectId
+- note
+- createdAt
+- updatedAt
+
 ### messages
 
 - projectId
 - groupId
 - senderId
 - senderName
+- senderRole: `internal` / `client` / `vendor` / `unknown`
 - messageType: `text` / `image` / `audio`
 - text
 - fileUrl
@@ -167,6 +179,7 @@ OPENAI_MODEL=
 - sourceMessageId
 - sourceGroupId
 - sourceSenderName
+- sourceSenderRole: `internal` / `client` / `vendor` / `unknown`
 - title
 - description
 - taskType: `promise` / `change` / `followup` / `payment` / `invoice`
@@ -222,8 +235,26 @@ LINE 訊息進入後會：
 - 客戶群組只儲存訊息，不主動回覆。
 - 公司後台群組可以回答問題與接收提醒。
 - 只有已綁定案件的客戶群組會建立 AI 任務草稿。
+- 若 `line_members` 有登記發話者身份，AI 會依身份區分公司承諾、等待客戶回覆、追蹤廠商承諾。
 - 文字訊息存到 Firestore `messages.text`。
 - 圖片與語音會下載到 Firebase Storage，並把公開下載連結存到 `messages.fileUrl`。
+
+## LINE 成員身份
+
+`line_members` 用來讓 AI 判斷誰在說話。
+
+建議規則：
+
+- `internal`：設計師、助理、工務、公司內部人員。
+- `client`：業主、客戶窗口。
+- `vendor`：木工、水電、系統櫃、油漆等外包廠商。
+
+AI 建任務時會這樣分：
+
+- 內部人員說「我明天確認木工進場」：建立 `公司承諾` 草稿。
+- 客戶說「我明天回覆顏色」：建立 `等待客戶回覆` 草稿。
+- 廠商說「我明天安排師傅」：建立 `追蹤廠商承諾` 草稿。
+- 客戶說「顏色想改」「尺寸改小」：建立 `客戶變更` 草稿。
 
 ## Netlify
 
