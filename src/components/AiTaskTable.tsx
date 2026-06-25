@@ -44,14 +44,12 @@ export function AiTaskTable({
                     <div className="mt-2 text-xs text-slate-500">
                       {task.sourceSenderName || "未知來源"} · {getSenderRoleLabel(task.sourceSenderRole)}
                     </div>
-                    {task.approvedTaskId ? (
-                      <Link
-                        className="mt-2 inline-flex text-xs font-medium text-teal-700 hover:text-teal-800"
-                        href={`/tasks/${task.approvedTaskId}`}
-                      >
-                        查看正式待辦
-                      </Link>
-                    ) : null}
+                    <Link
+                      className="mt-2 inline-flex text-xs font-medium text-teal-700 hover:text-teal-800"
+                      href={task.approvedTaskId ? `/tasks/${task.approvedTaskId}` : `/projects/${task.projectId}`}
+                    >
+                      {task.approvedTaskId ? "查看正式待辦" : "查看案件待辦"}
+                    </Link>
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     {project ? (
