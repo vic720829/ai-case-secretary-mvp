@@ -222,6 +222,10 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
     return handleAiTaskReviewPostback(db, event, action, key);
   }
 
+  if (["resolve_ai_followup", "snooze_ai_followup"].includes(action)) {
+    return handleAiFollowupPostback(db, event, action, key, params);
+  }
+
   if (!["confirm_reminder", "snooze_reminder", "keep_reminder"].includes(action)) {
     return { skipped: true, reason: "Unsupported postback" };
   }
@@ -286,6 +290,109 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   await replyLineText(event.replyToken, `已保留待處理：${title}`);
 
   return { ok: true, action, key };
+}
+
+async function handleAiFollowupPostback(
+  db: FirebaseFirestore.Firestore,
+  event: LineWebhookEvent,
+  action: string,
+  key: string,
+  params: URLSearchParams
+) {
+  const isAdminGroup = await isAssistantAdminGroup(db, getEventGroupId(event));
+  if (!isAdminGroup) {
+    await replyLineText(event.replyToken, "客戶回覆追蹤只能在公司 LINE 後台群組操作。");
+    return { skipped: true, reason: "AI followup outside admin LINE group", key };
+  }
+
+  const senderName = await getLineSenderName(event);
+  const actionBy = `LINE:${senderName}`;
+  const aiTaskRef = db.collection("ai_tasks").doc(key);
+  const reminderRef = db.collection("reminder_logs").doc(`ai_task_${key}_customer_followup_unanswered`);
+
+  if (action === "snooze_ai_followup") {
+    const days = clampNumber(Number(params.get("days") ?? 1), 1, 14);
+    const snoozedUntil = datePlusDays(taipeiDateString(), days);
+
+    await reminderRef.set(
+      {
+        status: "pending",
+        snoozedUntil,
+        lastAction: "snoozed_customer_followup",
+        actionBy,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+    await replyLineText(event.replyToken, `已設定明天追蹤。\n下次提醒日：${snoozedUntil.replaceAll("-", "/")}`);
+
+    return { ok: true, action, key, senderName, messageText: "明天追蹤客戶回覆" };
+  }
+
+  const result = await db.runTransaction(async (transaction) => {
+    const aiTaskSnapshot = await transaction.get(aiTaskRef);
+    if (!aiTaskSnapshot.exists) return { status: "not_found" as const };
+
+    const aiTask = aiTaskSnapshot.data() ?? {};
+    const title = String(aiTask.title ?? "未命名追蹤").trim() || "未命名追蹤";
+    const reviewStatus = String(aiTask.reviewStatus ?? "pending");
+    const status = String(aiTask.status ?? "todo");
+
+    if (reviewStatus === "pending") {
+      transaction.update(aiTaskRef, {
+        reviewStatus: "rejected",
+        reviewedBy: actionBy,
+        reviewedAt: FieldValue.serverTimestamp(),
+        reviewedVia: "line",
+        resolutionStatus: "confirmed_resolved",
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    } else if (reviewStatus === "approved" && status !== "done") {
+      transaction.update(aiTaskRef, {
+        status: "done",
+        resolutionStatus: "confirmed_resolved",
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    }
+
+    transaction.set(
+      reminderRef,
+      {
+        status: "confirmed",
+        confirmedBy: actionBy,
+        confirmedAt: FieldValue.serverTimestamp(),
+        snoozedUntil: FieldValue.delete(),
+        lastAction: "resolved_customer_followup",
+        actionBy,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    transaction.set(
+      db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`),
+      {
+        status: "confirmed",
+        confirmedBy: actionBy,
+        confirmedAt: FieldValue.serverTimestamp(),
+        lastAction: "resolved_customer_followup",
+        actionBy,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    return { status: "resolved" as const, title };
+  });
+
+  if (result.status === "not_found") {
+    await replyLineText(event.replyToken, "找不到這筆客戶追蹤，可能已被刪除。");
+    return { skipped: true, reason: "AI followup not found", key };
+  }
+
+  await replyLineText(event.replyToken, `已標記為已回覆：${result.title}`);
+
+  return { ok: true, action, key, senderName, messageText: `已回覆：${result.title}` };
 }
 
 async function handleAiTaskReviewPostback(

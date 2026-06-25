@@ -227,12 +227,12 @@ async function buildDailyReminderContent() {
 
   return {
     text: [
-      "AI案件秘書每日提醒",
+      "AI案件秘書｜8:30 開工摘要",
       `日期：${today.replaceAll("-", "/")}`,
       "",
       sections.length ? sections.join("\n\n") : "目前沒有需要提醒的事項。",
       "",
-      "可直接點下方提醒卡片的按鈕確認；已確認後不會再提醒。"
+      "先看今天要盯的任務、工程、關鍵節點、風險案件與逾期事項。"
     ].join("\n"),
     pendingItems: dailyPendingItems,
     projects

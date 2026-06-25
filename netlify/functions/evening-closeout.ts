@@ -1,9 +1,9 @@
 import type { Config } from "@netlify/functions";
-import { sendDailyAdminReminder } from "../../src/services/dailyReminder";
+import { sendEveningCloseoutReminder } from "../../src/services/workflowReminders";
 
 const handler = async () => {
-  const result = await sendDailyAdminReminder();
-  console.log("Daily LINE reminder result", result);
+  const result = await sendEveningCloseoutReminder();
+  console.log("Evening LINE closeout result", result);
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -16,5 +16,5 @@ const handler = async () => {
 export default handler;
 
 export const config: Config = {
-  schedule: "30 0 * * *"
+  schedule: "30 10 * * *"
 };

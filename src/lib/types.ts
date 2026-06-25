@@ -14,6 +14,7 @@ export type ReminderType =
   | "stage_before_start"
   | "milestone_before_due"
   | "ai_task_pending_review"
+  | "customer_followup_unanswered"
   | "due_today"
   | "overdue"
   | "high_risk";
