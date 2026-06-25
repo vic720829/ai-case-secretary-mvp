@@ -5,6 +5,7 @@ import { analyzeMessageForAiTasks, dateStringToTimestamp } from "@/services/aiTa
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import {
   getEventGroupId,
+  getLineSenderName,
   replyLineText,
   verifyLineSignature,
   type LineWebhookEvent
@@ -44,16 +45,18 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
   const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
+  const senderName = await getLineSenderName(event);
   const messageRef = await db.collection("messages").add({
     projectId,
     groupId,
     senderId: event.source?.userId ?? "",
-    senderName: event.source?.userId ?? "LINE 使用者",
+    senderName,
     messageType,
     text: event.message.text ?? "",
     fileUrl: "",
     timestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : FieldValue.serverTimestamp(),
-    isProcessed: false
+    isProcessed: false,
+    createdAt: FieldValue.serverTimestamp()
   });
 
   if (messageType === "text" && event.message.text) {

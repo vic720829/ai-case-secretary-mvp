@@ -143,7 +143,8 @@ function lineGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineGr
     groupName: data.groupName ?? "",
     groupType: data.groupType ?? "project",
     allowAssistantReplies: Boolean(data.allowAssistantReplies ?? false),
-    createdAt: readTimestamp(data.createdAt)
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
   };
 }
 
@@ -160,7 +161,8 @@ function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message 
     text: data.text ?? "",
     fileUrl: data.fileUrl ?? "",
     timestamp: readTimestamp(data.timestamp),
-    isProcessed: Boolean(data.isProcessed ?? false)
+    isProcessed: Boolean(data.isProcessed ?? false),
+    createdAt: readTimestamp(data.createdAt)
   };
 }
 
@@ -452,10 +454,19 @@ export async function createLineGroup(input: LineGroupInput) {
   const database = requireDb();
   const ref = await addDoc(collection(database, LINE_GROUPS_COLLECTION), {
     ...input,
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
 
   return ref.id;
+}
+
+export async function updateLineGroup(id: string, input: LineGroupInput) {
+  const database = requireDb();
+  await updateDoc(doc(database, LINE_GROUPS_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
 }
 
 export async function deleteLineGroup(id: string) {

@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Flag,
   LayoutDashboard,
+  Link2,
   LogOut,
   MessageSquareText,
   Plus
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
   { href: "/schedule", label: "工期總表", icon: CalendarDays },
   { href: "/tasks", label: "任務列表", icon: ClipboardList },
+  { href: "/line-groups", label: "LINE群組", icon: Link2 },
   { href: "/messages", label: "LINE訊息", icon: MessageSquareText },
   { href: "/milestones", label: "關鍵節點", icon: Flag }
 ];

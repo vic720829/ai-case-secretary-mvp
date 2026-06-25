@@ -35,6 +35,42 @@ export function getEventGroupId(event: LineWebhookEvent) {
   return event.source?.groupId ?? event.source?.roomId ?? event.source?.userId ?? "";
 }
 
+export async function getLineSenderName(event: LineWebhookEvent) {
+  const userId = event.source?.userId;
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+
+  if (!userId) return "LINE 使用者";
+  if (!accessToken) return userId;
+
+  const encodedUserId = encodeURIComponent(userId);
+  const sourceType = event.source?.type;
+  const groupId = event.source?.groupId;
+  const roomId = event.source?.roomId;
+
+  let profileUrl = `https://api.line.me/v2/bot/profile/${encodedUserId}`;
+  if (sourceType === "group" && groupId) {
+    profileUrl = `https://api.line.me/v2/bot/group/${encodeURIComponent(groupId)}/member/${encodedUserId}`;
+  }
+  if (sourceType === "room" && roomId) {
+    profileUrl = `https://api.line.me/v2/bot/room/${encodeURIComponent(roomId)}/member/${encodedUserId}`;
+  }
+
+  try {
+    const response = await fetch(profileUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!response.ok) return userId;
+
+    const profile = (await response.json()) as { displayName?: string };
+    return profile.displayName?.trim() || userId;
+  } catch {
+    return userId;
+  }
+}
+
 export async function replyLineText(replyToken: string | undefined, text: string) {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!replyToken || !accessToken) return;

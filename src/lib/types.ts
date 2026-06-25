@@ -90,6 +90,7 @@ export type LineGroupInput = {
 export type LineGroup = LineGroupInput & {
   id: string;
   createdAt: Date | null;
+  updatedAt: Date | null;
 };
 
 export type MessageInput = {
@@ -107,6 +108,7 @@ export type MessageInput = {
 export type Message = Omit<MessageInput, "timestamp"> & {
   id: string;
   timestamp: Date | null;
+  createdAt: Date | null;
 };
 
 export type AiTaskInput = {

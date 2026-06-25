@@ -5,7 +5,8 @@
 ## 功能
 
 - 今日風險中心：高風險任務、已逾期任務、今天到期任務
-- LINE 訊息中心：群組綁定、案件訊息、訊息同步
+- LINE 群組管理：新增案件群組、設定公司後台群組、編輯群組名稱、重新綁定案件、刪除綁定
+- LINE 訊息中心：案件訊息同步、依案件或群組篩選、最新訊息排序、AI 處理狀態
 - AI 任務追蹤：從 LINE 文字訊息分析承諾、變更、追蹤、收款、發票事項
 - 案件管理：列表、新增、詳情編輯、刪除
 - 工期總表：集中查看全部案件的工期節點、逾期狀態與關鍵節點
@@ -60,6 +61,7 @@ npm run dev
 - groupType: `project` / `admin`
 - allowAssistantReplies
 - createdAt
+- updatedAt
 
 ### messages
 
@@ -72,6 +74,7 @@ npm run dev
 - fileUrl
 - timestamp
 - isProcessed
+- createdAt
 
 ### ai_tasks
 
