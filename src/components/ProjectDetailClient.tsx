@@ -95,7 +95,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             </SecondaryLink>
             <SecondaryLink href={`/projects/${projectId}/progress`}>
               <Gauge className="h-4 w-4" aria-hidden />
-              案件進度
+              工程進度
             </SecondaryLink>
             <SecondaryLink href={`/projects/${projectId}/messages`}>
               <MessageSquareText className="h-4 w-4" aria-hidden />

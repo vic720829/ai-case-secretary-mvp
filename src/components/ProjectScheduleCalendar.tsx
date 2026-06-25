@@ -4,7 +4,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { formatDate, todayInputValue } from "@/lib/date";
 import { commonStageNames } from "@/lib/stageNames";
-import type { ProjectStage, ProjectStageInput } from "@/lib/types";
+import type { Milestone, ProjectStage, ProjectStageInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { StageNameInput } from "./StageNameInput";
 import { Button, ErrorMessage } from "./Ui";
@@ -12,10 +12,12 @@ import { Button, ErrorMessage } from "./Ui";
 export function ProjectScheduleCalendar({
   projectId,
   stages,
+  milestones,
   onCreateStage
 }: {
   projectId: string;
   stages: ProjectStage[];
+  milestones: Milestone[];
   onCreateStage: (value: ProjectStageInput) => Promise<void>;
 }) {
   const [monthDate, setMonthDate] = useState(() => monthStartFromDateString(todayInputValue()));
@@ -28,6 +30,7 @@ export function ProjectScheduleCalendar({
 
   const calendarDays = useMemo(() => buildCalendarDays(monthDate), [monthDate]);
   const stagesByDate = useMemo(() => groupStagesByDate(stages), [stages]);
+  const milestonesByDate = useMemo(() => groupMilestonesByDate(milestones), [milestones]);
 
   function changeMonth(offset: number) {
     setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
@@ -162,6 +165,7 @@ export function ProjectScheduleCalendar({
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((day) => {
               const dayStages = stagesByDate.get(day.date) ?? [];
+              const dayMilestones = milestonesByDate.get(day.date) ?? [];
               const selected = isDateSelected(day.date, startDate, endDate || startDate);
 
               return (
@@ -174,8 +178,12 @@ export function ProjectScheduleCalendar({
                   )}
                   type="button"
                   onClick={() => handleDateClick(day.date)}
+                  title={dayMilestones.length ? dayMilestones.map((milestone) => milestone.title).join("、") : undefined}
                 >
-                  <div className="text-xs font-semibold">{Number(day.date.slice(-2))}</div>
+                  <div className="flex items-center justify-between gap-1 text-xs font-semibold">
+                    <span>{Number(day.date.slice(-2))}</span>
+                    {dayMilestones.length ? <span className="font-bold text-red-700">關</span> : null}
+                  </div>
                   <div className="mt-2 space-y-1">
                     {dayStages.slice(0, 3).map((stage) => (
                       <div key={stage.id} className="truncate rounded bg-stone-100 px-1.5 py-1 text-[11px] text-slate-700">
@@ -247,6 +255,27 @@ function groupStagesByDate(stages: ProjectStage[]) {
       currentStages.push(stage);
       groups.set(key, currentStages);
     }
+  });
+
+  return groups;
+}
+
+function groupMilestonesByDate(milestones: Milestone[]) {
+  const groups = new Map<string, Milestone[]>();
+
+  milestones.forEach((milestone) => {
+    if (!milestone.dueDate) return;
+
+    const currentMilestones = groups.get(milestone.dueDate) ?? [];
+    currentMilestones.push(milestone);
+    groups.set(milestone.dueDate, currentMilestones);
+  });
+
+  groups.forEach((dayMilestones, dueDate) => {
+    groups.set(
+      dueDate,
+      dayMilestones.sort((a, b) => a.title.localeCompare(b.title, "zh-TW"))
+    );
   });
 
   return groups;

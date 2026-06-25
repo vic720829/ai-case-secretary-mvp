@@ -106,7 +106,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
   }
 
   if (loading) {
-    return <LoadingState label="正在讀取案件進度" />;
+    return <LoadingState label="正在讀取工程進度" />;
   }
 
   if (!project) {
@@ -127,7 +127,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${project.name} 進度`}
+        title={`${project.name} 工程進度`}
         description={`${project.clientName} / 工期節點與關鍵里程碑管理`}
         action={
           <SecondaryLink href={`/projects/${project.id}`}>
@@ -172,7 +172,12 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-slate-950">施工工期表</h2>
-        <ProjectScheduleCalendar projectId={projectId} stages={stages} onCreateStage={handleCreateStage} />
+        <ProjectScheduleCalendar
+          projectId={projectId}
+          stages={stages}
+          milestones={milestones}
+          onCreateStage={handleCreateStage}
+        />
       </section>
 
       {editingStage ? (
@@ -195,7 +200,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
         {stages.length ? (
           <ProjectStageTable stages={stages} onEdit={setEditingStage} onDelete={handleDeleteStage} />
         ) : (
-          <EmptyState title="尚未建立工期節點" description="先新增丈量、設計、報價、施工等節點來追蹤案件進度。" />
+          <EmptyState title="尚未建立工期節點" description="先新增丈量、設計、報價、施工等節點來追蹤工程進度。" />
         )}
       </section>
 
