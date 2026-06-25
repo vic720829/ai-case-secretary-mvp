@@ -173,6 +173,8 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     id: snapshot.id,
     projectId: data.projectId ?? "",
     sourceMessageId: data.sourceMessageId ?? "",
+    sourceGroupId: data.sourceGroupId ?? "",
+    sourceSenderName: data.sourceSenderName ?? "",
     title: data.title ?? "",
     description: data.description ?? "",
     taskType: data.taskType ?? "followup",
@@ -180,6 +182,10 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     assignedTo: data.assignedTo ?? "",
     dueDate: readTimestamp(data.dueDate),
     createdByAI: Boolean(data.createdByAI ?? true),
+    reviewStatus: data.reviewStatus ?? "pending",
+    approvedTaskId: data.approvedTaskId ?? "",
+    reviewedBy: data.reviewedBy ?? "",
+    reviewedAt: readTimestamp(data.reviewedAt),
     createdAt: readTimestamp(data.createdAt)
   };
 }
@@ -200,7 +206,10 @@ function reminderLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Remi
     status: data.status ?? "pending",
     firstTriggeredOn: data.firstTriggeredOn ?? "",
     lastRemindedOn: data.lastRemindedOn ?? "",
+    snoozedUntil: data.snoozedUntil ?? "",
     confirmedBy: data.confirmedBy ?? "",
+    actionBy: data.actionBy ?? "",
+    lastAction: data.lastAction ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt),
     confirmedAt: readTimestamp(data.confirmedAt)
@@ -525,6 +534,43 @@ export async function listAiTasksByProject(projectId: string) {
   return snapshot.docs
     .map(aiTaskFromDoc)
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export async function approveAiTask(id: string, input: TaskInput, reviewedBy: string) {
+  const database = requireDb();
+  const aiTaskRef = doc(database, AI_TASKS_COLLECTION, id);
+  const taskRef = doc(collection(database, TASKS_COLLECTION));
+  const batch = writeBatch(database);
+
+  batch.set(taskRef, {
+    ...input,
+    source: "ai",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  batch.update(aiTaskRef, {
+    status: input.status,
+    assignedTo: input.assignee,
+    reviewStatus: "approved",
+    approvedTaskId: taskRef.id,
+    reviewedBy,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  await batch.commit();
+  return taskRef.id;
+}
+
+export async function rejectAiTask(id: string, reviewedBy: string) {
+  const database = requireDb();
+
+  await updateDoc(doc(database, AI_TASKS_COLLECTION, id), {
+    reviewStatus: "rejected",
+    reviewedBy,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
 }
 
 export async function listReminderLogs() {

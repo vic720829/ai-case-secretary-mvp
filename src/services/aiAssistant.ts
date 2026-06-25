@@ -67,6 +67,7 @@ async function summarizeAiTasks(taskType: string, projectId: string, label: stri
   const lines = snapshot.docs
     .map((doc) => doc.data())
     .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => task.reviewStatus === "approved")
     .filter((task) => task.status !== "done")
     .map((task) => `${task.title}`);
 
@@ -94,6 +95,7 @@ async function summarizeRisks(projectId: string) {
   const aiTaskLines = aiTaskSnapshot.docs
     .map((doc) => doc.data())
     .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => task.reviewStatus === "approved")
     .filter((task) => task.status !== "done" && isAiTaskOverdue(task.dueDate))
     .map((task) => `AI任務：${task.title}`);
 

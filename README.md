@@ -13,8 +13,10 @@
 - LINE 群組管理：可綁定案件群組與公司後台群組。
 - LINE 訊息中心：接收 LINE Webhook，儲存文字、圖片、語音訊息，並可依案件與群組篩選。
 - LINE 回覆限制：客戶群只同步與記錄，助理只在公司後台群組回答問題與發提醒。
-- AI 任務草稿：目前已保留 `ai_tasks` collection 與基本分析流程，完整 MVP4 會再收斂來源與審核流程。
+- LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「仍待處理」。
+- AI 任務審核：案件 LINE 群組會產生 AI 草稿，人工核准後才轉成正式任務。
 - Firebase Authentication：Email/Password 登入。
+- Firestore Rules：MVP4 角色權限版，支援 `owner` / `admin` / `staff` / `viewer`。
 - Netlify 部署與排程提醒。
 
 ## 技術架構
@@ -76,6 +78,15 @@ OPENAI_MODEL=
 `FIREBASE_STORAGE_BUCKET` 用於 LINE 圖片與語音訊息存到 Firebase Storage。通常可以和 `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` 填同一個值，例如 `your-project.appspot.com`。
 
 ## Firestore Collections
+
+### users
+
+- email
+- displayName
+- role: `owner` / `admin` / `staff` / `viewer`
+- active
+- createdAt
+- updatedAt
 
 ### projects
 
@@ -154,6 +165,8 @@ OPENAI_MODEL=
 
 - projectId
 - sourceMessageId
+- sourceGroupId
+- sourceSenderName
 - title
 - description
 - taskType: `promise` / `change` / `followup` / `payment` / `invoice`
@@ -161,6 +174,10 @@ OPENAI_MODEL=
 - assignedTo
 - dueDate
 - createdByAI
+- reviewStatus: `pending` / `approved` / `rejected`
+- approvedTaskId
+- reviewedBy
+- reviewedAt
 - createdAt
 
 ### reminder_logs
@@ -178,6 +195,9 @@ OPENAI_MODEL=
 - lastRemindedOn
 - confirmedBy
 - confirmedAt
+- snoozedUntil
+- actionBy
+- lastAction
 - createdAt
 - updatedAt
 
@@ -201,6 +221,7 @@ LINE 訊息進入後會：
 - 依 `groupId` 尋找 `line_groups`。
 - 客戶群組只儲存訊息，不主動回覆。
 - 公司後台群組可以回答問題與接收提醒。
+- 只有已綁定案件的客戶群組會建立 AI 任務草稿。
 - 文字訊息存到 Firestore `messages.text`。
 - 圖片與語音會下載到 Firebase Storage，並把公開下載連結存到 `messages.fileUrl`。
 
@@ -238,9 +259,38 @@ Netlify Scheduled Function:
 
 已確認的提醒會寫入 `reminder_logs`，避免同一件事持續被提醒；未確認的提醒會繼續出現在提醒流程中。
 
+## Firestore Rules 角色設定
+
+MVP4 起，`firestore.rules` 改為角色權限版。發布新版 Rules 前，請先到 Firebase Console 建立自己的使用者角色資料，否則登入後會沒有讀寫權限。
+
+請先在 Firestore 建立：
+
+```text
+users/{你的 Firebase Authentication uid}
+```
+
+範例欄位：
+
+```json
+{
+  "email": "your-email@example.com",
+  "displayName": "VIC",
+  "role": "owner",
+  "active": true
+}
+```
+
+角色權限：
+
+- `owner`：可讀寫全部營運資料，也可管理使用者與 LINE 群組設定。
+- `admin`：可讀寫全部營運資料，也可管理使用者與 LINE 群組設定。
+- `staff`：可讀寫案件、任務、工期、關鍵節點、訊息、AI 任務、提醒紀錄。
+- `viewer`：只能查看資料，不能新增、修改、刪除。
+
 ## MVP4 待辦
 
-- LINE 提醒訊息加入按鈕：已確認、待處理、延後提醒。
-- AI 建立任務來源收斂：避免未綁定案件群組或公司後台群組直接產生正式任務。
-- AI 任務審核流程：AI 先建立草稿，人工確認後再轉正式任務。
-- Firestore Rules 角色權限：目前仍是 MVP 等級，登入者可讀寫全部資料；MVP4 要加入角色與資料範圍限制。
+- LINE 提醒訊息加入按鈕：已完成基礎版。
+- AI 建立任務來源收斂：已完成基礎版。
+- AI 任務審核流程：已完成基礎版。
+- Firestore Rules 角色權限：已完成基礎版，發布前需先建立 `users/{uid}`。
+- 待補：LINE 按鈕支援指定負責人、延後自訂日期。

@@ -69,7 +69,10 @@ export default function RiskCenterPage() {
     () => activeTasks.filter((task) => isTaskDueToday(task.dueDate, task.status)),
     [activeTasks]
   );
-  const activeAiTasks = useMemo(() => aiTasks.filter((task) => task.status !== "done"), [aiTasks]);
+  const activeAiTasks = useMemo(
+    () => aiTasks.filter((task) => task.reviewStatus === "approved" && task.status !== "done"),
+    [aiTasks]
+  );
   const highRiskAiTasks = useMemo(
     () => activeAiTasks.filter((task) => ["change", "payment", "invoice"].includes(task.taskType)),
     [activeAiTasks]

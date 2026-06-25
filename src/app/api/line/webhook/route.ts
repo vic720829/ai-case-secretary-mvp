@@ -34,6 +34,10 @@ export async function POST(request: Request) {
 }
 
 async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
+  if (event.type === "postback") {
+    return handleLinePostback(db, event);
+  }
+
   if (event.type !== "message" || !event.message) {
     return { skipped: true, reason: "Unsupported event" };
   }
@@ -63,13 +67,16 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   });
 
   if (messageType === "text" && event.message.text) {
-    const suggestions = await analyzeMessageForAiTasks(event.message.text);
+    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const suggestions = shouldCreateAiDrafts ? await analyzeMessageForAiTasks(event.message.text) : [];
 
     await Promise.all(
       suggestions.map((suggestion) =>
         db.collection("ai_tasks").add({
           projectId,
           sourceMessageId: messageRef.id,
+          sourceGroupId: groupId,
+          sourceSenderName: senderName,
           title: suggestion.title,
           description: suggestion.description,
           taskType: suggestion.taskType,
@@ -77,6 +84,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           assignedTo: suggestion.assignedTo ?? "",
           dueDate: dateStringToTimestamp(suggestion.dueDate),
           createdByAI: true,
+          reviewStatus: "pending",
+          reviewedBy: "",
+          reviewedAt: null,
+          approvedTaskId: "",
           createdAt: FieldValue.serverTimestamp()
         })
       )
@@ -89,10 +100,86 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
     await messageRef.update({ isProcessed: true });
 
-    return { messageId: messageRef.id, aiTasks: suggestions.length, projectId };
+    return {
+      messageId: messageRef.id,
+      aiTaskDrafts: suggestions.length,
+      projectId,
+      aiSkippedReason: shouldCreateAiDrafts ? "" : "Only bound project LINE groups create AI task drafts"
+    };
   }
 
-  return { messageId: messageRef.id, aiTasks: 0, projectId };
+  return { messageId: messageRef.id, aiTaskDrafts: 0, projectId };
+}
+
+async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
+  const params = new URLSearchParams(event.postback?.data ?? "");
+  const action = params.get("action") ?? "";
+  const key = params.get("key") ?? "";
+
+  if (!key || !["confirm_reminder", "snooze_reminder", "keep_reminder"].includes(action)) {
+    return { skipped: true, reason: "Unsupported postback" };
+  }
+
+  const senderName = await getLineSenderName(event);
+  const reminderRef = db.collection("reminder_logs").doc(key);
+  const reminderSnapshot = await reminderRef.get();
+
+  if (!reminderSnapshot.exists) {
+    await replyLineText(event.replyToken, "找不到這筆提醒，可能已被刪除或重新建立。");
+    return { skipped: true, reason: "Reminder not found", key };
+  }
+
+  const reminder = reminderSnapshot.data() ?? {};
+  const title = String(reminder.title ?? "未命名提醒");
+
+  if (action === "confirm_reminder") {
+    await reminderRef.set(
+      {
+        status: "confirmed",
+        confirmedBy: senderName,
+        confirmedAt: FieldValue.serverTimestamp(),
+        snoozedUntil: FieldValue.delete(),
+        lastAction: "confirmed",
+        actionBy: senderName,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+    await replyLineText(event.replyToken, `已確認：${title}\n這筆提醒不會再出現在每日提醒。`);
+    return { ok: true, action, key };
+  }
+
+  if (action === "snooze_reminder") {
+    const days = clampNumber(Number(params.get("days") ?? 1), 1, 14);
+    const snoozedUntil = datePlusDays(taipeiDateString(), days);
+
+    await reminderRef.set(
+      {
+        status: "pending",
+        snoozedUntil,
+        lastAction: "snoozed",
+        actionBy: senderName,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+    await replyLineText(event.replyToken, `已延後提醒：${title}\n下次提醒日：${snoozedUntil.replaceAll("-", "/")}`);
+    return { ok: true, action, key, snoozedUntil };
+  }
+
+  await reminderRef.set(
+    {
+      status: "pending",
+      snoozedUntil: FieldValue.delete(),
+      lastAction: "kept_pending",
+      actionBy: senderName,
+      updatedAt: FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
+  await replyLineText(event.replyToken, `已保留待處理：${title}`);
+
+  return { ok: true, action, key };
 }
 
 function normalizeMessageType(type: string): "text" | "image" | "audio" {
@@ -145,4 +232,35 @@ function getFileExtension(contentType: string, messageType: "image" | "audio") {
 
 function sanitizePathSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function taipeiDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+
+  return `${year}-${month}-${day}`;
+}
+
+function datePlusDays(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+
+  return [
+    parsed.getUTCFullYear(),
+    String(parsed.getUTCMonth() + 1).padStart(2, "0"),
+    String(parsed.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (Number.isNaN(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }

@@ -4,6 +4,7 @@ export type RiskLevel = "low" | "medium" | "high";
 export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
+export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
 export type ReminderType =
   | "stage_before_start"
@@ -114,6 +115,8 @@ export type Message = Omit<MessageInput, "timestamp"> & {
 export type AiTaskInput = {
   projectId: string;
   sourceMessageId: string;
+  sourceGroupId: string;
+  sourceSenderName: string;
   title: string;
   description: string;
   taskType: AiTaskType;
@@ -121,11 +124,16 @@ export type AiTaskInput = {
   assignedTo: string;
   dueDate: Date | null;
   createdByAI: boolean;
+  reviewStatus: AiTaskReviewStatus;
+  approvedTaskId: string;
+  reviewedBy: string;
+  reviewedAt: Date | null;
 };
 
-export type AiTask = Omit<AiTaskInput, "dueDate"> & {
+export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt"> & {
   id: string;
   dueDate: Date | null;
+  reviewedAt: Date | null;
   createdAt: Date | null;
 };
 
@@ -141,11 +149,14 @@ export type ReminderLogInput = {
   status: ReminderStatus;
   firstTriggeredOn: string;
   lastRemindedOn: string;
+  snoozedUntil?: string;
 };
 
 export type ReminderLog = ReminderLogInput & {
   id: string;
   confirmedBy: string;
+  actionBy: string;
+  lastAction: string;
   createdAt: Date | null;
   updatedAt: Date | null;
   confirmedAt: Date | null;

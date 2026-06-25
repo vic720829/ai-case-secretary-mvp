@@ -2,7 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey, dateMinusDays } from "../lib/reminders";
 import type { ReminderSourceType, ReminderType } from "../lib/types";
-import { pushLineText } from "./line";
+import { pushLineMessages, type LinePushMessage } from "./line";
 
 type ReminderItem = {
   key: string;
@@ -15,6 +15,7 @@ type ReminderItem = {
   dueDate: string;
   firstTriggeredOn: string;
   lastRemindedOn: string;
+  snoozedUntil?: string;
 };
 
 type ProjectSummary = {
@@ -38,8 +39,8 @@ export async function sendDailyAdminReminder() {
     return { ok: true, sent: 0, failed: 0, reason: "No admin LINE groups configured" };
   }
 
-  const text = await buildDailyReminderText();
-  const results = await Promise.allSettled(adminGroups.map((group) => pushLineText(group.groupId, text)));
+  const messages = await buildDailyReminderMessages();
+  const results = await Promise.allSettled(adminGroups.map((group) => pushLineMessages(group.groupId, messages)));
 
   return {
     ok: true,
@@ -50,6 +51,20 @@ export async function sendDailyAdminReminder() {
 }
 
 export async function buildDailyReminderText() {
+  const content = await buildDailyReminderContent();
+  return content.text;
+}
+
+export async function buildDailyReminderMessages(): Promise<LinePushMessage[]> {
+  const content = await buildDailyReminderContent();
+  const actionMessages = content.pendingItems
+    .slice(0, 4)
+    .map((item) => toReminderActionMessage(item, content.projects));
+
+  return [{ type: "text", text: content.text }, ...actionMessages];
+}
+
+async function buildDailyReminderContent() {
   const db = getAdminDb();
   const today = taipeiDateString();
   const [projectSnapshot, taskSnapshot, milestoneSnapshot, stageSnapshot, aiTaskSnapshot] = await Promise.all([
@@ -155,11 +170,13 @@ export async function buildDailyReminderText() {
 
   aiTaskSnapshot.docs.forEach((doc) => {
     const aiTask = doc.data();
+    const reviewStatus = String(aiTask.reviewStatus ?? "pending");
     const status = String(aiTask.status ?? "todo");
     const dueDate = timestampToTaipeiDate(aiTask.dueDate);
     const projectId = String(aiTask.projectId ?? "");
     const title = String(aiTask.title ?? "未命名 AI 任務");
 
+    if (reviewStatus !== "approved") return;
     if (status === "done" || !dueDate) return;
     if (dueDate === today) {
       candidates.push(toReminderItem("ai_task", doc.id, "due_today", projectId, "AI 任務今天到期", title, dueDate, today));
@@ -180,14 +197,18 @@ export async function buildDailyReminderText() {
     formatSection("高風險", pendingItems.filter((item) => item.reminderType === "high_risk"), projects)
   ].filter(Boolean);
 
-  return [
-    "AI案件秘書每日提醒",
-    `日期：${today.replaceAll("-", "/")}`,
-    "",
-    sections.length ? sections.join("\n\n") : "目前沒有待處理提醒。",
-    "",
-    "提醒：到後台提醒中心按「已處理」後，就不會再提醒。LINE 按鈕將在下一階段補上。"
-  ].join("\n");
+  return {
+    text: [
+      "AI案件秘書每日提醒",
+      `日期：${today.replaceAll("-", "/")}`,
+      "",
+      sections.length ? sections.join("\n\n") : "目前沒有需要提醒的事項。",
+      "",
+      "可直接點下方提醒卡片的按鈕確認；已確認後不會再提醒。"
+    ].join("\n"),
+    pendingItems,
+    projects
+  };
 }
 
 async function upsertPendingReminderLogs(items: ReminderItem[]) {
@@ -217,20 +238,7 @@ async function upsertPendingReminderLogs(items: ReminderItem[]) {
 async function listPendingReminderItems(today: string) {
   const db = getAdminDb();
   const snapshot = await db.collection("reminder_logs").where("status", "==", "pending").get();
-
-  await Promise.all(
-    snapshot.docs.map((doc) =>
-      doc.ref.set(
-        {
-          lastRemindedOn: today,
-          updatedAt: FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      )
-    )
-  );
-
-  return snapshot.docs
+  const pendingItems = snapshot.docs
     .map((doc) => doc.data())
     .map((data) => ({
       key: String(data.key ?? ""),
@@ -242,8 +250,24 @@ async function listPendingReminderItems(today: string) {
       title: String(data.title ?? "未命名提醒"),
       dueDate: String(data.dueDate ?? ""),
       firstTriggeredOn: String(data.firstTriggeredOn ?? today),
-      lastRemindedOn: String(data.lastRemindedOn ?? today)
-    }));
+      lastRemindedOn: String(data.lastRemindedOn ?? today),
+      snoozedUntil: data.snoozedUntil ? String(data.snoozedUntil) : ""
+    }))
+    .filter((item) => !item.snoozedUntil || item.snoozedUntil <= today);
+
+  await Promise.all(
+    pendingItems.map((item) =>
+      db.collection("reminder_logs").doc(item.key).set(
+        {
+          lastRemindedOn: today,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      )
+    )
+  );
+
+  return pendingItems;
 }
 
 function toReminderItem(
@@ -270,23 +294,64 @@ function toReminderItem(
   };
 }
 
+function toReminderActionMessage(item: ReminderItem, projects: Map<string, ProjectSummary>): LinePushMessage {
+  const projectName = getProjectName(item, projects);
+  const title = truncate(`${item.sourceLabel}`, 40);
+  const text = truncate(`[${projectName}] ${item.title}${item.dueDate ? `｜${item.dueDate.replaceAll("-", "/")}` : ""}`, 160);
+  const encodedKey = encodeURIComponent(item.key);
+
+  return {
+    type: "template",
+    altText: truncate(`提醒確認：${item.title}`, 400),
+    template: {
+      type: "buttons",
+      title,
+      text,
+      actions: [
+        {
+          type: "postback",
+          label: "已確認",
+          data: `action=confirm_reminder&key=${encodedKey}`,
+          displayText: truncate(`已確認：${item.title}`, 300)
+        },
+        {
+          type: "postback",
+          label: "明天再提醒",
+          data: `action=snooze_reminder&key=${encodedKey}&days=1`,
+          displayText: truncate(`明天再提醒：${item.title}`, 300)
+        },
+        {
+          type: "postback",
+          label: "仍待處理",
+          data: `action=keep_reminder&key=${encodedKey}`,
+          displayText: truncate(`仍待處理：${item.title}`, 300)
+        }
+      ]
+    }
+  };
+}
+
 function formatSection(title: string, items: ReminderItem[], projects: Map<string, ProjectSummary>) {
   if (!items.length) return "";
 
   const lines = items.slice(0, 8).map((item) => formatReminderLine(item, projects));
   const hiddenCount = items.length - lines.length;
 
-  return [`${title}：${items.length} 項`, ...lines, hiddenCount > 0 ? `- 另有 ${hiddenCount} 項` : ""]
+  return [`${title}：${items.length} 件`, ...lines, hiddenCount > 0 ? `- 另有 ${hiddenCount} 件` : ""]
     .filter(Boolean)
     .join("\n");
 }
 
 function formatReminderLine(item: ReminderItem, projects: Map<string, ProjectSummary>) {
-  const project = projects.get(item.projectId);
-  const projectName = project ? `${project.name}${project.clientName ? ` / ${project.clientName}` : ""}` : "未綁定案件";
+  const projectName = getProjectName(item, projects);
   const dueDate = item.dueDate ? `（${item.dueDate.replaceAll("-", "/")}）` : "";
 
   return `- [${projectName}] ${item.sourceLabel}：${item.title}${dueDate}`;
+}
+
+function getProjectName(item: ReminderItem, projects: Map<string, ProjectSummary>) {
+  const project = projects.get(item.projectId);
+  return project ? `${project.name}${project.clientName ? ` / ${project.clientName}` : ""}` : "未綁定案件";
 }
 
 function timestampToTaipeiDate(value: unknown) {
@@ -317,4 +382,8 @@ function taipeiDateString(date = new Date()) {
   const day = parts.find((part) => part.type === "day")?.value ?? "01";
 
   return `${year}-${month}-${day}`;
+}
+
+function truncate(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }

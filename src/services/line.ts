@@ -15,7 +15,31 @@ export type LineWebhookEvent = {
     type: "text" | "image" | "audio" | string;
     text?: string;
   };
+  postback?: {
+    data?: string;
+  };
 };
+
+export type LinePushMessage =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "template";
+      altText: string;
+      template: {
+        type: "buttons";
+        title?: string;
+        text: string;
+        actions: Array<{
+          type: "postback";
+          label: string;
+          data: string;
+          displayText?: string;
+        }>;
+      };
+    };
 
 export function verifyLineSignature(rawBody: string, signature: string | null) {
   if (process.env.LINE_SKIP_SIGNATURE_VERIFY === "true") return true;
@@ -112,10 +136,14 @@ export async function downloadLineMessageContent(messageId: string) {
 }
 
 export async function pushLineText(to: string, text: string) {
+  return pushLineMessages(to, [{ type: "text", text }]);
+}
+
+export async function pushLineMessages(to: string, messages: LinePushMessage[]) {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!to || !accessToken) return;
 
-  await fetch("https://api.line.me/v2/bot/message/push", {
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -123,12 +151,36 @@ export async function pushLineText(to: string, text: string) {
     },
     body: JSON.stringify({
       to,
-      messages: [
-        {
-          type: "text",
-          text: text.slice(0, 4900)
-        }
-      ]
+      messages: messages.slice(0, 5).map(normalizeLinePushMessage)
     })
   });
+
+  if (!response.ok) {
+    throw new Error(`LINE push failed: ${response.status}`);
+  }
+}
+
+function normalizeLinePushMessage(message: LinePushMessage): LinePushMessage {
+  if (message.type === "text") {
+    return {
+      ...message,
+      text: message.text.slice(0, 4900)
+    };
+  }
+
+  return {
+    ...message,
+    altText: message.altText.slice(0, 400),
+    template: {
+      ...message.template,
+      title: message.template.title?.slice(0, 40),
+      text: message.template.text.slice(0, 160),
+      actions: message.template.actions.slice(0, 4).map((action) => ({
+        ...action,
+        label: action.label.slice(0, 20),
+        data: action.data.slice(0, 300),
+        displayText: action.displayText?.slice(0, 300)
+      }))
+    }
+  };
 }

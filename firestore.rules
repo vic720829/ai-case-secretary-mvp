@@ -6,36 +6,86 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserProfile() {
+      return signedIn() && exists(userPath());
+    }
+
+    function userRole() {
+      return hasUserProfile() ? get(userPath()).data.role : "";
+    }
+
+    function isActiveUser() {
+      return hasUserProfile() && get(userPath()).data.active != false;
+    }
+
+    function hasAnyRole(roles) {
+      return signedIn() && isActiveUser() && userRole() in roles;
+    }
+
+    function canReadOps() {
+      return hasAnyRole(["owner", "admin", "staff", "viewer"]);
+    }
+
+    function canWriteOps() {
+      return hasAnyRole(["owner", "admin", "staff"]);
+    }
+
+    function canManageUsers() {
+      return hasAnyRole(["owner", "admin"]);
+    }
+
+    function canManageSystemSettings() {
+      return hasAnyRole(["owner", "admin"]);
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || canManageUsers());
+      allow list: if canManageUsers();
+      allow create, update, delete: if canManageUsers();
+    }
+
     match /projects/{projectId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /tasks/{taskId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /projectStages/{stageId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /milestones/{milestoneId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /line_groups/{lineGroupId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canManageSystemSettings();
     }
 
     match /messages/{messageId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /ai_tasks/{aiTaskId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
 
     match /reminder_logs/{reminderLogId} {
-      allow read, create, update, delete: if signedIn();
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
     }
   }
 }

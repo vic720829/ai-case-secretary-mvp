@@ -105,6 +105,7 @@ export function buildReminderCandidates({
   });
 
   aiTasks.forEach((aiTask) => {
+    if (aiTask.reviewStatus !== "approved") return;
     if (aiTask.status === "done") return;
 
     const dueDate = aiTask.dueDate ? dateToInputValue(aiTask.dueDate) : "";
