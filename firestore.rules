@@ -33,5 +33,9 @@ service cloud.firestore {
     match /ai_tasks/{aiTaskId} {
       allow read, create, update, delete: if signedIn();
     }
+
+    match /reminder_logs/{reminderLogId} {
+      allow read, create, update, delete: if signedIn();
+    }
   }
 }

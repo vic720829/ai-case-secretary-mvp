@@ -1,12 +1,20 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
+import { createReminderKey, dateMinusDays } from "../lib/reminders";
+import type { ReminderSourceType, ReminderType } from "../lib/types";
 import { pushLineText } from "./line";
 
 type ReminderItem = {
+  key: string;
+  sourceType: ReminderSourceType;
+  sourceId: string;
+  reminderType: ReminderType;
   projectId: string;
-  source: string;
+  sourceLabel: string;
   title: string;
-  dueDate?: string;
+  dueDate: string;
+  firstTriggeredOn: string;
+  lastRemindedOn: string;
 };
 
 type ProjectSummary = {
@@ -61,22 +69,25 @@ export async function buildDailyReminderText() {
     });
   });
 
-  const dueToday: ReminderItem[] = [];
-  const stageStartReminders: ReminderItem[] = [];
-  const milestoneReminders: ReminderItem[] = [];
-  const overdue: ReminderItem[] = [];
-  const highRisk: ReminderItem[] = [];
+  const candidates: ReminderItem[] = [];
 
   taskSnapshot.docs.forEach((doc) => {
     const task = doc.data();
     const status = String(task.status ?? "todo");
     const dueDate = String(task.dueDate ?? "");
-    const item = toReminderItem(task.projectId, "任務", task.title, dueDate);
+    const projectId = String(task.projectId ?? "");
+    const title = String(task.title ?? "未命名任務");
 
     if (status === "done") return;
-    if (dueDate === today) dueToday.push(item);
-    if (dueDate && dueDate < today) overdue.push(item);
-    if (task.riskLevel === "high") highRisk.push(item);
+    if (dueDate === today) {
+      candidates.push(toReminderItem("task", doc.id, "due_today", projectId, "任務今天到期", title, dueDate, today));
+    }
+    if (dueDate && dueDate < today) {
+      candidates.push(toReminderItem("task", doc.id, "overdue", projectId, "任務已逾期", title, dueDate, today));
+    }
+    if (task.riskLevel === "high") {
+      candidates.push(toReminderItem("task", doc.id, "high_risk", projectId, "高風險任務", title, dueDate, today));
+    }
   });
 
   milestoneSnapshot.docs.forEach((doc) => {
@@ -84,16 +95,32 @@ export async function buildDailyReminderText() {
     const completed = Boolean(milestone.completed);
     const dueDate = String(milestone.dueDate ?? "");
     const reminderDaysBefore = Number(milestone.reminderDaysBefore ?? 0);
-    const item = toReminderItem(milestone.projectId, "關鍵節點", milestone.title, dueDate);
+    const projectId = String(milestone.projectId ?? "");
+    const title = String(milestone.title ?? "未命名關鍵節點");
 
     if (completed) return;
-    if (dueDate === today) dueToday.push(item);
-    if (dueDate && dueDate < today) overdue.push(item);
-    if (milestone.riskLevel === "high") highRisk.push(item);
-    if (dueDate && reminderDaysBefore > 0 && dateMinusDays(dueDate, reminderDaysBefore) === today) {
-      milestoneReminders.push(
-        toReminderItem(milestone.projectId, `關鍵節點提醒：${reminderDaysBefore} 天後`, milestone.title, dueDate)
+    if (dueDate && reminderDaysBefore > 0 && dateMinusDays(dueDate, reminderDaysBefore) <= today) {
+      candidates.push(
+        toReminderItem(
+          "milestone",
+          doc.id,
+          "milestone_before_due",
+          projectId,
+          `關鍵節點提醒：${reminderDaysBefore} 天前`,
+          title,
+          dueDate,
+          today
+        )
       );
+    }
+    if (dueDate === today) {
+      candidates.push(toReminderItem("milestone", doc.id, "due_today", projectId, "關鍵節點今天到期", title, dueDate, today));
+    }
+    if (dueDate && dueDate < today) {
+      candidates.push(toReminderItem("milestone", doc.id, "overdue", projectId, "關鍵節點已逾期", title, dueDate, today));
+    }
+    if (milestone.riskLevel === "high") {
+      candidates.push(toReminderItem("milestone", doc.id, "high_risk", projectId, "高風險關鍵節點", title, dueDate, today));
     }
   });
 
@@ -103,15 +130,26 @@ export async function buildDailyReminderText() {
     const startDate = String(stage.startDate ?? "");
     const endDate = String(stage.endDate ?? "");
     const reminderDaysBefore = Number(stage.reminderDaysBefore ?? 0);
+    const projectId = String(stage.projectId ?? "");
+    const title = String(stage.stageName ?? "未命名工期節點");
 
-    if (status !== "done" && endDate && endDate < today) {
-      overdue.push(toReminderItem(stage.projectId, "工期節點", stage.stageName, endDate));
-    }
-
-    if (status !== "done" && startDate && reminderDaysBefore > 0 && dateMinusDays(startDate, reminderDaysBefore) === today) {
-      stageStartReminders.push(
-        toReminderItem(stage.projectId, `進場提醒：${reminderDaysBefore} 天後`, stage.stageName, startDate)
+    if (status === "done") return;
+    if (startDate && reminderDaysBefore > 0 && dateMinusDays(startDate, reminderDaysBefore) <= today) {
+      candidates.push(
+        toReminderItem(
+          "stage",
+          doc.id,
+          "stage_before_start",
+          projectId,
+          `進場提醒：${reminderDaysBefore} 天前`,
+          title,
+          startDate,
+          today
+        )
       );
+    }
+    if (endDate && endDate < today) {
+      candidates.push(toReminderItem("stage", doc.id, "overdue", projectId, "工期節點已逾期", title, endDate, today));
     }
   });
 
@@ -119,37 +157,116 @@ export async function buildDailyReminderText() {
     const aiTask = doc.data();
     const status = String(aiTask.status ?? "todo");
     const dueDate = timestampToTaipeiDate(aiTask.dueDate);
+    const projectId = String(aiTask.projectId ?? "");
+    const title = String(aiTask.title ?? "未命名 AI 任務");
 
     if (status === "done" || !dueDate) return;
-    const item = toReminderItem(aiTask.projectId, `AI ${aiTask.taskType ?? "任務"}`, aiTask.title, dueDate);
-    if (dueDate === today) dueToday.push(item);
-    if (dueDate < today) overdue.push(item);
+    if (dueDate === today) {
+      candidates.push(toReminderItem("ai_task", doc.id, "due_today", projectId, "AI 任務今天到期", title, dueDate, today));
+    }
+    if (dueDate < today) {
+      candidates.push(toReminderItem("ai_task", doc.id, "overdue", projectId, "AI 任務已逾期", title, dueDate, today));
+    }
   });
 
+  await upsertPendingReminderLogs(candidates);
+  const pendingItems = await listPendingReminderItems(today);
+
   const sections = [
-    formatSection("進場提醒", stageStartReminders, projects),
-    formatSection("關鍵節點提醒", milestoneReminders, projects),
-    formatSection("今天到期", dueToday, projects),
-    formatSection("已逾期", overdue, projects),
-    formatSection("高風險", highRisk, projects)
+    formatSection("進場提醒", pendingItems.filter((item) => item.reminderType === "stage_before_start"), projects),
+    formatSection("關鍵節點提醒", pendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
+    formatSection("今天到期", pendingItems.filter((item) => item.reminderType === "due_today"), projects),
+    formatSection("已逾期", pendingItems.filter((item) => item.reminderType === "overdue"), projects),
+    formatSection("高風險", pendingItems.filter((item) => item.reminderType === "high_risk"), projects)
   ].filter(Boolean);
 
   return [
     "AI案件秘書每日提醒",
     `日期：${today.replaceAll("-", "/")}`,
     "",
-    sections.length ? sections.join("\n\n") : "目前沒有今天到期、逾期或高風險事項。",
+    sections.length ? sections.join("\n\n") : "目前沒有待處理提醒。",
     "",
-    "提醒：這則訊息只會發送到公司後台群組。"
+    "提醒：到後台提醒中心按「已處理」後，就不會再提醒。LINE 按鈕將在下一階段補上。"
   ].join("\n");
 }
 
-function toReminderItem(projectId: unknown, source: string, title: unknown, dueDate?: string): ReminderItem {
+async function upsertPendingReminderLogs(items: ReminderItem[]) {
+  const db = getAdminDb();
+
+  await Promise.all(
+    items.map(async (item) => {
+      const ref = db.collection("reminder_logs").doc(item.key);
+      const snapshot = await ref.get();
+      const data = snapshot.exists ? snapshot.data() : null;
+
+      if (data?.status === "confirmed") return;
+
+      await ref.set(
+        {
+          ...item,
+          status: "pending",
+          createdAt: data?.createdAt ?? FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+    })
+  );
+}
+
+async function listPendingReminderItems(today: string) {
+  const db = getAdminDb();
+  const snapshot = await db.collection("reminder_logs").where("status", "==", "pending").get();
+
+  await Promise.all(
+    snapshot.docs.map((doc) =>
+      doc.ref.set(
+        {
+          lastRemindedOn: today,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      )
+    )
+  );
+
+  return snapshot.docs
+    .map((doc) => doc.data())
+    .map((data) => ({
+      key: String(data.key ?? ""),
+      sourceType: String(data.sourceType ?? "task") as ReminderSourceType,
+      sourceId: String(data.sourceId ?? ""),
+      reminderType: String(data.reminderType ?? "due_today") as ReminderType,
+      projectId: String(data.projectId ?? ""),
+      sourceLabel: String(data.sourceLabel ?? ""),
+      title: String(data.title ?? "未命名提醒"),
+      dueDate: String(data.dueDate ?? ""),
+      firstTriggeredOn: String(data.firstTriggeredOn ?? today),
+      lastRemindedOn: String(data.lastRemindedOn ?? today)
+    }));
+}
+
+function toReminderItem(
+  sourceType: ReminderSourceType,
+  sourceId: string,
+  reminderType: ReminderType,
+  projectId: string,
+  sourceLabel: string,
+  title: string,
+  dueDate: string,
+  today: string
+): ReminderItem {
   return {
-    projectId: String(projectId ?? ""),
-    source,
-    title: String(title ?? "未命名事項"),
-    dueDate
+    key: createReminderKey(sourceType, sourceId, reminderType),
+    sourceType,
+    sourceId,
+    reminderType,
+    projectId,
+    sourceLabel,
+    title,
+    dueDate,
+    firstTriggeredOn: today,
+    lastRemindedOn: today
   };
 }
 
@@ -169,7 +286,7 @@ function formatReminderLine(item: ReminderItem, projects: Map<string, ProjectSum
   const projectName = project ? `${project.name}${project.clientName ? ` / ${project.clientName}` : ""}` : "未綁定案件";
   const dueDate = item.dueDate ? `（${item.dueDate.replaceAll("-", "/")}）` : "";
 
-  return `- [${projectName}] ${item.source}：${item.title}${dueDate}`;
+  return `- [${projectName}] ${item.sourceLabel}：${item.title}${dueDate}`;
 }
 
 function timestampToTaipeiDate(value: unknown) {
@@ -186,14 +303,6 @@ function timestampToTaipeiDate(value: unknown) {
   }
 
   return "";
-}
-
-function dateMinusDays(date: string, days: number) {
-  const parsed = new Date(`${date}T00:00:00+08:00`);
-  if (Number.isNaN(parsed.getTime())) return "";
-
-  parsed.setDate(parsed.getDate() - days);
-  return taipeiDateString(parsed);
 }
 
 function taipeiDateString(date = new Date()) {

@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -27,6 +28,8 @@ import type {
   ProjectInput,
   ProjectStage,
   ProjectStageInput,
+  ReminderLog,
+  ReminderLogInput,
   Task,
   TaskInput
 } from "./types";
@@ -38,6 +41,7 @@ const MILESTONES_COLLECTION = "milestones";
 const LINE_GROUPS_COLLECTION = "line_groups";
 const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
+const REMINDER_LOGS_COLLECTION = "reminder_logs";
 
 function requireDb() {
   if (!db) {
@@ -178,6 +182,29 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
   };
 }
 
+function reminderLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ReminderLog {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    key: data.key ?? snapshot.id,
+    sourceType: data.sourceType ?? "task",
+    sourceId: data.sourceId ?? "",
+    reminderType: data.reminderType ?? "due_today",
+    projectId: data.projectId ?? "",
+    title: data.title ?? "",
+    sourceLabel: data.sourceLabel ?? "",
+    dueDate: data.dueDate ?? "",
+    status: data.status ?? "pending",
+    firstTriggeredOn: data.firstTriggeredOn ?? "",
+    lastRemindedOn: data.lastRemindedOn ?? "",
+    confirmedBy: data.confirmedBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt),
+    confirmedAt: readTimestamp(data.confirmedAt)
+  };
+}
+
 export async function listProjects() {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -216,13 +243,22 @@ export async function updateProject(id: string, input: ProjectInput) {
 
 export async function deleteProject(id: string) {
   const database = requireDb();
-  const [linkedTasks, linkedStages, linkedMilestones, linkedLineGroups, linkedMessages, linkedAiTasks] = await Promise.all([
+  const [
+    linkedTasks,
+    linkedStages,
+    linkedMilestones,
+    linkedLineGroups,
+    linkedMessages,
+    linkedAiTasks,
+    linkedReminderLogs
+  ] = await Promise.all([
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_GROUPS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MESSAGES_COLLECTION), where("projectId", "==", id))),
-    getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id)))
+    getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id)))
   ]);
   const batch = writeBatch(database);
 
@@ -243,6 +279,9 @@ export async function deleteProject(id: string) {
   });
   linkedAiTasks.docs.forEach((aiTaskSnapshot) => {
     batch.delete(aiTaskSnapshot.ref);
+  });
+  linkedReminderLogs.docs.forEach((reminderLogSnapshot) => {
+    batch.delete(reminderLogSnapshot.ref);
   });
   batch.delete(doc(database, PROJECTS_COLLECTION, id));
 
@@ -462,4 +501,57 @@ export async function listAiTasksByProject(projectId: string) {
   return snapshot.docs
     .map(aiTaskFromDoc)
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export async function listReminderLogs() {
+  const database = requireDb();
+  const snapshot = await getDocs(collection(database, REMINDER_LOGS_COLLECTION));
+
+  return snapshot.docs
+    .map(reminderLogFromDoc)
+    .sort((a, b) => {
+      const statusOrder = a.status.localeCompare(b.status);
+      if (statusOrder) return statusOrder;
+      return (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99");
+    });
+}
+
+export async function upsertPendingReminderLog(input: ReminderLogInput) {
+  const database = requireDb();
+  const ref = doc(database, REMINDER_LOGS_COLLECTION, input.key);
+  const snapshot = await getDoc(ref);
+
+  if (snapshot.exists() && snapshot.data().status === "confirmed") {
+    return;
+  }
+
+  await setDoc(
+    ref,
+    {
+      ...input,
+      status: "pending",
+      updatedAt: serverTimestamp(),
+      createdAt: snapshot.exists() ? snapshot.data().createdAt ?? serverTimestamp() : serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+export async function confirmReminderLog(input: ReminderLogInput, confirmedBy: string) {
+  const database = requireDb();
+  const ref = doc(database, REMINDER_LOGS_COLLECTION, input.key);
+  const snapshot = await getDoc(ref);
+
+  await setDoc(
+    ref,
+    {
+      ...input,
+      status: "confirmed",
+      confirmedBy,
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdAt: snapshot.exists() ? snapshot.data().createdAt ?? serverTimestamp() : serverTimestamp()
+    },
+    { merge: true }
+  );
 }

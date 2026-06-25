@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Bell,
   BriefcaseBusiness,
   CalendarDays,
   ClipboardList,
@@ -19,6 +20,7 @@ import { useAuth } from "./AuthProvider";
 
 const navItems = [
   { href: "/risk-center", label: "今日風險", icon: AlertTriangle },
+  { href: "/reminders", label: "提醒中心", icon: Bell },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
   { href: "/schedule", label: "工期總表", icon: CalendarDays },
   { href: "/tasks", label: "任務列表", icon: ClipboardList },

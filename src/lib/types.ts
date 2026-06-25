@@ -4,6 +4,14 @@ export type RiskLevel = "low" | "medium" | "high";
 export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
+export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
+export type ReminderType =
+  | "stage_before_start"
+  | "milestone_before_due"
+  | "due_today"
+  | "overdue"
+  | "high_risk";
+export type ReminderStatus = "pending" | "confirmed";
 
 export type ProjectInput = {
   name: string;
@@ -117,4 +125,26 @@ export type AiTask = Omit<AiTaskInput, "dueDate"> & {
   id: string;
   dueDate: Date | null;
   createdAt: Date | null;
+};
+
+export type ReminderLogInput = {
+  key: string;
+  sourceType: ReminderSourceType;
+  sourceId: string;
+  reminderType: ReminderType;
+  projectId: string;
+  title: string;
+  sourceLabel: string;
+  dueDate: string;
+  status: ReminderStatus;
+  firstTriggeredOn: string;
+  lastRemindedOn: string;
+};
+
+export type ReminderLog = ReminderLogInput & {
+  id: string;
+  confirmedBy: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  confirmedAt: Date | null;
 };

@@ -12,6 +12,7 @@
 - 月曆新增工程表：可從工期總表用月曆建立工程階段
 - 進場前提醒：工期節點可設定進場前 N 天提醒，推送到公司後台 LINE 群
 - 關鍵節點提前提醒：關鍵節點可設定到期前 N 天提醒
+- 提醒中心：提醒預設待處理，按「已處理」後才停止每日提醒
 - 案件進度：每個案件可管理工期節點與關鍵節點
 - 關鍵節點：可綁定到指定工期節點
 - 任務管理：列表、新增、詳情編輯、刪除
@@ -110,6 +111,24 @@ npm run dev
 - createdAt
 - updatedAt
 
+### reminder_logs
+
+- key
+- sourceType: `task` / `stage` / `milestone` / `ai_task`
+- sourceId
+- reminderType: `stage_before_start` / `milestone_before_due` / `due_today` / `overdue` / `high_risk`
+- projectId
+- title
+- sourceLabel
+- dueDate
+- status: `pending` / `confirmed`
+- firstTriggeredOn
+- lastRemindedOn
+- confirmedBy
+- confirmedAt
+- createdAt
+- updatedAt
+
 ## LINE Webhook
 
 Webhook route:
@@ -189,3 +208,7 @@ Publish directory:
 - 高風險
 
 部署後可到 Netlify 的 Functions 頁面找到 `daily-reminder`，使用 `Run now` 手動測試。
+
+下一階段待補：
+
+- LINE 提醒訊息中的「已處理」按鈕，直接從 LINE 群組確認提醒。
