@@ -1,18 +1,16 @@
 "use client";
 
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Flag, Filter, Gauge, Plus } from "lucide-react";
+import { AlertCircle, CalendarDays, Flag, Filter, Gauge } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { createProjectStage, listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress } from "@/lib/progress";
-import { commonStageNames } from "@/lib/stageNames";
 import type { Milestone, Project, ProjectStage, ProjectStageStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./PageHeader";
-import { StageNameInput } from "./StageNameInput";
 import { ProjectStageStatusBadge } from "./StatusBadges";
 
 type StageFilter = "all" | "overdue" | ProjectStageStatus;
@@ -24,6 +22,7 @@ export function ScheduleClient() {
   const [projectFilter, setProjectFilter] = useState("");
   const [designerFilter, setDesignerFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StageFilter>("all");
+  const [siteDate, setSiteDate] = useState(todayInputValue());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -83,33 +82,23 @@ export function ScheduleClient() {
       });
   }, [designerFilter, projectById, projectFilter, stages, statusFilter]);
 
-  const scheduledProjectCount = useMemo(() => new Set(stages.map((stage) => stage.projectId)).size, [stages]);
   const overdueStages = useMemo(
     () => stages.filter((stage) => stage.status !== "done" && isDateOverdue(stage.endDate)),
     [stages]
   );
+  const siteRows = useMemo(
+    () =>
+      stages
+        .filter((stage) => stageHappensOnDate(stage, siteDate))
+        .sort((a, b) => {
+          const projectA = projectById.get(a.projectId)?.name ?? "";
+          const projectB = projectById.get(b.projectId)?.name ?? "";
 
-  async function handleCreateStage(input: {
-    projectId: string;
-    stageName: string;
-    startDate: string;
-    endDate: string;
-    reminderDaysBefore: number;
-  }) {
-    const projectStages = stagesByProject.get(input.projectId) ?? [];
-    const nextSortOrder = Math.max(0, ...projectStages.map((stage) => stage.sortOrder)) + 1;
-
-    await createProjectStage({
-      projectId: input.projectId,
-      stageName: input.stageName,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      status: "todo",
-      sortOrder: nextSortOrder,
-      reminderDaysBefore: input.reminderDaysBefore
-    });
-    await loadData();
-  }
+          return projectA.localeCompare(projectB, "zh-TW") || a.sortOrder - b.sortOrder;
+        }),
+    [projectById, siteDate, stages]
+  );
+  const siteProjectCount = useMemo(() => new Set(siteRows.map((stage) => stage.projectId)).size, [siteRows]);
 
   if (loading) {
     return <LoadingState label="正在讀取工期總表" />;
@@ -132,11 +121,16 @@ export function ScheduleClient() {
 
       {!error ? (
         <>
-          <ScheduleCalendarCreator projects={projects} stages={stages} onCreateStage={handleCreateStage} />
+          <DailySiteSchedule
+            date={siteDate}
+            rows={siteRows}
+            projectById={projectById}
+            onDateChange={setSiteDate}
+          />
 
           <div className="grid gap-4 md:grid-cols-4">
-            <MetricCard title="有工期案件" value={scheduledProjectCount} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
-            <MetricCard title="工期節點" value={stages.length} icon={<Gauge className="h-5 w-5" aria-hidden />} />
+            <MetricCard title="當日案場" value={siteProjectCount} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
+            <MetricCard title="當日工程" value={siteRows.length} icon={<Gauge className="h-5 w-5" aria-hidden />} />
             <MetricCard title="逾期節點" value={overdueStages.length} tone="red" icon={<AlertCircle className="h-5 w-5" aria-hidden />} />
             <MetricCard title="未掛關鍵節點" value={unlinkedMilestones.length} tone="amber" icon={<Flag className="h-5 w-5" aria-hidden />} />
           </div>
@@ -188,202 +182,76 @@ export function ScheduleClient() {
   );
 }
 
-function ScheduleCalendarCreator({
-  projects,
-  stages,
-  onCreateStage
+function DailySiteSchedule({
+  date,
+  rows,
+  projectById,
+  onDateChange
 }: {
-  projects: Project[];
-  stages: ProjectStage[];
-  onCreateStage: (input: {
-    projectId: string;
-    stageName: string;
-    startDate: string;
-    endDate: string;
-    reminderDaysBefore: number;
-  }) => Promise<void>;
+  date: string;
+  rows: ProjectStage[];
+  projectById: Map<string, Project>;
+  onDateChange: (value: string) => void;
 }) {
-  const [monthDate, setMonthDate] = useState(() => monthStartFromDateString(todayInputValue()));
-  const [projectId, setProjectId] = useState("");
-  const [stageName, setStageName] = useState(commonStageNames[0]);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [reminderDaysBefore, setReminderDaysBefore] = useState(3);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-
-  const calendarDays = useMemo(() => buildCalendarDays(monthDate), [monthDate]);
-  const stagesByDate = useMemo(() => groupStagesByDate(stages), [stages]);
-  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
-
-  function changeMonth(offset: number) {
-    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
-  }
-
-  function handleDateClick(date: string) {
-    if (!startDate || (startDate && endDate)) {
-      setStartDate(date);
-      setEndDate("");
-      return;
-    }
-
-    if (date < startDate) {
-      setEndDate(startDate);
-      setStartDate(date);
-      return;
-    }
-
-    setEndDate(date);
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setSubmitting(true);
-
-    try {
-      if (!projectId) throw new Error("請先選擇案件。");
-      if (!stageName.trim()) throw new Error("請填寫工程名稱。");
-      if (!startDate) throw new Error("請在月曆選擇開始日。");
-
-      await onCreateStage({
-        projectId,
-        stageName: stageName.trim(),
-        startDate,
-        endDate: endDate || startDate,
-        reminderDaysBefore
-      });
-      setStageName(commonStageNames[0]);
-      setStartDate("");
-      setEndDate("");
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "新增工期失敗。";
-      setError(message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <form className="w-full space-y-4 lg:max-w-sm" onSubmit={handleSubmit}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
             <CalendarDays className="h-4 w-4 text-teal-700" aria-hidden />
-            月曆新增工程表
+            指定日期施工案場
           </div>
-          <ErrorMessage message={error} />
-          <Field label="案件">
-            <select className={inputClassName} value={projectId} onChange={(event) => setProjectId(event.target.value)} required>
-              <option value="">選擇案件</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name} / {project.clientName}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="工程名稱">
-            <StageNameInput
-              className={inputClassName}
-              value={stageName}
-              onChange={setStageName}
-              required
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="開始日">
-              <input className={inputClassName} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-            </Field>
-            <Field label="結束日">
-              <input className={inputClassName} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-            </Field>
-          </div>
-          <Field label="進場前提醒">
-            <div className="flex items-center gap-2">
-              <input
-                className={inputClassName}
-                min={0}
-                type="number"
-                value={reminderDaysBefore}
-                onChange={(event) => setReminderDaysBefore(Number(event.target.value))}
-              />
-              <span className="shrink-0 text-sm text-slate-600">天</span>
-            </div>
-          </Field>
-          <Button type="submit" disabled={submitting}>
-            <Plus className="h-4 w-4" aria-hidden />
-            {submitting ? "新增中" : "新增工程"}
-          </Button>
-        </form>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <button
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
-              type="button"
-              onClick={() => changeMonth(-1)}
-              aria-label="上一個月"
-              title="上一個月"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden />
-            </button>
-            <div className="text-sm font-semibold text-slate-950">
-              {monthDate.getFullYear()} 年 {monthDate.getMonth() + 1} 月
-            </div>
-            <button
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
-              type="button"
-              onClick={() => changeMonth(1)}
-              aria-label="下一個月"
-              title="下一個月"
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
-            {["日", "一", "二", "三", "四", "五", "六"].map((weekday) => (
-              <div key={weekday} className="py-2">
-                {weekday}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map((day) => {
-              const dayStages = stagesByDate.get(day.date) ?? [];
-              const selected = isDateSelected(day.date, startDate, endDate || startDate);
-
-              return (
-                <button
-                  key={day.date}
-                  className={cn(
-                    "min-h-24 rounded-md border p-2 text-left transition hover:border-teal-400 hover:bg-teal-50",
-                    day.inCurrentMonth ? "border-stone-200 bg-white" : "border-stone-100 bg-stone-50 text-slate-400",
-                    selected && "border-teal-600 bg-teal-50 ring-1 ring-teal-600"
-                  )}
-                  type="button"
-                  onClick={() => handleDateClick(day.date)}
-                >
-                  <div className="text-xs font-semibold">{Number(day.date.slice(-2))}</div>
-                  <div className="mt-2 space-y-1">
-                    {dayStages.slice(0, 2).map((stage) => {
-                      const project = projectById.get(stage.projectId);
-
-                      return (
-                        <div key={stage.id} className="truncate rounded bg-stone-100 px-1.5 py-1 text-[11px] text-slate-700">
-                          {stage.stageName}
-                          {project ? ` / ${project.name}` : ""}
-                        </div>
-                      );
-                    })}
-                    {dayStages.length > 2 ? <div className="text-[11px] text-slate-500">+{dayStages.length - 2}</div> : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <div className="mt-1 text-sm text-slate-600">{formatDate(date)}</div>
         </div>
+        <label className="block sm:w-56">
+          <span className="text-sm font-medium text-slate-700">日期</span>
+          <input
+            className={inputClassName}
+            type="date"
+            value={date}
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+        </label>
       </div>
+
+      {rows.length ? (
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map((stage) => {
+            const project = projectById.get(stage.projectId);
+            const overdue = stage.status !== "done" && isDateOverdue(stage.endDate);
+
+            return (
+              <div key={stage.id} className="rounded-md border border-stone-200 bg-stone-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link
+                      className="font-semibold text-slate-950 hover:text-teal-700"
+                      href={project ? `/projects/${project.id}/progress` : "/projects"}
+                    >
+                      {project?.name ?? "未綁定案件"}
+                    </Link>
+                    <div className="mt-1 text-xs text-slate-500">{project?.clientName ?? "未設定客戶"}</div>
+                  </div>
+                  <ProjectStageStatusBadge status={stage.status} />
+                </div>
+                <div className="mt-4 text-sm font-semibold text-slate-900">{stage.stageName}</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {formatDate(stage.startDate)} - {formatDate(stage.endDate)}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span>{project?.designer || "未設定設計師"}</span>
+                  {overdue ? <span className="font-semibold text-red-700">逾期未完成</span> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-md border border-dashed border-stone-300 bg-stone-50 p-6 text-center">
+          <div className="text-sm font-semibold text-slate-950">這天沒有施工案場</div>
+          <div className="mt-1 text-sm text-slate-600">目前沒有排程落在 {formatDate(date)}。</div>
+        </div>
+      )}
     </section>
   );
 }
@@ -638,68 +506,12 @@ function groupMilestonesByStage(milestones: Milestone[]) {
   return groups;
 }
 
-function monthStartFromDateString(date: string) {
-  const parsed = parseDateString(date);
-  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
-}
+function stageHappensOnDate(stage: ProjectStage, date: string) {
+  if (!stage.startDate || !date) return false;
 
-function buildCalendarDays(monthDate: Date) {
-  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const start = new Date(firstDay);
-  start.setDate(firstDay.getDate() - firstDay.getDay());
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-
-    return {
-      date: toDateInputValue(date),
-      inCurrentMonth: date.getMonth() === monthDate.getMonth()
-    };
-  });
-}
-
-function groupStagesByDate(stages: ProjectStage[]) {
-  const groups = new Map<string, ProjectStage[]>();
-
-  stages.forEach((stage) => {
-    if (!stage.startDate) return;
-
-    const start = parseDateString(stage.startDate);
-    const end = stage.endDate ? parseDateString(stage.endDate) : start;
-    const maxDays = 120;
-
-    for (let index = 0; index < maxDays; index += 1) {
-      const current = new Date(start);
-      current.setDate(start.getDate() + index);
-      if (current > end) break;
-
-      const key = toDateInputValue(current);
-      const currentStages = groups.get(key) ?? [];
-      currentStages.push(stage);
-      groups.set(key, currentStages);
-    }
-  });
-
-  return groups;
-}
-
-function isDateSelected(date: string, startDate: string, endDate: string) {
-  if (!startDate) return false;
-  return date >= startDate && date <= endDate;
-}
-
-function parseDateString(date: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, (month || 1) - 1, day || 1);
-}
-
-function toDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  const start = stage.startDate;
+  const end = stage.endDate || stage.startDate;
+  return start <= date && date <= end;
 }
 
 const inputClassName =

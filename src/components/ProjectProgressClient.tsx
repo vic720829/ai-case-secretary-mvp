@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MilestoneForm } from "./MilestoneForm";
 import { MilestoneTable } from "./MilestoneTable";
 import { PageHeader } from "./PageHeader";
+import { ProjectScheduleCalendar } from "./ProjectScheduleCalendar";
 import { ProjectStageForm } from "./ProjectStageForm";
 import { ProjectStageTable } from "./ProjectStageTable";
 import { EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "./Ui";
@@ -170,14 +171,8 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-950">新增工期節點</h2>
-        <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-          <ProjectStageForm
-            projectId={projectId}
-            submitLabel="建立工期節點"
-            onSubmit={handleCreateStage}
-          />
-        </div>
+        <h2 className="text-lg font-semibold text-slate-950">施工工期表</h2>
+        <ProjectScheduleCalendar projectId={projectId} stages={stages} onCreateStage={handleCreateStage} />
       </section>
 
       {editingStage ? (
