@@ -51,11 +51,19 @@ export async function POST(request: Request) {
 
   const body = JSON.parse(rawBody) as { events?: LineWebhookEvent[] };
   const events = body.events ?? [];
+  if (!events.length) {
+    return NextResponse.json({ ok: true, results: [] });
+  }
+
   const db = getAdminDb();
 
   const results = await Promise.all(events.map((event) => handleAndLogLineEvent(db, event)));
 
   return NextResponse.json({ ok: true, results });
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, service: "line-webhook" });
 }
 
 async function handleAndLogLineEvent(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
