@@ -154,7 +154,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           senderRole,
           suggestions,
           createdDraftIds
-        })
+        }).catch(() => [])
       : [];
     const adminNotification = suggestions.length
       ? await notifyAdminGroupsAboutAiDrafts(db, {
@@ -359,16 +359,19 @@ async function linkPossibleAnsweredFollowups(
     .filter((draft) => draft.draftId && isPotentialAnswerDraft(draft.suggestion, input.senderRole));
   if (!answerDrafts.length) return [];
 
-  const snapshot = await db
-    .collection("ai_tasks")
-    .where("projectId", "==", input.projectId)
-    .where("sourceGroupId", "==", input.groupId)
-    .where("reviewStatus", "==", "pending")
-    .get();
+  let snapshot: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+  try {
+    snapshot = await db.collection("ai_tasks").where("projectId", "==", input.projectId).get();
+  } catch {
+    return [];
+  }
+
   const cutoff = Date.now() - 12 * 60 * 60 * 1000;
   const candidates = snapshot.docs
     .map((doc) => ({ id: doc.id, data: doc.data() }))
     .filter((item) => !input.createdDraftIds.includes(item.id))
+    .filter((item) => item.data.sourceGroupId === input.groupId)
+    .filter((item) => item.data.reviewStatus === "pending")
     .filter((item) => item.data.taskType === "followup")
     .filter((item) => item.data.sourceSenderRole === "client" || item.data.sourceSenderRole === "unknown")
     .filter((item) => !item.data.linkedAiTaskId)
