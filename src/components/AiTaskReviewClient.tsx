@@ -133,13 +133,13 @@ export function AiTaskReviewClient() {
   }
 
   if (loading) {
-    return <LoadingState label="讀取 AI 任務草稿" />;
+    return <LoadingState label="讀取 AI 待辦草稿" />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="AI 任務審核"
+        title="AI 待辦審核"
         description="從案件 LINE 群組辨識出的承諾、變更、追蹤、收款與發票事項。"
       />
 
@@ -166,7 +166,7 @@ export function AiTaskReviewClient() {
             onReject={handleReject}
           />
         ) : (
-          <EmptyState title="目前沒有待審核草稿" description="案件 LINE 群組出現承諾、變更或收款等訊息時，會出現在這裡。" />
+          <EmptyState title="目前沒有待審核草稿" description="案件 LINE 群組出現承諾、變更或收款等對話時，會出現在這裡。" />
         )}
       </section>
 
@@ -264,7 +264,7 @@ function AiTaskReviewTable({
                         className="mt-2 inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800"
                         href={`/projects/${project.id}/messages`}
                       >
-                        查看訊息
+                        查看對話
                         <ExternalLink className="h-3 w-3" aria-hidden />
                       </Link>
                     ) : (
@@ -383,7 +383,7 @@ function ReviewedList({
             </div>
             <div className="mt-3 text-xs text-slate-500">
               {task.reviewedAt ? formatDateTime(task.reviewedAt) : "尚未記錄時間"}
-              {task.approvedTaskId ? ` · 已建立正式任務` : ""}
+              {task.approvedTaskId ? ` · 已建立正式待辦` : ""}
             </div>
           </div>
         );

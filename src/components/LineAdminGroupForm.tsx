@@ -52,7 +52,7 @@ export function LineAdminGroupForm({
         公司後台群組
       </div>
       <p className="text-sm leading-6 text-slate-600">
-        只有登記在這裡的 LINE 群組，AI 助理才會回答問題。客戶群會保持安靜，只同步訊息。
+        只有登記在這裡的 LINE 群組，AI 助理才會回答問題。客戶群會保持安靜，只同步對話。
       </p>
       <ErrorMessage message={error} />
       <div className="grid gap-4 md:grid-cols-2">

@@ -521,7 +521,7 @@ async function handleAiTaskReviewPostback(
     return { skipped: true, reason: "AI task draft requires website editing", key };
   }
 
-  await replyLineText(event.replyToken, `已通過並建立任務：${result.title}`);
+  await replyLineText(event.replyToken, `已通過並建立待辦：${result.title}`);
 
   return {
     ok: true,
@@ -529,7 +529,7 @@ async function handleAiTaskReviewPostback(
     key,
     projectId: result.projectId,
     senderName,
-    messageText: `通過 AI 草稿並建立任務：${result.title}`,
+    messageText: `通過 AI 草稿並建立待辦：${result.title}`,
     approvedTaskId: result.approvedTaskId
   };
 }
@@ -585,7 +585,7 @@ async function notifyAdminGroupsAboutAiDrafts(
       "AI案件秘書建立審核草稿",
       `案件：${projectName}`,
       `來源：${input.senderName || "LINE 使用者"}（${senderRoleLabel(input.senderRole)}）`,
-      `原訊息：${input.text}`,
+      `原對話：${input.text}`,
       "",
       ...input.suggestions.slice(0, 5).map((suggestion, index) => {
         const dueDate = suggestion.dueDate ? `｜截止：${suggestion.dueDate.replaceAll("-", "/")}` : "";
@@ -637,11 +637,11 @@ async function notifyAdminGroupsAboutUnboundLineMessage(
 
     const lineGroupsUrl = getSiteUrl() ? `${getSiteUrl()}/line-groups` : "";
     const text = [
-      "AI案件秘書收到未處理的 LINE 訊息",
+      "AI案件秘書收到未處理的 LINE 對話",
       `原因：${input.reason}`,
       `groupId：${input.groupId || "未提供"}`,
       `來源：${input.senderName || "LINE 使用者"}（${senderRoleLabel(input.senderRole)}）`,
-      `原訊息：${input.text}`,
+      `原對話：${input.text}`,
       "",
       lineGroupsUrl ? `請先綁定 LINE 群組：${lineGroupsUrl}` : "請到網站 LINE 群組頁綁定案件。"
     ].join("\n");

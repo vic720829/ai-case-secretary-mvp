@@ -307,7 +307,7 @@ async function loadAssistantData(): Promise<AssistantData> {
       return {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
-        title: String(data.title ?? "未命名任務"),
+        title: String(data.title ?? "未命名待辦"),
         status: String(data.status ?? "todo"),
         dueDate: String(data.dueDate ?? ""),
         riskLevel: String(data.riskLevel ?? "low")
@@ -341,7 +341,7 @@ async function loadAssistantData(): Promise<AssistantData> {
       return {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
-        title: String(data.title ?? "未命名 AI 任務"),
+        title: String(data.title ?? "未命名 AI 待辦"),
         taskType: String(data.taskType ?? "followup"),
         status: String(data.status ?? "todo"),
         dueDate: timestampToTaipeiDate(data.dueDate),
@@ -425,14 +425,14 @@ function summarizeDateItems(data: AssistantData, date: string, label: string, pr
     .filter((stage) => stage.endDate === date);
 
   const lines = [
-    ...tasks.map((task) => `任務：${task.title}${projectSuffix(task.projectId, data.projects)}`),
+    ...tasks.map((task) => `待辦：${task.title}${projectSuffix(task.projectId, data.projects)}`),
     ...milestones.map((milestone) => `關鍵節點：${milestone.title}${projectSuffix(milestone.projectId, data.projects)}`),
     ...startingStages.map((stage) => `工期進場：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`),
     ...endingStages.map((stage) => `工期結束：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`)
   ];
 
   if (!lines.length) {
-    return `${label}沒有查到到期任務、關鍵節點或工期提醒。`;
+    return `${label}沒有查到到期待辦、關鍵節點或工期提醒。`;
   }
 
   return [`${label}有 ${lines.length} 件事：`, ...lines.slice(0, 12), moreLine(lines.length, 12)].filter(Boolean).join("\n");
@@ -448,7 +448,7 @@ function summarizeRiskProjects(data: AssistantData, projectId = "") {
     .filter((row) => row.reasons.length);
 
   if (!riskRows.length) {
-    return projectId ? "這個案件目前沒有查到高風險、逾期任務或逾期關鍵節點。" : "目前沒有查到高風險案件。";
+    return projectId ? "這個案件目前沒有查到高風險、逾期待辦或逾期關鍵節點。" : "目前沒有查到高風險案件。";
   }
 
   return [
@@ -523,10 +523,10 @@ function summarizeForgottenItems(data: AssistantData, projectId = "") {
     .filter((task) => isOverdue(task.dueDate, data.today));
 
   const lines = [
-    ...overdueTasks.map((task) => `任務逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`),
+    ...overdueTasks.map((task) => `待辦逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`),
     ...overdueMilestones.map((milestone) => `關鍵節點逾期：${milestone.title}${projectSuffix(milestone.projectId, data.projects)}`),
     ...overdueStages.map((stage) => `工期逾期：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`),
-    ...overdueAiTasks.map((task) => `AI任務逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`)
+    ...overdueAiTasks.map((task) => `AI待辦逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`)
   ];
 
   if (!lines.length) {
@@ -556,8 +556,8 @@ function getProjectRiskReasons(data: AssistantData, projectId: string) {
     (stage) => stage.projectId === projectId && stage.status !== "done" && isOverdue(stage.endDate, data.today)
   );
 
-  if (overdueTasks.length) reasons.push(`逾期任務 ${overdueTasks.length} 件`);
-  if (highRiskTasks.length) reasons.push(`高風險任務 ${highRiskTasks.length} 件`);
+  if (overdueTasks.length) reasons.push(`逾期待辦 ${overdueTasks.length} 件`);
+  if (highRiskTasks.length) reasons.push(`高風險待辦 ${highRiskTasks.length} 件`);
   if (overdueMilestones.length) reasons.push(`逾期關鍵節點 ${overdueMilestones.length} 件`);
   if (highRiskMilestones.length) reasons.push(`高風險關鍵節點 ${highRiskMilestones.length} 件`);
   if (overdueStages.length) reasons.push(`工期逾期 ${overdueStages.length} 件`);

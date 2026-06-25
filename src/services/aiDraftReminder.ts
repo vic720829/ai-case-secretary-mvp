@@ -158,7 +158,7 @@ async function notifyAdminGroups(
     input.createdAt ? `建立時間：${formatDateTime(input.createdAt)}` : "",
     `已等待：約 ${input.ageMinutes} 分鐘`,
     "",
-    reviewUrl ? `請審核：${reviewUrl}` : "請到網站 AI 任務審核頁處理。"
+    reviewUrl ? `請審核：${reviewUrl}` : "請到網站 AI 審核頁處理。"
   ]
     .filter(Boolean)
     .join("\n");

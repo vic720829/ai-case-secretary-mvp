@@ -30,10 +30,10 @@ const navItems = [
   { href: "/reminders", label: "提醒中心", icon: Bell },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
   { href: "/schedule", label: "工期總表", icon: CalendarDays },
-  { href: "/tasks", label: "任務列表", icon: ClipboardList },
+  { href: "/tasks", label: "待辦列表", icon: ClipboardList },
   { href: "/line-groups", label: "LINE群組", icon: Link2 },
   { href: "/line-members", label: "LINE成員", icon: UsersRound },
-  { href: "/messages", label: "LINE訊息", icon: MessageSquareText },
+  { href: "/messages", label: "LINE對話", icon: MessageSquareText },
   { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText },
   { href: "/users", label: "員工管理", icon: UserCog },
   { href: "/audit-logs", label: "操作紀錄", icon: History },
@@ -137,8 +137,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Link
         className="fixed bottom-5 right-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-teal-700 text-white shadow-panel transition hover:bg-teal-800 lg:hidden"
         href="/tasks/new"
-        aria-label="新增任務"
-        title="新增任務"
+        aria-label="新增待辦"
+        title="新增待辦"
       >
         <Plus className="h-5 w-5" aria-hidden />
       </Link>

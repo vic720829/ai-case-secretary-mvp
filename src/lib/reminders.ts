@@ -36,13 +36,13 @@ export function buildReminderCandidates({
     if (task.status === "done") return;
 
     if (task.dueDate === today) {
-      candidates.push(toCandidate("task", task.id, "due_today", task.projectId, "任務今天到期", task.title, task.dueDate, today));
+      candidates.push(toCandidate("task", task.id, "due_today", task.projectId, "待辦今天到期", task.title, task.dueDate, today));
     }
     if (task.dueDate && task.dueDate < today) {
-      candidates.push(toCandidate("task", task.id, "overdue", task.projectId, "任務已逾期", task.title, task.dueDate, today));
+      candidates.push(toCandidate("task", task.id, "overdue", task.projectId, "待辦已逾期", task.title, task.dueDate, today));
     }
     if (task.riskLevel === "high") {
-      candidates.push(toCandidate("task", task.id, "high_risk", task.projectId, "高風險任務", task.title, task.dueDate, today));
+      candidates.push(toCandidate("task", task.id, "high_risk", task.projectId, "高風險待辦", task.title, task.dueDate, today));
     }
   });
 
@@ -133,10 +133,10 @@ export function buildReminderCandidates({
 
     const dueDate = aiTask.dueDate ? dateToInputValue(aiTask.dueDate) : "";
     if (dueDate === today) {
-      candidates.push(toCandidate("ai_task", aiTask.id, "due_today", aiTask.projectId, "AI 任務今天到期", aiTask.title, dueDate, today));
+      candidates.push(toCandidate("ai_task", aiTask.id, "due_today", aiTask.projectId, "AI 待辦今天到期", aiTask.title, dueDate, today));
     }
     if (dueDate && dueDate < today) {
-      candidates.push(toCandidate("ai_task", aiTask.id, "overdue", aiTask.projectId, "AI 任務已逾期", aiTask.title, dueDate, today));
+      candidates.push(toCandidate("ai_task", aiTask.id, "overdue", aiTask.projectId, "AI 待辦已逾期", aiTask.title, dueDate, today));
     }
   });
 

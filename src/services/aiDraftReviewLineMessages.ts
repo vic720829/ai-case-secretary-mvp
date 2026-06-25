@@ -35,7 +35,7 @@ export function buildAiDraftReviewTemplateMessage(
   const actions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
     {
       type: "postback",
-      label: "通過建立任務",
+      label: "通過建立待辦",
       data: `action=approve_ai_task&key=${item.id}`,
       displayText: `通過 AI 草稿：${item.title}`
     },

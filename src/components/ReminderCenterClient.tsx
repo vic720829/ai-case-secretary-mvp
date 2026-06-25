@@ -110,7 +110,7 @@ export function ReminderCenterClient() {
     <div className="space-y-6">
       <PageHeader
         title="提醒中心"
-        description="集中處理工期、關鍵節點、任務、AI 任務與待審核草稿提醒。按已處理後，後台 LINE 每日提醒就不會再推送該項目。"
+        description="集中處理工期、關鍵節點、待辦、AI 待辦與待審核草稿提醒。按已處理後，後台 LINE 每日提醒就不會再推送該項目。"
       />
 
       <ErrorMessage message={error} />

@@ -40,7 +40,7 @@ export function ProjectMessagesClient({ projectId }: { projectId: string }) {
   }, [loadData]);
 
   if (loading) {
-    return <LoadingState label="正在讀取案件訊息" />;
+    return <LoadingState label="正在讀取 LINE 對話" />;
   }
 
   if (!project) {
@@ -61,8 +61,8 @@ export function ProjectMessagesClient({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${project.name} 訊息`}
-        description={`${project.clientName} / LINE 群組訊息紀錄`}
+        title={`${project.name} LINE 對話紀錄`}
+        description={`${project.clientName} / LINE 群組原始對話紀錄`}
         action={
           <SecondaryLink href={`/projects/${project.id}`}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -76,7 +76,7 @@ export function ProjectMessagesClient({ projectId }: { projectId: string }) {
       {messages.length ? (
         <MessageTable messages={messages} projects={[project]} lineGroups={lineGroups} />
       ) : (
-        <EmptyState title="此案件尚無訊息" description="建立 LINE 群組綁定並接上 webhook 後，訊息會出現在這裡。" />
+        <EmptyState title="此案件尚無 LINE 對話" description="建立 LINE 群組綁定並接上 webhook 後，對話會出現在這裡。" />
       )}
     </div>
   );

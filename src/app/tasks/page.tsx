@@ -34,7 +34,7 @@ export default function TasksPage() {
   }, []);
 
   async function handleDelete(task: Task) {
-    const confirmed = window.confirm(`確定刪除任務「${task.title}」？`);
+    const confirmed = window.confirm(`確定刪除待辦「${task.title}」？`);
     if (!confirmed) return;
 
     try {
@@ -46,25 +46,25 @@ export default function TasksPage() {
   }
 
   if (loading) {
-    return <LoadingState label="正在讀取任務" />;
+    return <LoadingState label="正在讀取待辦" />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="任務列表"
-        description="追蹤所有案件任務，包含來源、負責人、截止日與風險等級。"
+        title="待辦列表"
+        description="追蹤所有案件待辦，包含來源、負責人、截止日與風險等級。"
         action={
           <PrimaryLink href="/tasks/new">
             <Plus className="h-4 w-4" aria-hidden />
-            新增任務
+            新增待辦
           </PrimaryLink>
         }
       />
       <ErrorMessage message={error} />
       {error ? (
         <EmptyState
-          title="任務讀取失敗"
+          title="待辦讀取失敗"
           description="請先確認 Firebase Authentication 已登入，並在 Firestore Rules 發布登入後可讀寫的規則。"
         />
       ) : null}
@@ -73,12 +73,12 @@ export default function TasksPage() {
       ) : null}
       {!error && !tasks.length ? (
         <EmptyState
-          title="尚未建立任務"
-          description="新增任務後，今日風險中心會自動整理高風險、逾期與今天到期項目。"
+          title="尚未建立待辦"
+          description="新增待辦後，今日風險中心會自動整理高風險、逾期與今天到期項目。"
           action={
             <PrimaryLink href="/tasks/new">
               <Plus className="h-4 w-4" aria-hidden />
-              新增任務
+              新增待辦
             </PrimaryLink>
           }
         />

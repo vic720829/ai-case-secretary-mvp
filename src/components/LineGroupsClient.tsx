@@ -187,7 +187,7 @@ export function LineGroupsClient() {
     <div className="space-y-6">
       <PageHeader
         title="LINE 群組管理"
-        description="建立案件群組綁定與公司後台群組。案件群只同步訊息；後台群才會回答問題與接收提醒。"
+        description="建立案件群組綁定與公司後台群組。案件群只同步對話；後台群才會回答問題與接收提醒。"
       />
 
       <ErrorMessage message={error} />
@@ -224,7 +224,7 @@ export function LineGroupsClient() {
           </div>
           <SecondaryLink href="/messages">
             <MessageSquareText className="h-4 w-4" aria-hidden />
-            查看訊息中心
+            查看 LINE 對話
           </SecondaryLink>
         </div>
 
@@ -351,7 +351,7 @@ export function LineGroupsClient() {
                             </Button>
                             <ConfirmDeleteButton
                               label="移除"
-                              confirmMessage={`確定移除「${group.groupName}」的 LINE 綁定？訊息紀錄會保留。`}
+                              confirmMessage={`確定移除「${group.groupName}」的 LINE 綁定？對話紀錄會保留。`}
                               onConfirm={() => handleDeleteLineGroup(group.id)}
                             />
                           </div>
@@ -366,7 +366,7 @@ export function LineGroupsClient() {
         ) : (
           <EmptyState
             title="尚未建立 LINE 群組"
-            description="先把 LINE Bot 加入群組並傳一則測試訊息，再用上方表單建立案件群或後台群。"
+            description="先把 LINE Bot 加入群組並傳一則測試文字，再用上方表單建立案件群或後台群。"
           />
         )}
       </section>
@@ -410,7 +410,7 @@ function UnboundGroupsSection({
           <Check className="h-4 w-4 text-teal-700" aria-hidden />
           目前沒有待綁定群組
         </div>
-        <p className="mt-2">新的 LINE 群組傳訊息後，如果還沒綁案件或後台，會出現在這裡。</p>
+        <p className="mt-2">新的 LINE 群組傳對話後，如果還沒綁案件或後台，會出現在這裡。</p>
       </section>
     );
   }
@@ -426,7 +426,7 @@ function UnboundGroupsSection({
           <div key={group.groupId} className="rounded-md border border-amber-200 bg-white p-4">
             <div className="text-xs font-medium text-slate-500">groupId</div>
             <div className="mt-1 break-all font-mono text-sm text-slate-950">{group.groupId}</div>
-            <div className="mt-3 text-xs text-slate-500">收到 {group.messageCount} 則訊息</div>
+            <div className="mt-3 text-xs text-slate-500">收到 {group.messageCount} 則紀錄</div>
             <div className="mt-1 line-clamp-2 text-sm text-slate-700">{group.lastText}</div>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => onUseAdminGroup(group.groupId)}>

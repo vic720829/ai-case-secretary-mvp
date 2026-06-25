@@ -20,7 +20,7 @@ export function AiTaskTable({
         <table className="min-w-full divide-y divide-stone-200 text-sm">
           <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
             <tr>
-              <th className="px-4 py-3">AI 任務</th>
+              <th className="px-4 py-3">AI 待辦</th>
               <th className="px-4 py-3">案件</th>
               <th className="px-4 py-3">類型</th>
               <th className="px-4 py-3">狀態</th>

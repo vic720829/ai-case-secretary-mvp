@@ -62,14 +62,14 @@ export default function MessagesPage() {
   );
 
   if (loading) {
-    return <LoadingState label="正在讀取 LINE 訊息" />;
+    return <LoadingState label="正在讀取 LINE 對話" />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="LINE 訊息中心"
-        description="同步案件群組訊息，並依案件或 LINE 群組查看對話紀錄。"
+        title="LINE 對話紀錄"
+        description="同步案件 LINE 群組對話，並依案件或 LINE 群組查看原始紀錄。"
         action={
           <SecondaryLink href="/line-groups">
             <Link2 className="h-4 w-4" aria-hidden />
@@ -83,7 +83,7 @@ export default function MessagesPage() {
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
           <MessageSquare className="h-4 w-4 text-teal-700" aria-hidden />
-          訊息篩選
+          對話篩選
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block">
@@ -127,7 +127,7 @@ export default function MessagesPage() {
 
       {error ? (
         <EmptyState
-          title="訊息中心讀取失敗"
+          title="LINE 對話讀取失敗"
           description="請確認 Firestore Rules 已允許登入者讀取 line_groups 與 messages collection。"
         />
       ) : null}
@@ -138,8 +138,8 @@ export default function MessagesPage() {
 
       {!error && !filteredMessages.length ? (
         <EmptyState
-          title="目前沒有訊息"
-          description="LINE Webhook 收到訊息後會出現在這裡；若出現未綁定 groupId，請到 LINE 群組管理建立綁定。"
+          title="目前沒有 LINE 對話"
+          description="LINE Webhook 收到對話後會出現在這裡；若出現未綁定 groupId，請到 LINE 群組管理建立綁定。"
           action={
             <SecondaryLink href="/line-groups">
               <Link2 className="h-4 w-4" aria-hidden />

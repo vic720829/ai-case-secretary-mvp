@@ -35,7 +35,7 @@ export default function ProjectsPage() {
   }, []);
 
   async function handleDelete(project: Project) {
-    const confirmed = window.confirm(`確定刪除「${project.name}」？相關任務也會一起刪除。`);
+    const confirmed = window.confirm(`確定刪除「${project.name}」？相關待辦也會一起刪除。`);
     if (!confirmed) return;
 
     try {
@@ -75,7 +75,7 @@ export default function ProjectsPage() {
       {!error && !projects.length ? (
         <EmptyState
           title="尚未建立案件"
-          description="先建立第一個案件，後續新增任務時就能綁定到案件。"
+          description="先建立第一個案件，後續新增待辦時就能綁定到案件。"
           action={
             <PrimaryLink href="/projects/new">
               <Plus className="h-4 w-4" aria-hidden />

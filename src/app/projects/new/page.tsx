@@ -23,7 +23,7 @@ export default function NewProjectPage() {
     <div className="space-y-6">
       <PageHeader
         title="新增案件"
-        description="建立案件後，可以在任務新增頁面把任務綁定到此案件。"
+        description="建立案件後，可以在新增待辦頁面把待辦綁定到此案件。"
         action={
           <SecondaryLink href="/projects">
             <ArrowLeft className="h-4 w-4" aria-hidden />

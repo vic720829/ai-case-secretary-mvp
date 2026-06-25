@@ -61,7 +61,7 @@ export function TaskForm({
         assignee: value.assignee.trim()
       });
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "儲存任務失敗，請稍後再試。";
+      const message = caught instanceof Error ? caught.message : "儲存待辦失敗，請稍後再試。";
       setError(message);
     } finally {
       setSubmitting(false);

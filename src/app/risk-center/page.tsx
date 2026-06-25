@@ -117,11 +117,11 @@ export default function RiskCenterPage() {
     <div className="space-y-6">
       <PageHeader
         title="今日風險中心"
-        description={`今天是 ${todayInputValue().replaceAll("-", "/")}。集中查看高風險案件、任務逾期與到期項目。`}
+        description={`今天是 ${todayInputValue().replaceAll("-", "/")}。集中查看高風險案件、待辦逾期與到期項目。`}
         action={
           <PrimaryLink href="/tasks/new">
             <Plus className="h-4 w-4" aria-hidden />
-            新增任務
+            新增待辦
           </PrimaryLink>
         }
       />
@@ -143,19 +143,19 @@ export default function RiskCenterPage() {
             icon={<BriefcaseBusiness className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="高風險任務"
+            title="高風險待辦"
             value={highRiskTasks.length}
             tone="red"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="已逾期任務"
+            title="已逾期待辦"
             value={overdueTasks.length}
             tone="amber"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="今天到期任務"
+            title="今天到期待辦"
             value={dueTodayTasks.length}
             tone="teal"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
@@ -172,19 +172,19 @@ export default function RiskCenterPage() {
       {!error ? (
         <div className="grid gap-4 md:grid-cols-3">
           <RiskStatCard
-            title="AI 建立任務"
+            title="AI 建立待辦"
             value={activeAiTasks.length}
             tone="teal"
             icon={<Bot className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 高風險任務"
+            title="AI 高風險待辦"
             value={highRiskAiTasks.length}
             tone="red"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 逾期任務"
+            title="AI 逾期待辦"
             value={overdueAiTasks.length}
             tone="amber"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
@@ -196,12 +196,12 @@ export default function RiskCenterPage() {
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
           <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
-          <AiTaskSection title="AI 建立任務" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 建立的待辦任務。" />
-          <AiTaskSection title="AI 高風險任務" aiTasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 高風險任務。" />
-          <AiTaskSection title="AI 逾期任務" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 逾期任務。" />
-          <RiskSection title="高風險任務" tasks={highRiskTasks} projects={projects} empty="目前沒有高風險任務。" />
-          <RiskSection title="已逾期任務" tasks={overdueTasks} projects={projects} empty="目前沒有逾期任務。" />
-          <RiskSection title="今天到期任務" tasks={dueTodayTasks} projects={projects} empty="今天沒有到期任務。" />
+          <AiTaskSection title="AI 建立待辦" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 建立的待辦。" />
+          <AiTaskSection title="AI 高風險待辦" aiTasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 高風險待辦。" />
+          <AiTaskSection title="AI 逾期待辦" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 逾期待辦。" />
+          <RiskSection title="高風險待辦" tasks={highRiskTasks} projects={projects} empty="目前沒有高風險待辦。" />
+          <RiskSection title="已逾期待辦" tasks={overdueTasks} projects={projects} empty="目前沒有逾期待辦。" />
+          <RiskSection title="今天到期待辦" tasks={dueTodayTasks} projects={projects} empty="今天沒有到期待辦。" />
         </>
       ) : null}
     </div>
@@ -225,7 +225,7 @@ function AiTaskSection({
       {aiTasks.length ? (
         <AiTaskTable aiTasks={aiTasks} projects={projects} />
       ) : (
-        <EmptyState title="沒有需要處理的 AI 任務" description={empty} />
+        <EmptyState title="沒有需要處理的 AI 待辦" description={empty} />
       )}
     </section>
   );
@@ -414,7 +414,7 @@ function RiskSection({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
         <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/tasks">
-          查看全部任務
+          查看全部待辦
         </Link>
       </div>
       {tasks.length ? (

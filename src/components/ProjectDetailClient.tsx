@@ -56,14 +56,14 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   }
 
   async function handleDeleteTask(task: Task) {
-    const confirmed = window.confirm(`確定刪除任務「${task.title}」？`);
+    const confirmed = window.confirm(`確定刪除待辦「${task.title}」？`);
     if (!confirmed) return;
 
     try {
       await deleteTask(task.id);
       setTasks((current) => current.filter((item) => item.id !== task.id));
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "刪除任務失敗。";
+      const message = caught instanceof Error ? caught.message : "刪除待辦失敗。";
       setError(message);
     }
   }
@@ -108,10 +108,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             </SecondaryLink>
             <SecondaryLink href={`/projects/${projectId}/messages`}>
               <MessageSquareText className="h-4 w-4" aria-hidden />
-              案件訊息
+              LINE 對話
             </SecondaryLink>
             <ConfirmDeleteButton
-              confirmMessage={`確定刪除「${project.name}」？相關任務也會一起刪除。`}
+              confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
               onConfirm={handleDeleteProject}
             />
           </>
@@ -127,22 +127,22 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       ) : null}
       <section className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-slate-950">此案件任務</h2>
+          <h2 className="text-lg font-semibold text-slate-950">此案件待辦</h2>
           <PrimaryLink href={`/tasks/new?projectId=${projectId}`}>
             <Plus className="h-4 w-4" aria-hidden />
-            新增任務
+            新增待辦
           </PrimaryLink>
         </div>
         {tasks.length ? (
           <TaskTable tasks={tasks} projects={[project]} onDelete={handleDeleteTask} />
         ) : (
           <EmptyState
-            title="此案件還沒有任務"
-            description="新增任務時會自動帶入此案件。"
+            title="此案件還沒有待辦"
+            description="新增待辦時會自動帶入此案件。"
             action={
               <PrimaryLink href={`/tasks/new?projectId=${projectId}`}>
                 <Plus className="h-4 w-4" aria-hidden />
-                新增任務
+                新增待辦
               </PrimaryLink>
             }
           />

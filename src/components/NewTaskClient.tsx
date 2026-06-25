@@ -30,18 +30,18 @@ export function NewTaskClient({ initialProjectId }: { initialProjectId?: string 
   }
 
   if (loading) {
-    return <LoadingState label="正在準備任務表單" />;
+    return <LoadingState label="正在準備待辦表單" />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="新增任務"
+        title="新增待辦"
         description="建立待辦、追蹤負責人與截止日，並標記風險等級。"
         action={
           <SecondaryLink href="/tasks">
             <ArrowLeft className="h-4 w-4" aria-hidden />
-            回任務列表
+            回待辦列表
           </SecondaryLink>
         }
       />
@@ -49,7 +49,7 @@ export function NewTaskClient({ initialProjectId }: { initialProjectId?: string 
         <TaskForm
           projects={projects}
           initialProjectId={initialProjectId}
-          submitLabel="建立任務"
+          submitLabel="建立待辦"
           onSubmit={handleSubmit}
         />
       </section>

@@ -93,7 +93,7 @@ async function analyzeWithOpenAi(
           "- 發票、統編、報帳建立 invoice。",
           "",
           `senderRole: ${senderRole}`,
-          `LINE 訊息: ${text}`,
+          `LINE 對話: ${text}`,
           "",
           "最近同群組訊息：",
           formatRecentMessagesForPrompt(context.recentMessages)

@@ -25,7 +25,7 @@ export function MessageTable({
               <th className="px-4 py-3">案件</th>
               <th className="px-4 py-3">群組</th>
               <th className="px-4 py-3">傳送者</th>
-              <th className="px-4 py-3">訊息</th>
+              <th className="px-4 py-3">對話內容</th>
               <th className="px-4 py-3">狀態</th>
             </tr>
           </thead>

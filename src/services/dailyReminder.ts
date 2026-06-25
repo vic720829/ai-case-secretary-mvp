@@ -95,17 +95,17 @@ async function buildDailyReminderContent() {
     const status = String(task.status ?? "todo");
     const dueDate = String(task.dueDate ?? "");
     const projectId = String(task.projectId ?? "");
-    const title = String(task.title ?? "未命名任務");
+    const title = String(task.title ?? "未命名待辦");
 
     if (status === "done") return;
     if (dueDate === today) {
-      candidates.push(toReminderItem("task", doc.id, "due_today", projectId, "任務今天到期", title, dueDate, today));
+      candidates.push(toReminderItem("task", doc.id, "due_today", projectId, "待辦今天到期", title, dueDate, today));
     }
     if (dueDate && dueDate < today) {
-      candidates.push(toReminderItem("task", doc.id, "overdue", projectId, "任務已逾期", title, dueDate, today));
+      candidates.push(toReminderItem("task", doc.id, "overdue", projectId, "待辦已逾期", title, dueDate, today));
     }
     if (task.riskLevel === "high") {
-      candidates.push(toReminderItem("task", doc.id, "high_risk", projectId, "高風險任務", title, dueDate, today));
+      candidates.push(toReminderItem("task", doc.id, "high_risk", projectId, "高風險待辦", title, dueDate, today));
     }
   });
 
@@ -179,7 +179,7 @@ async function buildDailyReminderContent() {
     const dueDate = timestampToTaipeiDate(aiTask.dueDate);
     const createdDate = timestampToTaipeiDate(aiTask.createdAt);
     const projectId = String(aiTask.projectId ?? "");
-    const title = String(aiTask.title ?? "未命名 AI 任務");
+    const title = String(aiTask.title ?? "未命名 AI 待辦");
     const taskType = String(aiTask.taskType ?? "");
 
     if (reviewStatus === "pending") {
@@ -205,10 +205,10 @@ async function buildDailyReminderContent() {
     if (reviewStatus !== "approved") return;
     if (status === "done" || !dueDate) return;
     if (dueDate === today) {
-      candidates.push(toReminderItem("ai_task", doc.id, "due_today", projectId, "AI 任務今天到期", title, dueDate, today));
+      candidates.push(toReminderItem("ai_task", doc.id, "due_today", projectId, "AI 待辦今天到期", title, dueDate, today));
     }
     if (dueDate < today) {
-      candidates.push(toReminderItem("ai_task", doc.id, "overdue", projectId, "AI 任務已逾期", title, dueDate, today));
+      candidates.push(toReminderItem("ai_task", doc.id, "overdue", projectId, "AI 待辦已逾期", title, dueDate, today));
     }
   });
 
@@ -232,7 +232,7 @@ async function buildDailyReminderContent() {
       "",
       sections.length ? sections.join("\n\n") : "目前沒有需要提醒的事項。",
       "",
-      "先看今天要盯的任務、工程、關鍵節點、風險案件與逾期事項。"
+      "先看今天要盯的待辦、工程、關鍵節點、風險案件與逾期事項。"
     ].join("\n"),
     pendingItems: dailyPendingItems,
     projects

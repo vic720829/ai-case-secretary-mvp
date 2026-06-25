@@ -322,7 +322,7 @@ async function loadWorkflowData(): Promise<WorkflowData> {
       return {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
-        title: String(data.title ?? "未命名任務"),
+        title: String(data.title ?? "未命名待辦"),
         status: String(data.status ?? "todo"),
         dueDate: String(data.dueDate ?? "")
       };
@@ -353,7 +353,7 @@ async function loadWorkflowData(): Promise<WorkflowData> {
       return {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
-        title: String(data.title ?? "未命名 AI 任務"),
+        title: String(data.title ?? "未命名 AI 待辦"),
         taskType: String(data.taskType ?? "followup"),
         status: String(data.status ?? "todo"),
         reviewStatus: String(data.reviewStatus ?? "pending"),
