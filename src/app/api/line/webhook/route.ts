@@ -74,7 +74,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       )
     );
 
-    if (shouldAnswerLineQuestion(event.message.text)) {
+    if (shouldReplyInLineChat(event) && shouldAnswerLineQuestion(event.message.text)) {
       const answer = await answerQuestionFromFirestore(event.message.text, projectId);
       await replyLineText(event.replyToken, answer);
     }
@@ -90,4 +90,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 function normalizeMessageType(type: string) {
   if (type === "image" || type === "audio") return type;
   return "text";
+}
+
+function shouldReplyInLineChat(event: LineWebhookEvent) {
+  return event.source?.type === "user";
 }
