@@ -33,8 +33,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, results: [] });
   }
 
-  const { handleLineWebhookEvents } = await import("./handler");
-  return handleLineWebhookEvents(events as LineWebhookEvent[]);
+  try {
+    const { handleLineWebhookEvents } = await import("./handler");
+    return await handleLineWebhookEvents(events as LineWebhookEvent[]);
+  } catch (caught) {
+    const detail = caught instanceof Error ? caught.message : "Unknown handler error";
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "LINE webhook handler failed",
+        detail
+      },
+      { status: 500 }
+    );
+  }
 }
 
 function verifyLineSignature(rawBody: string, signature: string | null) {
