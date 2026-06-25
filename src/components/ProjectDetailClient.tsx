@@ -1,13 +1,13 @@
 "use client";
 
-import { ArrowLeft, Gauge, MessageSquareText, Plus } from "lucide-react";
+import { ArrowLeft, Edit3, Gauge, MessageSquareText, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
 import { PageHeader } from "./PageHeader";
 import { ProjectForm } from "./ProjectForm";
 import { TaskTable } from "./TaskTable";
-import { EmptyState, ErrorMessage, LoadingState, PrimaryLink, SecondaryLink } from "./Ui";
+import { Button, EmptyState, ErrorMessage, LoadingState, PrimaryLink, SecondaryLink } from "./Ui";
 import { useAuth } from "@/components/AuthProvider";
 import { toAuditActor } from "@/lib/audit";
 import {
@@ -24,6 +24,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -46,6 +47,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   async function handleSave(value: ProjectInput) {
     await updateProject(projectId, value, toAuditActor(user));
     await loadData();
+    setProjectEditorOpen(false);
   }
 
   async function handleDeleteProject() {
@@ -96,6 +98,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
               <ArrowLeft className="h-4 w-4" aria-hidden />
               回案件列表
             </SecondaryLink>
+            <Button type="button" variant="secondary" onClick={() => setProjectEditorOpen(true)}>
+              <Edit3 className="h-4 w-4" aria-hidden />
+              編輯案件
+            </Button>
             <SecondaryLink href={`/projects/${projectId}/progress`}>
               <Gauge className="h-4 w-4" aria-hidden />
               工程進度
@@ -112,9 +118,13 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         }
       />
       <ErrorMessage message={error} />
-      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-        <ProjectForm initialValue={project} submitLabel="儲存案件" onSubmit={handleSave} />
-      </section>
+      {projectEditorOpen ? (
+        <ProjectEditDialog
+          project={project}
+          onClose={() => setProjectEditorOpen(false)}
+          onSubmit={handleSave}
+        />
+      ) : null}
       <section className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold text-slate-950">此案件任務</h2>
@@ -137,6 +147,39 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             }
           />
         )}
+      </section>
+    </div>
+  );
+}
+
+function ProjectEditDialog({
+  project,
+  onClose,
+  onSubmit
+}: {
+  project: Project;
+  onClose: () => void;
+  onSubmit: (value: ProjectInput) => Promise<void>;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <section className="w-full max-w-3xl rounded-lg border border-stone-200 bg-white p-5 shadow-xl">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">編輯案件資料</h2>
+            <p className="mt-1 text-sm text-slate-500">修改案件基本資料，儲存後會留下操作紀錄。</p>
+          </div>
+          <button
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
+            type="button"
+            onClick={onClose}
+            aria-label="關閉編輯案件"
+            title="關閉"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+        <ProjectForm initialValue={project} submitLabel="儲存修改" onSubmit={onSubmit} />
       </section>
     </div>
   );
