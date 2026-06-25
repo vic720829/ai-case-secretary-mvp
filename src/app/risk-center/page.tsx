@@ -172,7 +172,7 @@ export default function RiskCenterPage() {
       {!error ? (
         <div className="grid gap-4 md:grid-cols-3">
           <RiskStatCard
-            title="AI 建立待辦"
+            title="AI 已核准待辦"
             value={activeAiTasks.length}
             tone="teal"
             icon={<Bot className="h-5 w-5" aria-hidden />}
@@ -184,7 +184,7 @@ export default function RiskCenterPage() {
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 逾期待辦"
+            title="AI 已核准逾期待辦"
             value={overdueAiTasks.length}
             tone="amber"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
@@ -196,9 +196,9 @@ export default function RiskCenterPage() {
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
           <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
-          <AiTaskSection title="AI 建立待辦" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 建立的待辦。" />
+          <AiTaskSection title="AI 已核准待辦" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 已核准待辦。" />
           <AiTaskSection title="AI 高風險待辦" aiTasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 高風險待辦。" />
-          <AiTaskSection title="AI 逾期待辦" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 逾期待辦。" />
+          <AiTaskSection title="AI 已核准逾期待辦" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 已核准逾期待辦。" />
           <RiskSection title="高風險待辦" tasks={highRiskTasks} projects={projects} empty="目前沒有高風險待辦。" />
           <RiskSection title="已逾期待辦" tasks={overdueTasks} projects={projects} empty="目前沒有逾期待辦。" />
           <RiskSection title="今天到期待辦" tasks={dueTodayTasks} projects={projects} empty="今天沒有到期待辦。" />
