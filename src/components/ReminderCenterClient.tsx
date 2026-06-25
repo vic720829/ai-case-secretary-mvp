@@ -52,9 +52,7 @@ export function ReminderCenterClient() {
       }).filter((candidate) => logByKey.get(candidate.key)?.status !== "confirmed");
 
       await Promise.all(
-        candidates
-          .filter((candidate) => !logByKey.has(candidate.key))
-          .map((candidate) => upsertPendingReminderLog(candidate))
+        candidates.map((candidate) => upsertPendingReminderLog(candidate))
       );
 
       setProjects(nextProjects);
@@ -71,7 +69,16 @@ export function ReminderCenterClient() {
   }, [loadData]);
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
-  const pendingReminders = useMemo(() => reminders.filter((reminder) => reminder.status === "pending"), [reminders]);
+  const pendingReminders = useMemo(
+    () =>
+      reminders
+        .filter((reminder) => reminder.status === "pending")
+        .sort((a, b) => {
+          if (a.priority !== b.priority) return a.priority === "high" ? -1 : 1;
+          return (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99");
+        }),
+    [reminders]
+  );
   const confirmedReminders = useMemo(
     () =>
       reminders
@@ -171,7 +178,10 @@ function ReminderTable({
               return (
                 <tr key={reminder.id} className="hover:bg-stone-50">
                   <td className="px-4 py-4">
-                    <div className="font-semibold text-slate-950">{reminder.title}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-semibold text-slate-950">{reminder.title}</div>
+                      {reminder.priority === "high" ? <PriorityBadge /> : null}
+                    </div>
                     <div className="mt-1 text-xs text-slate-500">{reminder.sourceLabel}</div>
                   </td>
                   <td className="px-4 py-4 text-slate-600">
@@ -224,7 +234,10 @@ function ConfirmedList({
           <div key={reminder.id} className="rounded-lg border border-stone-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="font-semibold text-slate-950">{reminder.title}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-semibold text-slate-950">{reminder.title}</div>
+                  {reminder.priority === "high" ? <PriorityBadge /> : null}
+                </div>
                 <div className="mt-1 text-xs text-slate-500">
                   {project?.name ?? "未綁定案件"} · {reminder.sourceLabel}
                 </div>
@@ -288,6 +301,14 @@ function StatusBadge({ status }: { status: ReminderLog["status"] }) {
   );
 }
 
+function PriorityBadge() {
+  return (
+    <span className="inline-flex min-h-5 items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200">
+      高優先
+    </span>
+  );
+}
+
 function getReminderHref(reminder: ReminderLog) {
   if (reminder.sourceType === "ai_task" && reminder.reminderType === "ai_task_pending_review") return "/ai-tasks";
   if (reminder.sourceType === "task") return `/tasks/${reminder.sourceId}`;
@@ -306,6 +327,7 @@ function toReminderInput(reminder: ReminderLog): ReminderLogInput {
     sourceLabel: reminder.sourceLabel,
     dueDate: reminder.dueDate,
     status: reminder.status,
+    priority: reminder.priority,
     firstTriggeredOn: reminder.firstTriggeredOn,
     lastRemindedOn: reminder.lastRemindedOn
   };

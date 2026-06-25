@@ -9,6 +9,7 @@ export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoic
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type AiTaskResolutionStatus = "open" | "maybe_answered" | "confirmed_resolved";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
+export type ReminderPriority = "normal" | "high";
 export type ReminderType =
   | "stage_before_start"
   | "milestone_before_due"
@@ -184,6 +185,7 @@ export type ReminderLogInput = {
   sourceLabel: string;
   dueDate: string;
   status: ReminderStatus;
+  priority?: ReminderPriority;
   firstTriggeredOn: string;
   lastRemindedOn: string;
   snoozedUntil?: string;
@@ -191,6 +193,7 @@ export type ReminderLogInput = {
 
 export type ReminderLog = ReminderLogInput & {
   id: string;
+  priority: ReminderPriority;
   confirmedBy: string;
   actionBy: string;
   lastAction: string;

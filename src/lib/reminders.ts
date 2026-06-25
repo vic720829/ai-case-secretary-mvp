@@ -20,13 +20,15 @@ export function buildReminderCandidates({
   stages,
   milestones,
   aiTasks,
-  today = todayInputValue()
+  today = todayInputValue(),
+  now = new Date()
 }: {
   tasks: Task[];
   stages: ProjectStage[];
   milestones: Milestone[];
   aiTasks: AiTask[];
   today?: string;
+  now?: Date;
 }) {
   const candidates: ReminderCandidate[] = [];
 
@@ -106,16 +108,21 @@ export function buildReminderCandidates({
 
   aiTasks.forEach((aiTask) => {
     if (aiTask.reviewStatus === "pending") {
+      const ageMinutes = getAgeMinutes(aiTask.createdAt, now);
+      if (ageMinutes < 30) return;
+
+      const isHighPriority = ageMinutes >= 180;
       candidates.push(
         toCandidate(
           "ai_task",
           aiTask.id,
           "ai_task_pending_review",
           aiTask.projectId,
-          "AI 草稿待審核",
+          isHighPriority ? "AI 草稿高優先：超過 3 小時未審核" : "AI 草稿待審核：超過 30 分鐘",
           aiTask.title,
           dateToInputValue(aiTask.createdAt ?? new Date()),
-          today
+          today,
+          isHighPriority ? "high" : "normal"
         )
       );
       return;
@@ -158,7 +165,8 @@ function toCandidate(
   sourceLabel: string,
   title: string,
   dueDate: string,
-  today: string
+  today: string,
+  priority: ReminderCandidate["priority"] = "normal"
 ): ReminderCandidate {
   return {
     key: createReminderKey(sourceType, sourceId, reminderType),
@@ -170,9 +178,15 @@ function toCandidate(
     sourceLabel,
     dueDate,
     status: "pending",
+    priority,
     firstTriggeredOn: today,
     lastRemindedOn: today
   };
+}
+
+function getAgeMinutes(createdAt: Date | null, now: Date) {
+  if (!createdAt) return 0;
+  return Math.floor((now.getTime() - createdAt.getTime()) / 60000);
 }
 
 function dateToInputValue(date: Date) {

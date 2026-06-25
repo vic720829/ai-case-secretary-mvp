@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey, dateMinusDays } from "../lib/reminders";
-import type { ReminderSourceType, ReminderType } from "../lib/types";
+import type { ReminderPriority, ReminderSourceType, ReminderType } from "../lib/types";
 import { pushLineMessages, type LinePushMessage } from "./line";
 
 type ReminderItem = {
@@ -13,6 +13,7 @@ type ReminderItem = {
   sourceLabel: string;
   title: string;
   dueDate: string;
+  priority: ReminderPriority;
   firstTriggeredOn: string;
   lastRemindedOn: string;
   snoozedUntil?: string;
@@ -173,20 +174,24 @@ async function buildDailyReminderContent() {
     const reviewStatus = String(aiTask.reviewStatus ?? "pending");
     const status = String(aiTask.status ?? "todo");
     const dueDate = timestampToTaipeiDate(aiTask.dueDate);
+    const createdDate = timestampToTaipeiDate(aiTask.createdAt);
     const projectId = String(aiTask.projectId ?? "");
     const title = String(aiTask.title ?? "未命名 AI 任務");
 
     if (reviewStatus === "pending") {
+      if (!createdDate || createdDate >= today) return;
+
       candidates.push(
         toReminderItem(
           "ai_task",
           doc.id,
           "ai_task_pending_review",
           projectId,
-          "AI 草稿待審核",
+          "AI 草稿高優先：隔夜未審核",
           title,
-          timestampToTaipeiDate(aiTask.createdAt) || today,
-          today
+          createdDate,
+          today,
+          "high"
         )
       );
       return;
@@ -204,14 +209,15 @@ async function buildDailyReminderContent() {
 
   await upsertPendingReminderLogs(candidates);
   const pendingItems = await listPendingReminderItems(today);
+  const dailyPendingItems = pendingItems.filter((item) => shouldIncludeInDailyReminder(item, today));
 
   const sections = [
-    formatSection("AI 草稿待審核", pendingItems.filter((item) => item.reminderType === "ai_task_pending_review"), projects),
-    formatSection("進場提醒", pendingItems.filter((item) => item.reminderType === "stage_before_start"), projects),
-    formatSection("關鍵節點提醒", pendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
-    formatSection("今天到期", pendingItems.filter((item) => item.reminderType === "due_today"), projects),
-    formatSection("已逾期", pendingItems.filter((item) => item.reminderType === "overdue"), projects),
-    formatSection("高風險", pendingItems.filter((item) => item.reminderType === "high_risk"), projects)
+    formatSection("AI 草稿待審核", dailyPendingItems.filter((item) => item.reminderType === "ai_task_pending_review"), projects),
+    formatSection("進場提醒", dailyPendingItems.filter((item) => item.reminderType === "stage_before_start"), projects),
+    formatSection("關鍵節點提醒", dailyPendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
+    formatSection("今天到期", dailyPendingItems.filter((item) => item.reminderType === "due_today"), projects),
+    formatSection("已逾期", dailyPendingItems.filter((item) => item.reminderType === "overdue"), projects),
+    formatSection("高風險", dailyPendingItems.filter((item) => item.reminderType === "high_risk"), projects)
   ].filter(Boolean);
 
   return {
@@ -223,7 +229,7 @@ async function buildDailyReminderContent() {
       "",
       "可直接點下方提醒卡片的按鈕確認；已確認後不會再提醒。"
     ].join("\n"),
-    pendingItems,
+    pendingItems: dailyPendingItems,
     projects
   };
 }
@@ -266,6 +272,7 @@ async function listPendingReminderItems(today: string) {
       sourceLabel: String(data.sourceLabel ?? ""),
       title: String(data.title ?? "未命名提醒"),
       dueDate: String(data.dueDate ?? ""),
+      priority: (data.priority === "high" ? "high" : "normal") as ReminderPriority,
       firstTriggeredOn: String(data.firstTriggeredOn ?? today),
       lastRemindedOn: String(data.lastRemindedOn ?? today),
       snoozedUntil: data.snoozedUntil ? String(data.snoozedUntil) : ""
@@ -295,7 +302,8 @@ function toReminderItem(
   sourceLabel: string,
   title: string,
   dueDate: string,
-  today: string
+  today: string,
+  priority: ReminderPriority = "normal"
 ): ReminderItem {
   return {
     key: createReminderKey(sourceType, sourceId, reminderType),
@@ -306,6 +314,7 @@ function toReminderItem(
     sourceLabel,
     title,
     dueDate,
+    priority,
     firstTriggeredOn: today,
     lastRemindedOn: today
   };
@@ -368,8 +377,14 @@ function formatSection(title: string, items: ReminderItem[], projects: Map<strin
 function formatReminderLine(item: ReminderItem, projects: Map<string, ProjectSummary>) {
   const projectName = getProjectName(item, projects);
   const dueDate = item.dueDate ? `（${item.dueDate.replaceAll("-", "/")}）` : "";
+  const priority = item.priority === "high" ? "【高優先】" : "";
 
-  return `- [${projectName}] ${item.sourceLabel}：${item.title}${dueDate}`;
+  return `- ${priority}[${projectName}] ${item.sourceLabel}：${item.title}${dueDate}`;
+}
+
+function shouldIncludeInDailyReminder(item: ReminderItem, today: string) {
+  if (item.reminderType !== "ai_task_pending_review") return true;
+  return Boolean(item.dueDate && item.dueDate < today);
 }
 
 function getProjectName(item: ReminderItem, projects: Map<string, ProjectSummary>) {

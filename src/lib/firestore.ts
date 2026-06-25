@@ -232,6 +232,7 @@ function reminderLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Remi
     sourceLabel: data.sourceLabel ?? "",
     dueDate: data.dueDate ?? "",
     status: data.status ?? "pending",
+    priority: data.priority === "high" ? "high" : "normal",
     firstTriggeredOn: data.firstTriggeredOn ?? "",
     lastRemindedOn: data.lastRemindedOn ?? "",
     snoozedUntil: data.snoozedUntil ?? "",
@@ -728,6 +729,7 @@ export async function listReminderLogs() {
     .sort((a, b) => {
       const statusOrder = a.status.localeCompare(b.status);
       if (statusOrder) return statusOrder;
+      if (a.priority !== b.priority) return a.priority === "high" ? -1 : 1;
       return (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99");
     });
 }
