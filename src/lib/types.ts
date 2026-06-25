@@ -15,6 +15,7 @@ export type ReminderType =
   | "overdue"
   | "high_risk";
 export type ReminderStatus = "pending" | "confirmed";
+export type WebhookLogStatus = "success" | "skipped" | "error";
 
 export type ProjectInput = {
   name: string;
@@ -113,6 +114,7 @@ export type LineMember = LineMemberInput & {
 export type MessageInput = {
   projectId: string;
   groupId: string;
+  lineMessageId: string;
   senderId: string;
   senderName: string;
   senderRole: LineSenderRole;
@@ -155,6 +157,16 @@ export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt"> & {
   createdAt: Date | null;
 };
 
+export type AiTaskDraftUpdateInput = {
+  projectId: string;
+  title: string;
+  description: string;
+  taskType: AiTaskType;
+  status: TaskStatus;
+  assignedTo: string;
+  dueDate: string;
+};
+
 export type ReminderLogInput = {
   key: string;
   sourceType: ReminderSourceType;
@@ -178,4 +190,20 @@ export type ReminderLog = ReminderLogInput & {
   createdAt: Date | null;
   updatedAt: Date | null;
   confirmedAt: Date | null;
+};
+
+export type WebhookLog = {
+  id: string;
+  eventType: string;
+  status: WebhookLogStatus;
+  groupId: string;
+  userId: string;
+  projectId: string;
+  messageId: string;
+  lineMessageId: string;
+  messageType: string;
+  aiTaskDrafts: number;
+  reason: string;
+  errorMessage: string;
+  createdAt: Date | null;
 };

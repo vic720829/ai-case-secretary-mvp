@@ -322,6 +322,12 @@ function toReminderActionMessage(item: ReminderItem, projects: Map<string, Proje
         },
         {
           type: "postback",
+          label: "延後3天",
+          data: `action=snooze_reminder&key=${encodedKey}&days=3`,
+          displayText: truncate(`延後3天：${item.title}`, 300)
+        },
+        {
+          type: "postback",
           label: "仍待處理",
           data: `action=keep_reminder&key=${encodedKey}`,
           displayText: truncate(`仍待處理：${item.title}`, 300)

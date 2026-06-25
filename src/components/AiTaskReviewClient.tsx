@@ -1,15 +1,24 @@
 "use client";
 
-import { AlertTriangle, Bot, CheckCircle2, ExternalLink, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, Save, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
-import { aiTaskTypeOptions } from "@/lib/constants";
+import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { approveAiTask, listAiTasks, listProjects, rejectAiTask } from "@/lib/firestore";
-import type { AiTask, AiTaskReviewStatus, AiTaskType, LineSenderRole, Project, RiskLevel, TaskInput } from "@/lib/types";
+import { approveAiTask, listAiTasks, listProjects, rejectAiTask, updateAiTaskDraft } from "@/lib/firestore";
+import type {
+  AiTask,
+  AiTaskDraftUpdateInput,
+  AiTaskReviewStatus,
+  AiTaskType,
+  LineSenderRole,
+  Project,
+  RiskLevel,
+  TaskInput
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
@@ -27,6 +36,7 @@ export function AiTaskReviewClient() {
   const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState("");
+  const [draftValues, setDraftValues] = useState<Record<string, AiTaskDraftUpdateInput>>({});
   const [error, setError] = useState("");
 
   const loadData = useCallback(async () => {
@@ -60,12 +70,43 @@ export function AiTaskReviewClient() {
     [aiTasks]
   );
 
+  useEffect(() => {
+    setDraftValues((current) => {
+      const next = { ...current };
+      pendingTasks.forEach((task) => {
+        next[task.id] ??= toDraftInput(task);
+      });
+
+      return next;
+    });
+  }, [pendingTasks]);
+
+  function updateDraftValue(id: string, value: AiTaskDraftUpdateInput) {
+    setDraftValues((current) => ({ ...current, [id]: value }));
+  }
+
+  async function handleSaveDraft(task: AiTask) {
+    setProcessingId(task.id);
+    setError("");
+
+    try {
+      await updateAiTaskDraft(task.id, normalizeDraftInput(draftValues[task.id] ?? toDraftInput(task)));
+      await loadData();
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setProcessingId("");
+    }
+  }
+
   async function handleApprove(task: AiTask) {
     setProcessingId(task.id);
     setError("");
 
     try {
-      await approveAiTask(task.id, toTaskInput(task), user?.email ?? user?.uid ?? "unknown");
+      const draft = normalizeDraftInput(draftValues[task.id] ?? toDraftInput(task));
+      await updateAiTaskDraft(task.id, draft);
+      await approveAiTask(task.id, toTaskInput(draft), user?.email ?? user?.uid ?? "unknown");
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
@@ -115,8 +156,12 @@ export function AiTaskReviewClient() {
         {pendingTasks.length ? (
           <AiTaskReviewTable
             aiTasks={pendingTasks}
+            projects={projects}
             projectById={projectById}
+            draftValues={draftValues}
             processingId={processingId}
+            onDraftChange={updateDraftValue}
+            onSaveDraft={handleSaveDraft}
             onApprove={handleApprove}
             onReject={handleReject}
           />
@@ -139,14 +184,22 @@ export function AiTaskReviewClient() {
 
 function AiTaskReviewTable({
   aiTasks,
+  projects,
   projectById,
+  draftValues,
   processingId,
+  onDraftChange,
+  onSaveDraft,
   onApprove,
   onReject
 }: {
   aiTasks: AiTask[];
+  projects: Project[];
   projectById: Map<string, Project>;
+  draftValues: Record<string, AiTaskDraftUpdateInput>;
   processingId: string;
+  onDraftChange: (id: string, value: AiTaskDraftUpdateInput) => void;
+  onSaveDraft: (task: AiTask) => Promise<void>;
   onApprove: (task: AiTask) => Promise<void>;
   onReject: (task: AiTask) => Promise<void>;
 }) {
@@ -168,18 +221,24 @@ function AiTaskReviewTable({
           </thead>
           <tbody className="divide-y divide-stone-100">
             {aiTasks.map((task) => {
-              const project = projectById.get(task.projectId);
-              const disabled = processingId === task.id || !project;
+              const draft = draftValues[task.id] ?? toDraftInput(task);
+              const project = projectById.get(draft.projectId);
+              const disabled = processingId === task.id || !project || !draft.title.trim();
 
               return (
                 <tr key={task.id} className="hover:bg-stone-50">
-                  <td className="px-4 py-4">
-                    <div className="font-semibold text-slate-950">{task.title}</div>
-                    {task.description ? (
-                      <div className="mt-1 line-clamp-2 max-w-sm text-xs leading-5 text-slate-500">
-                        {task.description}
-                      </div>
-                    ) : null}
+                  <td className="min-w-72 px-4 py-4">
+                    <input
+                      className={inputClassName}
+                      value={draft.title}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, title: event.target.value })}
+                      required
+                    />
+                    <textarea
+                      className={`${inputClassName} mt-2 min-h-20 resize-y`}
+                      value={draft.description}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, description: event.target.value })}
+                    />
                     {task.sourceSenderName ? (
                       <div className="mt-2 text-xs text-slate-500">
                         來源：{task.sourceSenderName} · {getSenderRoleLabel(task.sourceSenderRole)}
@@ -187,25 +246,88 @@ function AiTaskReviewTable({
                     ) : null}
                   </td>
                   <td className="px-4 py-4 text-slate-600">
+                    <select
+                      className={inputClassName}
+                      value={draft.projectId}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, projectId: event.target.value })}
+                    >
+                      <option value="">未綁定案件</option>
+                      {projects.map((projectOption) => (
+                        <option key={projectOption.id} value={projectOption.id}>
+                          {projectOption.name} / {projectOption.clientName}
+                        </option>
+                      ))}
+                    </select>
                     {project ? (
-                      <Link className="inline-flex items-center gap-1 hover:text-teal-700" href={`/projects/${project.id}/messages`}>
-                        {project.name}
+                      <Link
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-teal-700 hover:text-teal-800"
+                        href={`/projects/${project.id}/messages`}
+                      >
+                        查看訊息
                         <ExternalLink className="h-3 w-3" aria-hidden />
                       </Link>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-amber-700">
+                      <span className="mt-2 inline-flex items-center gap-1 text-xs text-amber-700">
                         <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                        未綁定案件
+                        核准前需綁定案件
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-4 text-slate-600">{typeLabel.get(task.taskType) ?? task.taskType}</td>
-                  <td className="px-4 py-4 text-slate-600">{task.assignedTo || "未指定"}</td>
                   <td className="px-4 py-4 text-slate-600">
-                    {task.dueDate ? formatDate(dateToInputValue(task.dueDate)) : "未設定"}
+                    <select
+                      className={inputClassName}
+                      value={draft.taskType}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, taskType: event.target.value as AiTaskType })}
+                    >
+                      {aiTaskTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-slate-500">原判斷：{typeLabel.get(task.taskType) ?? task.taskType}</div>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    <input
+                      className={inputClassName}
+                      value={draft.assignedTo}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, assignedTo: event.target.value })}
+                      placeholder="未指定"
+                    />
+                    <select
+                      className={`${inputClassName} mt-2`}
+                      value={draft.status}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, status: event.target.value as TaskInput["status"] })}
+                    >
+                      {taskStatusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    <input
+                      className={inputClassName}
+                      type="date"
+                      value={draft.dueDate}
+                      onChange={(event) => onDraftChange(task.id, { ...draft, dueDate: event.target.value })}
+                    />
+                    <div className="mt-2 text-xs text-slate-500">
+                      {draft.dueDate ? formatDate(draft.dueDate) : "未設定"}
+                    </div>
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={processingId === task.id}
+                        onClick={() => void onSaveDraft(task)}
+                      >
+                        <Save className="h-4 w-4" aria-hidden />
+                        儲存
+                      </Button>
                       <Button
                         type="button"
                         disabled={disabled}
@@ -331,16 +453,37 @@ function getSenderRoleLabel(role: LineSenderRole) {
   }[role];
 }
 
-function toTaskInput(task: AiTask): TaskInput {
+function toDraftInput(task: AiTask): AiTaskDraftUpdateInput {
   return {
+    projectId: task.projectId,
     title: task.title,
     description: task.description,
-    projectId: task.projectId,
-    assignee: task.assignedTo,
-    dueDate: task.dueDate ? dateToInputValue(task.dueDate) : "",
+    taskType: task.taskType,
     status: task.status,
+    assignedTo: task.assignedTo,
+    dueDate: task.dueDate ? dateToInputValue(task.dueDate) : ""
+  };
+}
+
+function normalizeDraftInput(input: AiTaskDraftUpdateInput): AiTaskDraftUpdateInput {
+  return {
+    ...input,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    assignedTo: input.assignedTo.trim()
+  };
+}
+
+function toTaskInput(input: AiTaskDraftUpdateInput): TaskInput {
+  return {
+    title: input.title,
+    description: input.description,
+    projectId: input.projectId,
+    assignee: input.assignedTo,
+    dueDate: input.dueDate,
+    status: input.status,
     source: "ai",
-    riskLevel: riskByAiTaskType[task.taskType]
+    riskLevel: riskByAiTaskType[input.taskType]
   };
 }
 
@@ -357,3 +500,6 @@ function dateToInputValue(date: Date) {
 
   return `${year}-${month}-${day}`;
 }
+
+const inputClassName =
+  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100";

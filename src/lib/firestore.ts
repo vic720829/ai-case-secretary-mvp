@@ -19,6 +19,7 @@ import {
 import { db } from "./firebase";
 import type {
   AiTask,
+  AiTaskDraftUpdateInput,
   Milestone,
   MilestoneInput,
   LineGroup,
@@ -33,7 +34,8 @@ import type {
   ReminderLog,
   ReminderLogInput,
   Task,
-  TaskInput
+  TaskInput,
+  WebhookLog
 } from "./types";
 
 const PROJECTS_COLLECTION = "projects";
@@ -45,6 +47,7 @@ const LINE_MEMBERS_COLLECTION = "line_members";
 const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
 const REMINDER_LOGS_COLLECTION = "reminder_logs";
+const WEBHOOK_LOGS_COLLECTION = "webhook_logs";
 
 function requireDb() {
   if (!db) {
@@ -173,6 +176,7 @@ function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message 
     id: snapshot.id,
     projectId: data.projectId ?? "",
     groupId: data.groupId ?? "",
+    lineMessageId: data.lineMessageId ?? "",
     senderId: data.senderId ?? "",
     senderName: data.senderName ?? "",
     senderRole: data.senderRole ?? "unknown",
@@ -236,6 +240,35 @@ function reminderLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Remi
   };
 }
 
+function webhookLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): WebhookLog {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    eventType: data.eventType ?? "",
+    status: data.status ?? "success",
+    groupId: data.groupId ?? "",
+    userId: data.userId ?? "",
+    projectId: data.projectId ?? "",
+    messageId: data.messageId ?? "",
+    lineMessageId: data.lineMessageId ?? "",
+    messageType: data.messageType ?? "",
+    aiTaskDrafts: Number(data.aiTaskDrafts ?? 0),
+    reason: data.reason ?? "",
+    errorMessage: data.errorMessage ?? "",
+    createdAt: readTimestamp(data.createdAt)
+  };
+}
+
+function dateStringToTimestamp(value: string) {
+  if (!value) return null;
+
+  const parsed = new Date(`${value}T00:00:00+08:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return Timestamp.fromDate(parsed);
+}
+
 export async function listProjects() {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -282,7 +315,8 @@ export async function deleteProject(id: string) {
     linkedMessages,
     linkedLineMembers,
     linkedAiTasks,
-    linkedReminderLogs
+    linkedReminderLogs,
+    linkedWebhookLogs
   ] = await Promise.all([
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
@@ -291,7 +325,8 @@ export async function deleteProject(id: string) {
     getDocs(query(collection(database, MESSAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_MEMBERS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id))),
-    getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id)))
+    getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, WEBHOOK_LOGS_COLLECTION), where("projectId", "==", id)))
   ]);
   const batch = writeBatch(database);
 
@@ -318,6 +353,9 @@ export async function deleteProject(id: string) {
   });
   linkedReminderLogs.docs.forEach((reminderLogSnapshot) => {
     batch.delete(reminderLogSnapshot.ref);
+  });
+  linkedWebhookLogs.docs.forEach((webhookLogSnapshot) => {
+    batch.delete(webhookLogSnapshot.ref);
   });
   batch.delete(doc(database, PROJECTS_COLLECTION, id));
 
@@ -594,6 +632,21 @@ export async function listAiTasksByProject(projectId: string) {
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
+export async function updateAiTaskDraft(id: string, input: AiTaskDraftUpdateInput) {
+  const database = requireDb();
+
+  await updateDoc(doc(database, AI_TASKS_COLLECTION, id), {
+    projectId: input.projectId,
+    title: input.title,
+    description: input.description,
+    taskType: input.taskType,
+    status: input.status,
+    assignedTo: input.assignedTo,
+    dueDate: dateStringToTimestamp(input.dueDate),
+    updatedAt: serverTimestamp()
+  });
+}
+
 export async function approveAiTask(id: string, input: TaskInput, reviewedBy: string) {
   const database = requireDb();
   const aiTaskRef = doc(database, AI_TASKS_COLLECTION, id);
@@ -682,4 +735,13 @@ export async function confirmReminderLog(input: ReminderLogInput, confirmedBy: s
     },
     { merge: true }
   );
+}
+
+export async function listWebhookLogs() {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, WEBHOOK_LOGS_COLLECTION), orderBy("createdAt", "desc"))
+  );
+
+  return snapshot.docs.map(webhookLogFromDoc);
 }

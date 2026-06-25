@@ -8,6 +8,7 @@ import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/service
 import {
   downloadLineMessageContent,
   getEventGroupId,
+  getLineGroupName,
   getLineSenderName,
   replyLineText,
   verifyLineSignature,
@@ -29,9 +30,22 @@ export async function POST(request: Request) {
   const events = body.events ?? [];
   const db = getAdminDb();
 
-  const results = await Promise.all(events.map((event) => handleLineEvent(db, event)));
+  const results = await Promise.all(events.map((event) => handleAndLogLineEvent(db, event)));
 
   return NextResponse.json({ ok: true, results });
+}
+
+async function handleAndLogLineEvent(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
+  try {
+    const result = await handleLineEvent(db, event);
+    await writeWebhookLog(db, event, result);
+    return result;
+  } catch (caught) {
+    const errorMessage = caught instanceof Error ? caught.message : "Unknown LINE webhook error";
+    const result = { ok: false, errorMessage };
+    await writeWebhookLog(db, event, result);
+    return result;
+  }
 }
 
 async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
@@ -47,11 +61,29 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const lineGroupSnapshot = groupId
     ? await db.collection("line_groups").where("groupId", "==", groupId).limit(1).get()
     : null;
-  const lineGroup = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0].data() : null;
+  const lineGroupDoc = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0] : null;
+  const lineGroup = lineGroupDoc ? lineGroupDoc.data() : null;
   const isAdminGroup = lineGroup?.groupType === "admin";
   const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
   const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
+  const lineMessageId = event.message.id ?? "";
+  const duplicatedMessage = lineMessageId
+    ? await db.collection("messages").where("lineMessageId", "==", lineMessageId).limit(1).get()
+    : null;
+
+  if (duplicatedMessage && !duplicatedMessage.empty) {
+    return {
+      skipped: true,
+      reason: "Duplicate LINE message",
+      messageId: duplicatedMessage.docs[0].id,
+      lineMessageId,
+      projectId
+    };
+  }
+
+  await syncLineGroupName(lineGroupDoc, event);
+
   const lineSenderName = await getLineSenderName(event);
   const member = await findLineMember(db, event.source?.userId ?? "", projectId);
   const senderName = member.displayName || lineSenderName;
@@ -60,6 +92,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const messageRef = await db.collection("messages").add({
     projectId,
     groupId,
+    lineMessageId,
     senderId: event.source?.userId ?? "",
     senderName,
     senderRole,
@@ -110,13 +143,14 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
     return {
       messageId: messageRef.id,
+      lineMessageId,
       aiTaskDrafts: suggestions.length,
       projectId,
       aiSkippedReason: shouldCreateAiDrafts ? "" : "Only bound project LINE groups create AI task drafts"
     };
   }
 
-  return { messageId: messageRef.id, aiTaskDrafts: 0, projectId };
+  return { messageId: messageRef.id, lineMessageId, aiTaskDrafts: 0, projectId };
 }
 
 async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWebhookEvent) {
@@ -188,6 +222,52 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   await replyLineText(event.replyToken, `已保留待處理：${title}`);
 
   return { ok: true, action, key };
+}
+
+async function syncLineGroupName(
+  lineGroupDoc: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData> | null,
+  event: LineWebhookEvent
+) {
+  if (!lineGroupDoc) return;
+
+  const currentGroupName = String(lineGroupDoc.data().groupName ?? "").trim();
+  if (currentGroupName) return;
+
+  const groupName = await getLineGroupName(event);
+  if (!groupName) return;
+
+  await lineGroupDoc.ref.set(
+    {
+      groupName,
+      updatedAt: FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+async function writeWebhookLog(
+  db: FirebaseFirestore.Firestore,
+  event: LineWebhookEvent,
+  result: Record<string, unknown>
+) {
+  try {
+    await db.collection("webhook_logs").add({
+      eventType: event.type ?? "",
+      status: result.ok === false ? "error" : result.skipped ? "skipped" : "success",
+      groupId: getEventGroupId(event),
+      userId: event.source?.userId ?? "",
+      projectId: String(result.projectId ?? ""),
+      messageId: String(result.messageId ?? ""),
+      lineMessageId: String(result.lineMessageId ?? event.message?.id ?? ""),
+      messageType: event.message?.type ?? "",
+      aiTaskDrafts: Number(result.aiTaskDrafts ?? 0),
+      reason: String(result.reason ?? result.aiSkippedReason ?? ""),
+      errorMessage: String(result.errorMessage ?? ""),
+      createdAt: FieldValue.serverTimestamp()
+    });
+  } catch {
+    // Webhook logs are for diagnostics only; LINE processing should not fail because logging failed.
+  }
 }
 
 async function findLineMember(

@@ -92,5 +92,10 @@ service cloud.firestore {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();
     }
+
+    match /webhook_logs/{webhookLogId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canManageSystemSettings();
+    }
   }
 }

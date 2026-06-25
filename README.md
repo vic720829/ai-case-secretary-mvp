@@ -13,9 +13,10 @@
 - LINE 群組管理：可綁定案件群組與公司後台群組。
 - LINE 成員身份：標記 LINE 發話者為內部人員、客戶或廠商。
 - LINE 訊息中心：接收 LINE Webhook，儲存文字、圖片、語音訊息，並可依案件與群組篩選。
+- LINE Webhook 紀錄：記錄成功、略過、錯誤與 AI 草稿建立數，方便除錯。
 - LINE 回覆限制：客戶群只同步與記錄，助理只在公司後台群組回答問題與發提醒。
-- LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「仍待處理」。
-- AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，人工核准後才轉成正式任務。
+- LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「延後3天」「仍待處理」。
+- AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，可先編輯再核准成正式任務。
 - Firebase Authentication：Email/Password 登入。
 - Firestore Rules：MVP4 角色權限版，支援 `owner` / `admin` / `staff` / `viewer`。
 - Netlify 部署與排程提醒。
@@ -163,6 +164,7 @@ OPENAI_MODEL=
 
 - projectId
 - groupId
+- lineMessageId
 - senderId
 - senderName
 - senderRole: `internal` / `client` / `vendor` / `unknown`
@@ -214,6 +216,21 @@ OPENAI_MODEL=
 - createdAt
 - updatedAt
 
+### webhook_logs
+
+- eventType
+- status: `success` / `skipped` / `error`
+- groupId
+- userId
+- projectId
+- messageId
+- lineMessageId
+- messageType
+- aiTaskDrafts
+- reason
+- errorMessage
+- createdAt
+
 ## LINE Webhook
 
 Webhook route:
@@ -232,12 +249,15 @@ LINE 訊息進入後會：
 
 - 驗證 LINE signature。
 - 依 `groupId` 尋找 `line_groups`。
+- 以 LINE 原始 `messageId` 避免重送事件重複建立訊息與 AI 草稿。
+- 若已綁定群組但尚未填群組名稱，會嘗試向 LINE 同步群組名稱。
 - 客戶群組只儲存訊息，不主動回覆。
 - 公司後台群組可以回答問題與接收提醒。
 - 只有已綁定案件的客戶群組會建立 AI 任務草稿。
 - 若 `line_members` 有登記發話者身份，AI 會依身份區分公司承諾、等待客戶回覆、追蹤廠商承諾。
 - 文字訊息存到 Firestore `messages.text`。
 - 圖片與語音會下載到 Firebase Storage，並把公開下載連結存到 `messages.fileUrl`。
+- 每次 Webhook 處理結果會寫入 `webhook_logs`，可在後台查看成功、略過或錯誤。
 
 ## LINE 成員身份
 
@@ -324,7 +344,9 @@ users/{你的 Firebase Authentication uid}
 - AI 建立任務來源收斂：已完成基礎版。
 - AI 任務審核流程：已完成基礎版。
 - Firestore Rules 角色權限：已完成基礎版，發布前需先建立 `users/{uid}`。
-- 待補：LINE 按鈕支援指定負責人、延後自訂日期。
+- AI 草稿核准前編輯：已完成，核准前可修改案件、標題、內容、類型、負責人與截止日。
+- LINE 提醒延後：已完成，支援明天再提醒與延後3天。
+- Webhook 除錯紀錄：已完成，支援後台查看 webhook_logs。
 
 ## MVP5 LINE AI 問答秘書
 

@@ -53,6 +53,7 @@ async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Prom
           "item 欄位只能包含 title, description, taskType, assignedTo, dueDate。",
           "taskType 只能是 promise, change, followup, payment, invoice。",
           "dueDate 若可推論才填 YYYY-MM-DD。",
+          `今天日期：${datePlusDays(0)}（Asia/Taipei）`,
           "",
           "判斷規則：",
           "- senderRole=internal：我確認、我回覆、我安排、我提供，通常是公司承諾 promise。",
@@ -78,7 +79,7 @@ async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Prom
       data.output_text ??
       data.output?.flatMap((item) => item.content ?? []).map((content) => content.text ?? "").join("\n") ??
       "";
-    const parsed = JSON.parse(outputText) as Array<Partial<AiTaskSuggestion>>;
+    const parsed = JSON.parse(stripJsonFence(outputText)) as Array<Partial<AiTaskSuggestion>>;
 
     return parsed
       .filter((item) => item.title && item.taskType && taskTypes.includes(item.taskType))
@@ -165,13 +166,80 @@ function hasCommitmentWords(text: string) {
 }
 
 function inferDueDate(text: string) {
+  const explicitDate = inferExplicitDate(text);
+  if (explicitDate) return explicitDate;
+  if (/下月底/.test(text)) return endOfMonth(1);
+  if (/月底|本月底|這月底/.test(text)) return endOfMonth(0);
+  if (/大後天/.test(text)) return datePlusDays(3);
   if (/今天|等一下|稍後/.test(text)) return datePlusDays(0);
   if (/明天/.test(text)) return datePlusDays(1);
   if (/後天/.test(text)) return datePlusDays(2);
+  const weekdayDate = inferWeekdayDate(text);
+  if (weekdayDate) return weekdayDate;
   return undefined;
 }
 
+function stripJsonFence(value: string) {
+  return value
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+function inferExplicitDate(text: string) {
+  const slashMatch = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+  const zhMatch = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日?/);
+  const match = zhMatch ?? slashMatch;
+  if (!match) return undefined;
+
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  if (!isValidMonthDay(month, day)) return undefined;
+
+  const today = taipeiTodayDate();
+  let date = new Date(Date.UTC(today.getUTCFullYear(), month - 1, day));
+  if (date < today) {
+    date = new Date(Date.UTC(today.getUTCFullYear() + 1, month - 1, day));
+  }
+
+  return toDateString(date);
+}
+
+function inferWeekdayDate(text: string) {
+  const match = text.match(/(下週|下星期|下禮拜|本週|這週|這星期|這禮拜|週|星期|禮拜)([一二三四五六日天])/);
+  if (!match) return undefined;
+
+  const prefix = match[1];
+  const targetWeekday = weekdayNumber(match[2]);
+  if (targetWeekday < 0) return undefined;
+
+  const today = taipeiTodayDate();
+  const todayWeekday = today.getUTCDay();
+  const baseDays = targetWeekday - todayWeekday;
+  const isNextWeek = prefix.startsWith("下");
+  let offset = baseDays;
+
+  if (isNextWeek) {
+    offset = baseDays + 7;
+    if (offset <= 0) offset += 7;
+  } else if (offset < 0) {
+    offset += 7;
+  }
+
+  const date = new Date(today);
+  date.setUTCDate(today.getUTCDate() + offset);
+  return toDateString(date);
+}
+
 function datePlusDays(days: number) {
+  const date = taipeiTodayDate();
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return toDateString(date);
+}
+
+function taipeiTodayDate() {
   const parts = new Intl.DateTimeFormat("zh-TW", {
     timeZone: "Asia/Taipei",
     year: "numeric",
@@ -181,9 +249,38 @@ function datePlusDays(days: number) {
   const year = Number(parts.find((part) => part.type === "year")?.value ?? "1970");
   const month = Number(parts.find((part) => part.type === "month")?.value ?? "1");
   const day = Number(parts.find((part) => part.type === "day")?.value ?? "1");
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
 
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function endOfMonth(monthOffset: number) {
+  const today = taipeiTodayDate();
+  const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + monthOffset + 1, 0));
+  return toDateString(date);
+}
+
+function isValidMonthDay(month: number, day: number) {
+  if (!Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+
+  const date = new Date(Date.UTC(2024, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function weekdayNumber(value: string) {
+  return {
+    日: 0,
+    天: 0,
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6
+  }[value] ?? -1;
+}
+
+function toDateString(date: Date) {
   return [
     date.getUTCFullYear(),
     String(date.getUTCMonth() + 1).padStart(2, "0"),

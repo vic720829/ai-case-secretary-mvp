@@ -13,6 +13,7 @@ import {
   LogOut,
   MessageSquareText,
   Plus,
+  ScrollText,
   UsersRound
 } from "lucide-react";
 import Link from "next/link";
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/line-groups", label: "LINE群組", icon: Link2 },
   { href: "/line-members", label: "LINE成員", icon: UsersRound },
   { href: "/messages", label: "LINE訊息", icon: MessageSquareText },
+  { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText },
   { href: "/milestones", label: "關鍵節點", icon: Flag }
 ];
 

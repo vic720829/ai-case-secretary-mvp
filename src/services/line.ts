@@ -95,6 +95,29 @@ export async function getLineSenderName(event: LineWebhookEvent) {
   }
 }
 
+export async function getLineGroupName(event: LineWebhookEvent) {
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const sourceType = event.source?.type;
+  const groupId = event.source?.groupId;
+
+  if (!accessToken || sourceType !== "group" || !groupId) return "";
+
+  try {
+    const response = await fetch(`https://api.line.me/v2/bot/group/${encodeURIComponent(groupId)}/summary`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!response.ok) return "";
+
+    const summary = (await response.json()) as { groupName?: string };
+    return summary.groupName?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function replyLineText(replyToken: string | undefined, text: string) {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!replyToken || !accessToken) return;
