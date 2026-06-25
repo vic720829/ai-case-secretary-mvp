@@ -1,24 +1,31 @@
 "use client";
 
 import { Link2, Save } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { LineGroupInput, Project } from "@/lib/types";
 import { Button, ErrorMessage } from "./Ui";
 
 export function LineGroupForm({
   projects,
+  initialGroupId,
   onSubmit
 }: {
   projects: Project[];
+  initialGroupId?: string;
   onSubmit: (value: LineGroupInput) => Promise<void>;
 }) {
   const [value, setValue] = useState<LineGroupInput>({
-    groupId: "",
+    groupId: initialGroupId ?? "",
     projectId: "",
     groupName: ""
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!initialGroupId) return;
+    setValue((current) => ({ ...current, groupId: initialGroupId }));
+  }, [initialGroupId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
