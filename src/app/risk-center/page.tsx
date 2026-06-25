@@ -3,15 +3,14 @@
 import { AlertCircle, AlertTriangle, Bot, BriefcaseBusiness, CalendarClock, Flag, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AiTaskTable } from "@/components/AiTaskTable";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
 import { formatDate, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listAiTasks, listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
+import { listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
-import type { AiTask, Milestone, Project, ProjectStage, Task } from "@/lib/types";
+import type { Milestone, Project, ProjectStage, Task } from "@/lib/types";
 
 type HighRiskProject = {
   project: Project;
@@ -23,7 +22,6 @@ type HighRiskProject = {
 export default function RiskCenterPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,16 +32,14 @@ export default function RiskCenterPage() {
       setError("");
 
       try {
-        const [nextProjects, nextTasks, nextAiTasks, nextStages, nextMilestones] = await Promise.all([
+        const [nextProjects, nextTasks, nextStages, nextMilestones] = await Promise.all([
           listProjects(),
           listTasks(),
-          listAiTasks(),
           listProjectStages(),
           listMilestones()
         ]);
         setProjects(nextProjects);
         setTasks(nextTasks);
-        setAiTasks(nextAiTasks);
         setStages(nextStages);
         setMilestones(nextMilestones);
       } catch (caught) {
@@ -69,17 +65,14 @@ export default function RiskCenterPage() {
     () => activeTasks.filter((task) => isTaskDueToday(task.dueDate, task.status)),
     [activeTasks]
   );
-  const activeAiTasks = useMemo(
-    () => aiTasks.filter((task) => task.reviewStatus === "approved" && task.status !== "done"),
-    [aiTasks]
-  );
+  const aiSourceTasks = useMemo(() => activeTasks.filter((task) => task.source === "ai"), [activeTasks]);
   const highRiskAiTasks = useMemo(
-    () => activeAiTasks.filter((task) => ["change", "payment", "invoice"].includes(task.taskType)),
-    [activeAiTasks]
+    () => aiSourceTasks.filter((task) => task.riskLevel === "high"),
+    [aiSourceTasks]
   );
   const overdueAiTasks = useMemo(
-    () => activeAiTasks.filter((task) => task.dueDate && task.dueDate.toISOString().slice(0, 10) < todayInputValue()),
-    [activeAiTasks]
+    () => aiSourceTasks.filter((task) => isTaskOverdue(task.dueDate, task.status)),
+    [aiSourceTasks]
   );
   const milestoneWarnings = useMemo(
     () =>
@@ -172,19 +165,19 @@ export default function RiskCenterPage() {
       {!error ? (
         <div className="grid gap-4 md:grid-cols-3">
           <RiskStatCard
-            title="AI 已核准待辦"
-            value={activeAiTasks.length}
+            title="AI 來源待辦"
+            value={aiSourceTasks.length}
             tone="teal"
             icon={<Bot className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 高風險待辦"
+            title="AI 來源高風險待辦"
             value={highRiskAiTasks.length}
             tone="red"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 已核准逾期待辦"
+            title="AI 來源逾期待辦"
             value={overdueAiTasks.length}
             tone="amber"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
@@ -196,38 +189,15 @@ export default function RiskCenterPage() {
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
           <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
-          <AiTaskSection title="AI 已核准待辦" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 已核准待辦。" />
-          <AiTaskSection title="AI 高風險待辦" aiTasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 高風險待辦。" />
-          <AiTaskSection title="AI 已核准逾期待辦" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 已核准逾期待辦。" />
+          <RiskSection title="AI 來源待辦" tasks={aiSourceTasks} projects={projects} empty="目前沒有 AI 建立的正式待辦。" />
+          <RiskSection title="AI 來源高風險待辦" tasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 來源高風險待辦。" />
+          <RiskSection title="AI 來源逾期待辦" tasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 來源逾期待辦。" />
           <RiskSection title="高風險待辦" tasks={highRiskTasks} projects={projects} empty="目前沒有高風險待辦。" />
           <RiskSection title="已逾期待辦" tasks={overdueTasks} projects={projects} empty="目前沒有逾期待辦。" />
           <RiskSection title="今天到期待辦" tasks={dueTodayTasks} projects={projects} empty="今天沒有到期待辦。" />
         </>
       ) : null}
     </div>
-  );
-}
-
-function AiTaskSection({
-  title,
-  aiTasks,
-  projects,
-  empty
-}: {
-  title: string;
-  aiTasks: AiTask[];
-  projects: Project[];
-  empty: string;
-}) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-      {aiTasks.length ? (
-        <AiTaskTable aiTasks={aiTasks} projects={projects} />
-      ) : (
-        <EmptyState title="沒有需要處理的 AI 待辦" description={empty} />
-      )}
-    </section>
   );
 }
 
