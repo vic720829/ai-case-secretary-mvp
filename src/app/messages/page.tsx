@@ -1,13 +1,14 @@
 "use client";
 
-import { Link2, MessageSquare } from "lucide-react";
+import { Bot, Link2, MessageSquare, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { LineAdminGroupForm } from "@/components/LineAdminGroupForm";
 import { LineGroupForm } from "@/components/LineGroupForm";
 import { MessageTable } from "@/components/MessageTable";
 import { PageHeader } from "@/components/PageHeader";
 import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { getReadableError } from "@/lib/errors";
-import { createLineGroup, listLineGroups, listMessages, listProjects } from "@/lib/firestore";
+import { createLineGroup, deleteLineGroup, listLineGroups, listMessages, listProjects } from "@/lib/firestore";
 import type { LineGroup, LineGroupInput, Message, Project } from "@/lib/types";
 
 type UnboundGroup = {
@@ -23,6 +24,7 @@ export default function MessagesPage() {
   const [projectFilter, setProjectFilter] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedAdminGroupId, setSelectedAdminGroupId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -59,6 +61,16 @@ export default function MessagesPage() {
     [groupFilter, messages, projectFilter]
   );
 
+  const projectLineGroups = useMemo(
+    () => lineGroups.filter((group) => group.groupType !== "admin"),
+    [lineGroups]
+  );
+
+  const adminGroups = useMemo(
+    () => lineGroups.filter((group) => group.groupType === "admin"),
+    [lineGroups]
+  );
+
   const unboundGroups = useMemo<UnboundGroup[]>(() => {
     const boundGroupIds = new Set(lineGroups.map((group) => group.groupId));
     const byGroupId = new Map<string, UnboundGroup>();
@@ -78,8 +90,23 @@ export default function MessagesPage() {
   }, [lineGroups, messages]);
 
   async function handleCreateLineGroup(value: LineGroupInput) {
-    await createLineGroup(value);
+    await createLineGroup({
+      ...value,
+      groupType: "project",
+      allowAssistantReplies: false
+    });
     setSelectedGroupId("");
+    await loadData();
+  }
+
+  async function handleCreateLineAdminGroup(value: LineGroupInput) {
+    await createLineGroup(value);
+    setSelectedAdminGroupId("");
+    await loadData();
+  }
+
+  async function handleDeleteLineGroup(id: string) {
+    await deleteLineGroup(id);
     await loadData();
   }
 
@@ -100,7 +127,16 @@ export default function MessagesPage() {
         <LineGroupForm projects={projects} initialGroupId={selectedGroupId} onSubmit={handleCreateLineGroup} />
       </section>
 
-      <UnboundGroupsSection groups={unboundGroups} onUseGroup={setSelectedGroupId} />
+      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+        <LineAdminGroupForm initialGroupId={selectedAdminGroupId} onSubmit={handleCreateLineAdminGroup} />
+        <AdminGroupsList groups={adminGroups} onDeleteGroup={handleDeleteLineGroup} />
+      </section>
+
+      <UnboundGroupsSection
+        groups={unboundGroups}
+        onUseProjectGroup={setSelectedGroupId}
+        onUseAdminGroup={setSelectedAdminGroupId}
+      />
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
@@ -131,7 +167,13 @@ export default function MessagesPage() {
               onChange={(event) => setGroupFilter(event.target.value)}
             >
               <option value="">全部群組</option>
-              {lineGroups.map((group) => (
+              {projectLineGroups.map((group) => (
+                <option key={group.id} value={group.groupId}>
+                  {group.groupName}
+                </option>
+              ))}
+              {adminGroups.length ? <option disabled>── 後台群組 ──</option> : null}
+              {adminGroups.map((group) => (
                 <option key={group.id} value={group.groupId}>
                   {group.groupName}
                 </option>
@@ -162,12 +204,54 @@ export default function MessagesPage() {
   );
 }
 
+function AdminGroupsList({
+  groups,
+  onDeleteGroup
+}: {
+  groups: LineGroup[];
+  onDeleteGroup: (id: string) => Promise<void>;
+}) {
+  if (!groups.length) {
+    return (
+      <div className="mt-4 rounded-md border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-600">
+        目前尚未設定公司後台群組。之後把 Bot 加到後台群，先傳一句「測試」，再把出現的 groupId 設為後台群組。
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className="flex flex-col gap-3 rounded-md border border-teal-100 bg-teal-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-teal-900">
+              <Bot className="h-4 w-4" aria-hidden />
+              {group.groupName}
+            </div>
+            <div className="mt-1 break-all font-mono text-xs text-slate-600">{group.groupId}</div>
+            <div className="mt-1 text-xs text-teal-800">AI 助理可在此群回答問題與發提醒</div>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => void onDeleteGroup(group.id)}>
+            <Trash2 className="h-4 w-4" aria-hidden />
+            移除
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function UnboundGroupsSection({
   groups,
-  onUseGroup
+  onUseProjectGroup,
+  onUseAdminGroup
 }: {
   groups: UnboundGroup[];
-  onUseGroup: (groupId: string) => void;
+  onUseProjectGroup: (groupId: string) => void;
+  onUseAdminGroup: (groupId: string) => void;
 }) {
   if (!groups.length) {
     return (
@@ -196,9 +280,12 @@ function UnboundGroupsSection({
             <div className="mt-1 break-all font-mono text-sm text-slate-950">{group.groupId}</div>
             <div className="mt-3 text-xs text-slate-500">收到 {group.messageCount} 則訊息</div>
             <div className="mt-1 line-clamp-2 text-sm text-slate-700">{group.lastText}</div>
-            <div className="mt-3 flex justify-end">
-              <Button type="button" variant="secondary" onClick={() => onUseGroup(group.groupId)}>
-                帶入綁定表單
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => onUseAdminGroup(group.groupId)}>
+                設為後台群組
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => onUseProjectGroup(group.groupId)}>
+                帶入案件綁定
               </Button>
             </div>
           </div>

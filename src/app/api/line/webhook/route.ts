@@ -40,7 +40,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     ? await db.collection("line_groups").where("groupId", "==", groupId).limit(1).get()
     : null;
   const lineGroup = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0].data() : null;
-  const projectId = String(lineGroup?.projectId ?? "");
+  const isAdminGroup = lineGroup?.groupType === "admin";
+  const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
+  const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
   const messageRef = await db.collection("messages").add({
     projectId,
@@ -74,7 +76,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       )
     );
 
-    if (shouldReplyInLineChat(event) && shouldAnswerLineQuestion(event.message.text)) {
+    if (shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text)) {
       const answer = await answerQuestionFromFirestore(event.message.text, projectId);
       await replyLineText(event.replyToken, answer);
     }
@@ -92,6 +94,6 @@ function normalizeMessageType(type: string) {
   return "text";
 }
 
-function shouldReplyInLineChat(event: LineWebhookEvent) {
-  return event.source?.type === "user";
+function shouldReplyInLineChat(event: LineWebhookEvent, canAssistantReply: boolean) {
+  return canAssistantReply && (event.source?.type === "group" || event.source?.type === "room");
 }

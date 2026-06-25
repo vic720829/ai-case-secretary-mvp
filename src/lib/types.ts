@@ -72,6 +72,8 @@ export type LineGroupInput = {
   groupId: string;
   projectId: string;
   groupName: string;
+  groupType?: "project" | "admin";
+  allowAssistantReplies?: boolean;
 };
 
 export type LineGroup = LineGroupInput & {

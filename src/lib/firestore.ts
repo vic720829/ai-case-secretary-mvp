@@ -134,6 +134,8 @@ function lineGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineGr
     groupId: data.groupId ?? "",
     projectId: data.projectId ?? "",
     groupName: data.groupName ?? "",
+    groupType: data.groupType ?? "project",
+    allowAssistantReplies: Boolean(data.allowAssistantReplies ?? false),
     createdAt: readTimestamp(data.createdAt)
   };
 }
