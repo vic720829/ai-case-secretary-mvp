@@ -20,6 +20,8 @@ export type ReminderType =
   | "high_risk";
 export type ReminderStatus = "pending" | "confirmed";
 export type WebhookLogStatus = "success" | "skipped" | "error";
+export type UserRole = "owner" | "admin" | "staff" | "viewer";
+export type AuditAction = "create" | "update" | "delete";
 
 export type ProjectInput = {
   name: string;
@@ -32,6 +34,19 @@ export type ProjectInput = {
 };
 
 export type Project = ProjectInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type UserProfileInput = {
+  email: string;
+  displayName: string;
+  role: UserRole;
+  active: boolean;
+};
+
+export type UserProfile = UserProfileInput & {
   id: string;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -221,5 +236,28 @@ export type WebhookLog = {
   adminNotificationFailures: number;
   reason: string;
   errorMessage: string;
+  createdAt: Date | null;
+};
+
+export type AuditActor = {
+  uid: string;
+  email: string;
+  displayName: string;
+};
+
+export type AuditLog = {
+  id: string;
+  actorUid: string;
+  actorEmail: string;
+  actorName: string;
+  action: AuditAction;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  changes: Array<{
+    field: string;
+    before: string;
+    after: string;
+  }>;
   createdAt: Date | null;
 };

@@ -8,12 +8,14 @@ import {
   CalendarDays,
   ClipboardList,
   Flag,
+  History,
   LayoutDashboard,
   Link2,
   LogOut,
   MessageSquareText,
   Plus,
   ScrollText,
+  UserCog,
   UsersRound
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +35,8 @@ const navItems = [
   { href: "/line-members", label: "LINE成員", icon: UsersRound },
   { href: "/messages", label: "LINE訊息", icon: MessageSquareText },
   { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText },
+  { href: "/users", label: "員工管理", icon: UserCog },
+  { href: "/audit-logs", label: "操作紀錄", icon: History },
   { href: "/milestones", label: "關鍵節點", icon: Flag }
 ];
 

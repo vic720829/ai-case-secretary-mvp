@@ -5,14 +5,17 @@ import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { ProjectForm } from "@/components/ProjectForm";
 import { SecondaryLink } from "@/components/Ui";
+import { useAuth } from "@/components/AuthProvider";
+import { toAuditActor } from "@/lib/audit";
 import { createProject } from "@/lib/firestore";
 import type { ProjectInput } from "@/lib/types";
 
 export default function NewProjectPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   async function handleSubmit(value: ProjectInput) {
-    const id = await createProject(value);
+    const id = await createProject(value, toAuditActor(user));
     router.push(`/projects/${id}`);
   }
 

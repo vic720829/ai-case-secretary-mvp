@@ -97,5 +97,11 @@ service cloud.firestore {
       allow read: if canReadOps();
       allow create, update, delete: if canManageSystemSettings();
     }
+
+    match /audit_logs/{auditLogId} {
+      allow read: if canManageSystemSettings();
+      allow create: if canWriteOps();
+      allow update, delete: if false;
+    }
   }
 }

@@ -5,7 +5,8 @@ import type {
   ProjectStageStatus,
   RiskLevel,
   TaskSource,
-  TaskStatus
+  TaskStatus,
+  UserRole
 } from "./types";
 
 export const taskStatusOptions: Array<{ value: TaskStatus; label: string }> = [
@@ -51,6 +52,13 @@ export const aiTaskTypeOptions: Array<{ value: AiTaskType; label: string }> = [
   { value: "followup", label: "追蹤" },
   { value: "payment", label: "收款" },
   { value: "invoice", label: "發票" }
+];
+
+export const userRoleOptions: Array<{ value: UserRole; label: string; description: string }> = [
+  { value: "owner", label: "Owner", description: "最高權限，可管理員工與系統設定。" },
+  { value: "admin", label: "管理者", description: "可管理員工、LINE 設定與後台資料。" },
+  { value: "staff", label: "員工", description: "可管理案件、任務、工期與提醒。" },
+  { value: "viewer", label: "檢視者", description: "只能查看資料，不能修改。" }
 ];
 
 export const projectStageOptions = [

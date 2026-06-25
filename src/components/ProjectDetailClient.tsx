@@ -8,6 +8,8 @@ import { PageHeader } from "./PageHeader";
 import { ProjectForm } from "./ProjectForm";
 import { TaskTable } from "./TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink, SecondaryLink } from "./Ui";
+import { useAuth } from "@/components/AuthProvider";
+import { toAuditActor } from "@/lib/audit";
 import {
   deleteProject,
   deleteTask,
@@ -19,6 +21,7 @@ import type { Project, ProjectInput, Task } from "@/lib/types";
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,12 +44,12 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   }, [loadData]);
 
   async function handleSave(value: ProjectInput) {
-    await updateProject(projectId, value);
+    await updateProject(projectId, value, toAuditActor(user));
     await loadData();
   }
 
   async function handleDeleteProject() {
-    await deleteProject(projectId);
+    await deleteProject(projectId, toAuditActor(user));
     router.push("/projects");
   }
 

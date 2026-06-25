@@ -5,11 +5,14 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ProjectTable } from "@/components/ProjectTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
+import { useAuth } from "@/components/AuthProvider";
+import { toAuditActor } from "@/lib/audit";
 import { getReadableError } from "@/lib/errors";
 import { deleteProject, listProjects } from "@/lib/firestore";
 import type { Project } from "@/lib/types";
 
 export default function ProjectsPage() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,7 +39,7 @@ export default function ProjectsPage() {
     if (!confirmed) return;
 
     try {
-      await deleteProject(project.id);
+      await deleteProject(project.id, toAuditActor(user));
       setProjects((current) => current.filter((item) => item.id !== project.id));
     } catch (caught) {
       setError(getReadableError(caught));

@@ -21,6 +21,8 @@ import { db } from "./firebase";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
+  AuditActor,
+  AuditLog,
   Milestone,
   MilestoneInput,
   LineGroup,
@@ -36,6 +38,8 @@ import type {
   ReminderLogInput,
   Task,
   TaskInput,
+  UserProfile,
+  UserProfileInput,
   WebhookLog
 } from "./types";
 
@@ -49,6 +53,8 @@ const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
 const REMINDER_LOGS_COLLECTION = "reminder_logs";
 const WEBHOOK_LOGS_COLLECTION = "webhook_logs";
+const USERS_COLLECTION = "users";
+const AUDIT_LOGS_COLLECTION = "audit_logs";
 
 function requireDb() {
   if (!db) {
@@ -84,6 +90,42 @@ function projectFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Project 
     expectedFinishDate: data.expectedFinishDate ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function userProfileFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): UserProfile {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    email: data.email ?? "",
+    displayName: data.displayName ?? "",
+    role: data.role ?? "staff",
+    active: Boolean(data.active ?? true),
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function auditLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AuditLog {
+  const data = snapshot.data();
+  const rawChanges = Array.isArray(data.changes) ? data.changes : [];
+
+  return {
+    id: snapshot.id,
+    actorUid: data.actorUid ?? "",
+    actorEmail: data.actorEmail ?? "",
+    actorName: data.actorName ?? "",
+    action: data.action ?? "update",
+    resourceType: data.resourceType ?? "",
+    resourceId: data.resourceId ?? "",
+    resourceName: data.resourceName ?? "",
+    changes: rawChanges.map((change) => ({
+      field: String(change.field ?? ""),
+      before: String(change.before ?? ""),
+      after: String(change.after ?? "")
+    })),
+    createdAt: readTimestamp(data.createdAt)
   };
 }
 
@@ -280,6 +322,53 @@ function dateStringToTimestamp(value: string) {
   return Timestamp.fromDate(parsed);
 }
 
+function addAuditLogToBatch(
+  batch: ReturnType<typeof writeBatch>,
+  input: {
+    actor?: AuditActor | null;
+    action: "create" | "update" | "delete";
+    resourceType: string;
+    resourceId: string;
+    resourceName: string;
+    changes: AuditLog["changes"];
+  }
+) {
+  const database = requireDb();
+  const ref = doc(collection(database, AUDIT_LOGS_COLLECTION));
+
+  batch.set(ref, {
+    actorUid: input.actor?.uid ?? "",
+    actorEmail: input.actor?.email ?? "",
+    actorName: input.actor?.displayName ?? "",
+    action: input.action,
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    resourceName: input.resourceName,
+    changes: input.changes,
+    createdAt: serverTimestamp()
+  });
+}
+
+function diffProjectInput(before: ProjectInput | null, after: ProjectInput | null): AuditLog["changes"] {
+  const fields: Array<{ key: keyof ProjectInput; label: string }> = [
+    { key: "name", label: "案件名稱" },
+    { key: "clientName", label: "客戶名稱" },
+    { key: "currentStage", label: "目前階段" },
+    { key: "designer", label: "負責設計師" },
+    { key: "assistant", label: "設計助理" },
+    { key: "status", label: "狀態" },
+    { key: "expectedFinishDate", label: "預計完工日" }
+  ];
+
+  return fields
+    .map(({ key, label }) => ({
+      field: label,
+      before: before?.[key] ?? "",
+      after: after?.[key] ?? ""
+    }))
+    .filter((change) => change.before !== change.after);
+}
+
 export async function listProjects() {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -287,6 +376,33 @@ export async function listProjects() {
   );
 
   return snapshot.docs.map(projectFromDoc);
+}
+
+export async function listUserProfiles() {
+  const database = requireDb();
+  const snapshot = await getDocs(collection(database, USERS_COLLECTION));
+
+  return snapshot.docs
+    .map(userProfileFromDoc)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-TW") || a.email.localeCompare(b.email));
+}
+
+export async function updateUserProfile(id: string, input: UserProfileInput) {
+  const database = requireDb();
+
+  await updateDoc(doc(database, USERS_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function listAuditLogs() {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, AUDIT_LOGS_COLLECTION), orderBy("createdAt", "desc"))
+  );
+
+  return snapshot.docs.map(auditLogFromDoc).slice(0, 200);
 }
 
 export async function getProject(id: string) {
@@ -297,28 +413,59 @@ export async function getProject(id: string) {
   return projectFromDoc(snapshot as QueryDocumentSnapshot<DocumentData>);
 }
 
-export async function createProject(input: ProjectInput) {
+export async function createProject(input: ProjectInput, actor?: AuditActor | null) {
   const database = requireDb();
-  const ref = await addDoc(collection(database, PROJECTS_COLLECTION), {
+  const ref = doc(collection(database, PROJECTS_COLLECTION));
+  const batch = writeBatch(database);
+
+  batch.set(ref, {
     ...input,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  addAuditLogToBatch(batch, {
+    actor,
+    action: "create",
+    resourceType: "project",
+    resourceId: ref.id,
+    resourceName: input.name,
+    changes: diffProjectInput(null, input)
+  });
 
+  await batch.commit();
   return ref.id;
 }
 
-export async function updateProject(id: string, input: ProjectInput) {
+export async function updateProject(id: string, input: ProjectInput, actor?: AuditActor | null) {
   const database = requireDb();
-  await updateDoc(doc(database, PROJECTS_COLLECTION, id), {
+  const projectRef = doc(database, PROJECTS_COLLECTION, id);
+  const snapshot = await getDoc(projectRef);
+  const before = snapshot.exists() ? projectFromDoc(snapshot as QueryDocumentSnapshot<DocumentData>) : null;
+  const changes = diffProjectInput(before, input);
+  const batch = writeBatch(database);
+
+  batch.update(projectRef, {
     ...input,
     updatedAt: serverTimestamp()
   });
+  if (changes.length) {
+    addAuditLogToBatch(batch, {
+      actor,
+      action: "update",
+      resourceType: "project",
+      resourceId: id,
+      resourceName: input.name,
+      changes
+    });
+  }
+
+  await batch.commit();
 }
 
-export async function deleteProject(id: string) {
+export async function deleteProject(id: string, actor?: AuditActor | null) {
   const database = requireDb();
   const [
+    projectSnapshot,
     linkedTasks,
     linkedStages,
     linkedMilestones,
@@ -329,6 +476,7 @@ export async function deleteProject(id: string) {
     linkedReminderLogs,
     linkedWebhookLogs
   ] = await Promise.all([
+    getDoc(doc(database, PROJECTS_COLLECTION, id)),
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
@@ -339,6 +487,7 @@ export async function deleteProject(id: string) {
     getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, WEBHOOK_LOGS_COLLECTION), where("projectId", "==", id)))
   ]);
+  const project = projectSnapshot.exists() ? projectFromDoc(projectSnapshot as QueryDocumentSnapshot<DocumentData>) : null;
   const batch = writeBatch(database);
 
   linkedTasks.docs.forEach((taskSnapshot) => {
@@ -367,6 +516,14 @@ export async function deleteProject(id: string) {
   });
   linkedWebhookLogs.docs.forEach((webhookLogSnapshot) => {
     batch.delete(webhookLogSnapshot.ref);
+  });
+  addAuditLogToBatch(batch, {
+    actor,
+    action: "delete",
+    resourceType: "project",
+    resourceId: id,
+    resourceName: project?.name ?? id,
+    changes: diffProjectInput(project, null)
   });
   batch.delete(doc(database, PROJECTS_COLLECTION, id));
 
