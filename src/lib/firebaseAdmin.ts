@@ -61,12 +61,3 @@ export function getAdminStorageBucket() {
 
   return getStorage().bucket(bucketName);
 }
-
-export async function getAdminAuth() {
-  if (!getApps().length) {
-    getAdminDb();
-  }
-
-  const { getAuth } = await import("firebase-admin/auth");
-  return getAuth();
-}

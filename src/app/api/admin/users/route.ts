@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import type { UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -21,6 +21,26 @@ type UpdateUserBody = {
   active?: boolean;
 };
 
+type FirebaseLookupResponse = {
+  users?: Array<{
+    localId?: string;
+    email?: string;
+    displayName?: string;
+  }>;
+  error?: {
+    message?: string;
+  };
+};
+
+type FirebaseSignUpResponse = {
+  localId?: string;
+  email?: string;
+  displayName?: string;
+  error?: {
+    message?: string;
+  };
+};
+
 export async function POST(request: Request) {
   try {
     const caller = await verifyAdminCaller(request);
@@ -36,33 +56,31 @@ export async function POST(request: Request) {
     const active = body.active !== false;
 
     if (!email) {
-      return NextResponse.json({ ok: false, error: "請填員工 Email。" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "請填寫 Email。" }, { status: 400 });
     }
 
     if (!password || password.length < 6) {
-      return NextResponse.json({ ok: false, error: "臨時密碼至少需要 6 碼。" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "密碼至少要 6 碼。" }, { status: 400 });
     }
 
     if (!displayName) {
-      return NextResponse.json({ ok: false, error: "請填員工名稱。" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "請填寫員工名稱。" }, { status: 400 });
     }
 
     if (!role) {
       return NextResponse.json({ ok: false, error: "請選擇有效的角色。" }, { status: 400 });
     }
 
-    const auth = await getAdminAuth();
-    const db = getAdminDb();
-    const userRecord = await auth.createUser({
-      email,
-      password,
-      displayName,
-      disabled: !active
-    });
+    const authUser = await createFirebaseAuthUser({ email, password, displayName });
+    const userId = String(authUser.localId ?? "");
 
-    await db.collection("users").doc(userRecord.uid).set({
-      email,
-      displayName,
+    if (!userId) {
+      throw new Error("AUTH_CREATE_FAILED");
+    }
+
+    await getAdminDb().collection("users").doc(userId).set({
+      email: String(authUser.email ?? email),
+      displayName: String(authUser.displayName ?? displayName),
       role,
       active,
       createdAt: FieldValue.serverTimestamp(),
@@ -70,7 +88,7 @@ export async function POST(request: Request) {
       createdBy: caller.uid
     });
 
-    return NextResponse.json({ ok: true, id: userRecord.uid });
+    return NextResponse.json({ ok: true, id: userId });
   } catch (caught) {
     return NextResponse.json({ ok: false, error: getAdminApiError(caught) }, { status: 500 });
   }
@@ -94,7 +112,7 @@ export async function PATCH(request: Request) {
     }
 
     if (!displayName) {
-      return NextResponse.json({ ok: false, error: "請填員工名稱。" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "請填寫員工名稱。" }, { status: 400 });
     }
 
     if (!role) {
@@ -109,16 +127,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: "不能把目前登入中的自己改成非管理角色。" }, { status: 400 });
     }
 
-    const auth = await getAdminAuth();
-    const db = getAdminDb();
-    const userRecord = await auth.updateUser(id, {
-      displayName,
-      disabled: !active
-    });
-
-    await db.collection("users").doc(id).set(
+    await getAdminDb().collection("users").doc(id).set(
       {
-        email: userRecord.email ?? "",
         displayName,
         role,
         active,
@@ -146,21 +156,75 @@ async function verifyAdminCaller(request: Request): Promise<
   }
 
   try {
-    const auth = await getAdminAuth();
-    const decoded = await auth.verifyIdToken(token);
+    const decoded = await lookupFirebaseIdToken(token);
     const userSnapshot = await getAdminDb().collection("users").doc(decoded.uid).get();
     const user = userSnapshot.data();
     const role = String(user?.role ?? "");
     const active = user?.active !== false;
 
     if (!userSnapshot.exists || !active || (role !== "owner" && role !== "admin")) {
-      return { ok: false, status: 403, error: "只有 Owner 或管理者可以新增員工。" };
+      return { ok: false, status: 403, error: "只有 Owner 或管理員可以管理員工。" };
     }
 
     return { ok: true, uid: decoded.uid };
   } catch {
     return { ok: false, status: 401, error: "登入驗證失效，請重新登入後再試。" };
   }
+}
+
+async function lookupFirebaseIdToken(idToken: string) {
+  const result = await callFirebaseIdentityToolkit<FirebaseLookupResponse>("accounts:lookup", { idToken });
+  const user = result.users?.[0];
+  const uid = String(user?.localId ?? "");
+
+  if (!uid) {
+    throw new Error("INVALID_ID_TOKEN");
+  }
+
+  return { uid };
+}
+
+async function createFirebaseAuthUser(input: { email: string; password: string; displayName: string }) {
+  return callFirebaseIdentityToolkit<FirebaseSignUpResponse>("accounts:signUp", {
+    email: input.email,
+    password: input.password,
+    displayName: input.displayName,
+    returnSecureToken: false
+  });
+}
+
+async function callFirebaseIdentityToolkit<T extends { error?: { message?: string } }>(
+  endpoint: string,
+  body: Record<string, unknown>
+): Promise<T> {
+  const apiKey = getFirebaseApiKey();
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  );
+  const result = (await response.json()) as T;
+
+  if (!response.ok) {
+    throw new Error(result.error?.message || `FIREBASE_AUTH_${response.status}`);
+  }
+
+  return result;
+}
+
+function getFirebaseApiKey() {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "";
+
+  if (!apiKey) {
+    throw new Error("Firebase API key 未設定。");
+  }
+
+  return apiKey;
 }
 
 function normalizeRole(value: unknown): UserRole | null {
@@ -173,19 +237,23 @@ function normalizeRole(value: unknown): UserRole | null {
 
 function getAdminApiError(caught: unknown) {
   if (!(caught instanceof Error)) {
-    return "新增員工失敗，請稍後再試。";
+    return "員工資料處理失敗，請稍後再試。";
   }
 
-  if (caught.message.includes("auth/email-already-exists")) {
-    return "這個 Email 已經有登入帳號。";
+  if (caught.message.includes("EMAIL_EXISTS")) {
+    return "這個 Email 已經有帳號了。";
   }
 
-  if (caught.message.includes("auth/invalid-password")) {
+  if (caught.message.includes("WEAK_PASSWORD") || caught.message.includes("INVALID_PASSWORD")) {
     return "密碼格式不正確，請至少輸入 6 碼。";
   }
 
-  if (caught.message.includes("auth/user-not-found")) {
-    return "找不到這個員工的登入帳號。";
+  if (caught.message.includes("OPERATION_NOT_ALLOWED")) {
+    return "Firebase Authentication 尚未啟用 Email/Password 登入。";
+  }
+
+  if (caught.message.includes("INVALID_ID_TOKEN") || caught.message.includes("TOKEN_EXPIRED")) {
+    return "登入驗證失效，請重新登入後再試。";
   }
 
   return caught.message;
