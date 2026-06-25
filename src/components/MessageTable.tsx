@@ -55,7 +55,7 @@ export function MessageTable({
                   <td className="px-4 py-4 text-slate-600">{message.senderName || message.senderId || "未知"}</td>
                   <td className="px-4 py-4">
                     <div className="max-w-md text-slate-800">
-                      {message.text || message.fileUrl || `[${message.messageType}]`}
+                      <MessageContent message={message} />
                     </div>
                   </td>
                   <td className="px-4 py-4">
@@ -78,4 +78,23 @@ export function MessageTable({
       </div>
     </div>
   );
+}
+
+function MessageContent({ message }: { message: Message }) {
+  if (message.text) return message.text;
+
+  if (message.fileUrl) {
+    return (
+      <a
+        className="font-medium text-teal-700 hover:text-teal-800"
+        href={message.fileUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {message.messageType === "image" ? "查看圖片" : "播放語音"}
+      </a>
+    );
+  }
+
+  return `[${message.messageType}]`;
 }

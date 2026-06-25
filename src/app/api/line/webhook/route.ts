@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import { analyzeMessageForAiTasks, dateStringToTimestamp } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import {
+  downloadLineMessageContent,
   getEventGroupId,
   getLineSenderName,
   replyLineText,
@@ -46,6 +48,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
   const senderName = await getLineSenderName(event);
+  const fileUrl = messageType === "text" ? "" : await saveLineMessageFile(event, groupId, messageType);
   const messageRef = await db.collection("messages").add({
     projectId,
     groupId,
@@ -53,7 +56,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     senderName,
     messageType,
     text: event.message.text ?? "",
-    fileUrl: "",
+    fileUrl,
     timestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : FieldValue.serverTimestamp(),
     isProcessed: false,
     createdAt: FieldValue.serverTimestamp()
@@ -92,11 +95,54 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   return { messageId: messageRef.id, aiTasks: 0, projectId };
 }
 
-function normalizeMessageType(type: string) {
+function normalizeMessageType(type: string): "text" | "image" | "audio" {
   if (type === "image" || type === "audio") return type;
   return "text";
 }
 
 function shouldReplyInLineChat(event: LineWebhookEvent, canAssistantReply: boolean) {
   return canAssistantReply && (event.source?.type === "group" || event.source?.type === "room");
+}
+
+async function saveLineMessageFile(event: LineWebhookEvent, groupId: string, messageType: "image" | "audio") {
+  if (!event.message?.id) return "";
+
+  try {
+    const content = await downloadLineMessageContent(event.message.id);
+    if (!content) return "";
+
+    const bucket = getAdminStorageBucket();
+    const extension = getFileExtension(content.contentType, messageType);
+    const token = randomUUID();
+    const storagePath = `line-messages/${sanitizePathSegment(groupId || "unknown")}/${event.message.id}.${extension}`;
+
+    await bucket.file(storagePath).save(content.buffer, {
+      metadata: {
+        contentType: content.contentType,
+        metadata: {
+          firebaseStorageDownloadTokens: token
+        }
+      }
+    });
+
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  } catch {
+    return "";
+  }
+}
+
+function getFileExtension(contentType: string, messageType: "image" | "audio") {
+  if (contentType.includes("png")) return "png";
+  if (contentType.includes("gif")) return "gif";
+  if (contentType.includes("webp")) return "webp";
+  if (contentType.includes("mpeg")) return "mp3";
+  if (contentType.includes("mp4")) return messageType === "audio" ? "m4a" : "mp4";
+  if (contentType.includes("x-m4a")) return "m4a";
+  if (contentType.includes("aac")) return "aac";
+
+  return messageType === "image" ? "jpg" : "m4a";
+}
+
+function sanitizePathSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }

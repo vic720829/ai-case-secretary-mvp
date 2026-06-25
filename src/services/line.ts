@@ -93,6 +93,24 @@ export async function replyLineText(replyToken: string | undefined, text: string
   });
 }
 
+export async function downloadLineMessageContent(messageId: string) {
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!messageId || !accessToken) return null;
+
+  const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) return null;
+
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") ?? "application/octet-stream"
+  };
+}
+
 export async function pushLineText(to: string, text: string) {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!to || !accessToken) return;

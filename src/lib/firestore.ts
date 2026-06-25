@@ -383,7 +383,20 @@ export async function updateProjectStage(id: string, input: ProjectStageInput) {
 
 export async function deleteProjectStage(id: string) {
   const database = requireDb();
-  await deleteDoc(doc(database, PROJECT_STAGES_COLLECTION, id));
+  const linkedMilestones = await getDocs(
+    query(collection(database, MILESTONES_COLLECTION), where("stageId", "==", id))
+  );
+  const batch = writeBatch(database);
+
+  linkedMilestones.docs.forEach((milestoneSnapshot) => {
+    batch.update(milestoneSnapshot.ref, {
+      stageId: "",
+      updatedAt: serverTimestamp()
+    });
+  });
+
+  batch.delete(doc(database, PROJECT_STAGES_COLLECTION, id));
+  await batch.commit();
 }
 
 export async function listMilestones() {

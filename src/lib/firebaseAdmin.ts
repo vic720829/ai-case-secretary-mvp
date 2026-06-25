@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 function getServiceAccount() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
@@ -32,15 +33,31 @@ function getServiceAccount() {
 export function getAdminDb() {
   if (!getApps().length) {
     const serviceAccount = getServiceAccount();
+    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
     initializeApp({
       credential: cert({
         projectId: serviceAccount.project_id,
         clientEmail: serviceAccount.client_email,
         privateKey: serviceAccount.private_key
-      })
+      }),
+      ...(storageBucket ? { storageBucket } : {})
     });
   }
 
   return getFirestore();
+}
+
+export function getAdminStorageBucket() {
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+
+  if (!bucketName) {
+    throw new Error("Firebase Storage bucket 尚未設定。");
+  }
+
+  if (!getApps().length) {
+    getAdminDb();
+  }
+
+  return getStorage().bucket(bucketName);
 }
