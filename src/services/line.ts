@@ -32,12 +32,19 @@ export type LinePushMessage =
         type: "buttons";
         title?: string;
         text: string;
-        actions: Array<{
-          type: "postback";
-          label: string;
-          data: string;
-          displayText?: string;
-        }>;
+        actions: Array<
+          | {
+              type: "postback";
+              label: string;
+              data: string;
+              displayText?: string;
+            }
+          | {
+              type: "uri";
+              label: string;
+              uri: string;
+            }
+        >;
       };
     };
 
@@ -198,12 +205,22 @@ function normalizeLinePushMessage(message: LinePushMessage): LinePushMessage {
       ...message.template,
       title: message.template.title?.slice(0, 40),
       text: message.template.text.slice(0, 160),
-      actions: message.template.actions.slice(0, 4).map((action) => ({
-        ...action,
-        label: action.label.slice(0, 20),
-        data: action.data.slice(0, 300),
-        displayText: action.displayText?.slice(0, 300)
-      }))
+      actions: message.template.actions.slice(0, 4).map((action) => {
+        if (action.type === "uri") {
+          return {
+            ...action,
+            label: action.label.slice(0, 20),
+            uri: action.uri.slice(0, 1000)
+          };
+        }
+
+        return {
+          ...action,
+          label: action.label.slice(0, 20),
+          data: action.data.slice(0, 300),
+          displayText: action.displayText?.slice(0, 300)
+        };
+      })
     }
   };
 }

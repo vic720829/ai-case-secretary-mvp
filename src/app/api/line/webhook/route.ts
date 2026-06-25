@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
-import type { LineSenderRole } from "@/lib/types";
+import type { AiTaskType, LineSenderRole } from "@/lib/types";
 import {
   analyzeMessageForAiTasks,
   dateStringToTimestamp,
@@ -18,6 +18,7 @@ import {
   pushLineMessages,
   replyLineText,
   verifyLineSignature,
+  type LinePushMessage,
   type LineWebhookEvent
 } from "@/services/line";
 
@@ -213,7 +214,15 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   const action = params.get("action") ?? "";
   const key = params.get("key") ?? "";
 
-  if (!key || !["confirm_reminder", "snooze_reminder", "keep_reminder"].includes(action)) {
+  if (!key) {
+    return { skipped: true, reason: "Unsupported postback" };
+  }
+
+  if (["approve_ai_task", "reject_ai_task"].includes(action)) {
+    return handleAiTaskReviewPostback(db, event, action, key);
+  }
+
+  if (!["confirm_reminder", "snooze_reminder", "keep_reminder"].includes(action)) {
     return { skipped: true, reason: "Unsupported postback" };
   }
 
@@ -279,6 +288,121 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   return { ok: true, action, key };
 }
 
+async function handleAiTaskReviewPostback(
+  db: FirebaseFirestore.Firestore,
+  event: LineWebhookEvent,
+  action: string,
+  key: string
+) {
+  const isAdminGroup = await isAssistantAdminGroup(db, getEventGroupId(event));
+  if (!isAdminGroup) {
+    await replyLineText(event.replyToken, "AI 草稿審核只能在公司 LINE 後台群組操作。");
+    return { skipped: true, reason: "AI review outside admin LINE group", key };
+  }
+
+  const senderName = await getLineSenderName(event);
+  const reviewedBy = `LINE:${senderName}`;
+  const aiTaskRef = db.collection("ai_tasks").doc(key);
+  const aiTaskSnapshot = await aiTaskRef.get();
+
+  if (!aiTaskSnapshot.exists) {
+    await replyLineText(event.replyToken, "找不到這筆 AI 草稿，可能已被刪除。");
+    return { skipped: true, reason: "AI task draft not found", key };
+  }
+
+  const aiTask = aiTaskSnapshot.data() ?? {};
+  const title = String(aiTask.title ?? "未命名草稿").trim() || "未命名草稿";
+  const reviewStatus = String(aiTask.reviewStatus ?? "pending");
+
+  if (reviewStatus !== "pending") {
+    await replyLineText(event.replyToken, `這筆 AI 草稿已經審核過：${title}`);
+    return { skipped: true, reason: "AI task draft already reviewed", key };
+  }
+
+  if (action === "reject_ai_task") {
+    const batch = db.batch();
+    batch.update(aiTaskRef, {
+      reviewStatus: "rejected",
+      reviewedBy,
+      reviewedAt: FieldValue.serverTimestamp(),
+      reviewedVia: "line",
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    batch.set(
+      db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`),
+      {
+        status: "confirmed",
+        confirmedBy: reviewedBy,
+        confirmedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        lastAction: "rejected_ai_task_line"
+      },
+      { merge: true }
+    );
+    await batch.commit();
+    await replyLineText(event.replyToken, `已拒絕 AI 草稿：${title}`);
+
+    return { ok: true, action, key, senderName, messageText: `拒絕 AI 草稿：${title}` };
+  }
+
+  const taskInput = buildTaskFromAiDraft(aiTask);
+  if (!taskInput.projectId || !taskInput.title) {
+    const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
+    await replyLineText(
+      event.replyToken,
+      [
+        `這筆 AI 草稿不能直接在 LINE 通過：${title}`,
+        "原因：缺少案件或標題。",
+        reviewUrl ? `請到網站編輯：${reviewUrl}` : "請到網站 AI 審核頁補齊資料。"
+      ].join("\n")
+    );
+
+    return { skipped: true, reason: "AI task draft requires website editing", key };
+  }
+
+  const taskRef = db.collection("tasks").doc();
+  const batch = db.batch();
+  batch.set(taskRef, {
+    ...taskInput,
+    source: "ai",
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  batch.update(aiTaskRef, {
+    status: taskInput.status,
+    assignedTo: taskInput.assignee,
+    reviewStatus: "approved",
+    approvedTaskId: taskRef.id,
+    reviewedBy,
+    reviewedAt: FieldValue.serverTimestamp(),
+    reviewedVia: "line",
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  batch.set(
+    db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`),
+    {
+      status: "confirmed",
+      confirmedBy: reviewedBy,
+      confirmedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      lastAction: "approved_ai_task_line"
+    },
+    { merge: true }
+  );
+  await batch.commit();
+  await replyLineText(event.replyToken, `已通過並建立任務：${taskInput.title}`);
+
+  return {
+    ok: true,
+    action,
+    key,
+    projectId: taskInput.projectId,
+    senderName,
+    messageText: `通過 AI 草稿並建立任務：${taskInput.title}`,
+    approvedTaskId: taskRef.id
+  };
+}
+
 async function syncLineGroupName(
   lineGroupDoc: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData> | null,
   event: LineWebhookEvent
@@ -341,8 +465,15 @@ async function notifyAdminGroupsAboutAiDrafts(
       "",
       reviewUrl ? `審核：${reviewUrl}` : "請到網站 AI 審核頁確認。"
     ].join("\n");
+    const reviewMessages = buildAiDraftReviewLineMessages({
+      projectName,
+      reviewUrl,
+      summaryText: text,
+      suggestions: input.suggestions,
+      createdDraftIds: input.createdDraftIds
+    });
     const results = await Promise.allSettled(
-      adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
+      adminGroups.map((groupId) => pushLineMessages(groupId, reviewMessages))
     );
 
     return {
@@ -353,6 +484,60 @@ async function notifyAdminGroupsAboutAiDrafts(
   } catch {
     return { sent: 0, failed: 1, groups: 0 };
   }
+}
+
+function buildAiDraftReviewLineMessages(input: {
+  projectName: string;
+  reviewUrl: string;
+  summaryText: string;
+  suggestions: AiTaskSuggestion[];
+  createdDraftIds: string[];
+}): LinePushMessage[] {
+  const messages: LinePushMessage[] = [{ type: "text", text: input.summaryText }];
+  const buttonMessages = input.suggestions.slice(0, 4).flatMap((suggestion, index): LinePushMessage[] => {
+    const draftId = input.createdDraftIds[index];
+    if (!draftId) return [];
+
+    const editUrl = input.reviewUrl ? `${input.reviewUrl}?draftId=${encodeURIComponent(draftId)}` : "";
+    const dueDate = suggestion.dueDate ? `截止：${suggestion.dueDate.replaceAll("-", "/")}` : "截止：未設定";
+    const templateActions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
+      {
+        type: "postback",
+        label: "通過建立任務",
+        data: `action=approve_ai_task&key=${draftId}`,
+        displayText: `通過 AI 草稿：${suggestion.title}`
+      },
+      {
+        type: "postback",
+        label: "拒絕草稿",
+        data: `action=reject_ai_task&key=${draftId}`,
+        displayText: `拒絕 AI 草稿：${suggestion.title}`
+      }
+    ];
+
+    if (editUrl) {
+      templateActions.push({
+        type: "uri",
+        label: "網站編輯",
+        uri: editUrl
+      });
+    }
+
+    return [
+      {
+        type: "template",
+        altText: `AI 草稿待審核：${suggestion.title}`,
+        template: {
+          type: "buttons",
+          title: `AI 草稿：${input.projectName}`.slice(0, 40),
+          text: `${suggestion.title}\n${suggestion.taskType}｜${dueDate}`,
+          actions: templateActions
+        }
+      }
+    ];
+  });
+
+  return [...messages, ...buttonMessages].slice(0, 5);
 }
 
 async function notifyAdminGroupsAboutUnboundLineMessage(
@@ -401,6 +586,76 @@ async function listAssistantAdminGroupIds(db: FirebaseFirestore.Firestore) {
     .filter((group) => group.allowAssistantReplies !== false)
     .map((group) => String(group.groupId ?? ""))
     .filter(Boolean);
+}
+
+async function isAssistantAdminGroup(db: FirebaseFirestore.Firestore, groupId: string) {
+  if (!groupId) return false;
+
+  const snapshot = await db.collection("line_groups").where("groupId", "==", groupId).limit(1).get();
+  if (snapshot.empty) return false;
+
+  const group = snapshot.docs[0].data();
+  return group.groupType === "admin" && group.allowAssistantReplies !== false;
+}
+
+function buildTaskFromAiDraft(aiTask: FirebaseFirestore.DocumentData) {
+  const taskType = normalizeAiTaskType(String(aiTask.taskType ?? ""));
+
+  return {
+    title: String(aiTask.title ?? "").trim(),
+    description: String(aiTask.description ?? "").trim(),
+    projectId: String(aiTask.projectId ?? "").trim(),
+    assignee: String(aiTask.assignedTo ?? "").trim(),
+    dueDate: timestampToTaipeiInputDate(aiTask.dueDate),
+    status: normalizeTaskStatus(String(aiTask.status ?? "")),
+    source: "ai" as const,
+    riskLevel: riskByAiTaskType[taskType]
+  };
+}
+
+const riskByAiTaskType: Record<AiTaskType, "low" | "medium" | "high"> = {
+  promise: "medium",
+  change: "high",
+  followup: "medium",
+  payment: "high",
+  invoice: "high"
+};
+
+function normalizeAiTaskType(value: string): AiTaskType {
+  if (value === "promise" || value === "change" || value === "followup" || value === "payment" || value === "invoice") {
+    return value;
+  }
+
+  return "followup";
+}
+
+function normalizeTaskStatus(value: string): "todo" | "doing" | "done" {
+  if (value === "doing" || value === "done") return value;
+  return "todo";
+}
+
+function timestampToTaipeiInputDate(value: unknown) {
+  let date: Date | null = null;
+
+  if (value instanceof Timestamp) {
+    date = value.toDate();
+  } else if (value && typeof value === "object" && "toDate" in value) {
+    date = (value as { toDate: () => Date }).toDate();
+  }
+
+  if (!date || Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+
+  return `${year}-${month}-${day}`;
 }
 
 async function linkPossibleAnsweredFollowups(
