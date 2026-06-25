@@ -1,13 +1,13 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, Bot, BriefcaseBusiness, CalendarClock, Plus } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, BriefcaseBusiness, CalendarClock, Flag, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiTaskTable } from "@/components/AiTaskTable";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
-import { isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
+import { formatDate, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { listAiTasks, listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
@@ -78,6 +78,16 @@ export default function RiskCenterPage() {
     () => activeAiTasks.filter((task) => task.dueDate && task.dueDate.toISOString().slice(0, 10) < todayInputValue()),
     [activeAiTasks]
   );
+  const milestoneWarnings = useMemo(
+    () =>
+      milestones
+        .filter((milestone) => {
+          if (milestone.completed || !milestone.dueDate || milestone.reminderDaysBefore <= 0) return false;
+          return getMilestoneReminderDate(milestone.dueDate, milestone.reminderDaysBefore) === todayInputValue();
+        })
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "zh-TW")),
+    [milestones]
+  );
 
   const highRiskProjects = useMemo<HighRiskProject[]>(() => {
     return projects
@@ -122,7 +132,7 @@ export default function RiskCenterPage() {
       ) : null}
 
       {!error ? (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <RiskStatCard
             title="高風險案件"
             value={highRiskProjects.length}
@@ -146,6 +156,12 @@ export default function RiskCenterPage() {
             value={dueTodayTasks.length}
             tone="teal"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
+          />
+          <RiskStatCard
+            title="關鍵點預警"
+            value={milestoneWarnings.length}
+            tone="amber"
+            icon={<Flag className="h-5 w-5" aria-hidden />}
           />
         </div>
       ) : null}
@@ -176,6 +192,7 @@ export default function RiskCenterPage() {
       {!error ? (
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
+          <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
           <AiTaskSection title="AI 建立任務" aiTasks={activeAiTasks} projects={projects} empty="目前沒有 AI 建立的待辦任務。" />
           <AiTaskSection title="AI 高風險任務" aiTasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 高風險任務。" />
           <AiTaskSection title="AI 逾期任務" aiTasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 逾期任務。" />
@@ -300,6 +317,84 @@ function HighRiskProjectSection({ projects }: { projects: HighRiskProject[] }) {
   );
 }
 
+function MilestoneWarningSection({
+  milestones,
+  projects
+}: {
+  milestones: Milestone[];
+  projects: Project[];
+}) {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">關鍵點預警</h2>
+        <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/milestones">
+          查看全部關鍵點
+        </Link>
+      </div>
+
+      {milestones.length ? (
+        <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-stone-200 text-sm">
+              <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">案件</th>
+                  <th className="px-4 py-3">關鍵點</th>
+                  <th className="px-4 py-3">到期日</th>
+                  <th className="px-4 py-3">提醒</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 bg-white">
+                {milestones.map((milestone) => {
+                  const project = projectById.get(milestone.projectId);
+
+                  return (
+                    <tr key={milestone.id} className="hover:bg-stone-50">
+                      <td className="px-4 py-4">
+                        {project ? (
+                          <Link
+                            className="font-semibold text-slate-950 hover:text-teal-700"
+                            href={`/projects/${project.id}/progress`}
+                          >
+                            {project.name}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-500">未綁定案件</span>
+                        )}
+                        <div className="mt-1 text-xs text-slate-500">{project?.clientName ?? ""}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-slate-950">{milestone.title}</div>
+                        {milestone.description ? (
+                          <div className="mt-1 line-clamp-2 max-w-md text-xs leading-5 text-slate-500">
+                            {milestone.description}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-600">{formatDate(milestone.dueDate)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-amber-700">
+                        到期前 {milestone.reminderDaysBefore} 天
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <EmptyState
+          title="今天沒有關鍵點預警"
+          description="關鍵節點的到期日扣掉提前提醒天數等於今天時，會出現在這裡。"
+        />
+      )}
+    </section>
+  );
+}
+
 function RiskSection({
   title,
   tasks,
@@ -326,4 +421,16 @@ function RiskSection({
       )}
     </section>
   );
+}
+
+function getMilestoneReminderDate(dueDate: string, daysBefore: number) {
+  const [year, month, day] = dueDate.split("-").map(Number);
+  const reminderDate = new Date(year, (month || 1) - 1, day || 1);
+  reminderDate.setDate(reminderDate.getDate() - daysBefore);
+
+  const reminderYear = reminderDate.getFullYear();
+  const reminderMonth = String(reminderDate.getMonth() + 1).padStart(2, "0");
+  const reminderDay = String(reminderDate.getDate()).padStart(2, "0");
+
+  return `${reminderYear}-${reminderMonth}-${reminderDay}`;
 }
