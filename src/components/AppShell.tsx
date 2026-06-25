@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BriefcaseBusiness,
+  CalendarDays,
   ClipboardList,
   Flag,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import { useAuth } from "./AuthProvider";
 const navItems = [
   { href: "/risk-center", label: "今日風險", icon: AlertTriangle },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
+  { href: "/schedule", label: "工期總表", icon: CalendarDays },
   { href: "/tasks", label: "任務列表", icon: ClipboardList },
   { href: "/messages", label: "LINE訊息", icon: MessageSquareText },
   { href: "/milestones", label: "關鍵節點", icon: Flag }
@@ -92,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <LogOut className="h-4 w-4" aria-hidden />
           </button>
         </div>
-        <nav className="mt-3 grid grid-cols-5 gap-2">
+        <nav className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

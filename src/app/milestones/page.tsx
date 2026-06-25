@@ -7,11 +7,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { isDateDueSoon, isDateOverdue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listMilestones, listProjects } from "@/lib/firestore";
-import type { Milestone, Project } from "@/lib/types";
+import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import type { Milestone, Project, ProjectStage } from "@/lib/types";
 
 export default function MilestonesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -21,11 +22,13 @@ export default function MilestonesPage() {
       setError("");
 
       try {
-        const [nextProjects, nextMilestones] = await Promise.all([
+        const [nextProjects, nextStages, nextMilestones] = await Promise.all([
           listProjects(),
+          listProjectStages(),
           listMilestones()
         ]);
         setProjects(nextProjects);
+        setStages(nextStages);
         setMilestones(nextMilestones);
       } catch (caught) {
         setError(getReadableError(caught));
@@ -105,18 +108,21 @@ export default function MilestonesPage() {
             title="即將到期"
             milestones={upcomingMilestones}
             projects={projects}
+            stages={stages}
             empty="未來 7 天內沒有即將到期的關鍵節點。"
           />
           <MilestoneSection
             title="已逾期"
             milestones={overdueMilestones}
             projects={projects}
+            stages={stages}
             empty="目前沒有逾期的關鍵節點。"
           />
           <MilestoneSection
             title="高風險"
             milestones={highRiskMilestones}
             projects={projects}
+            stages={stages}
             empty="目前沒有高風險關鍵節點。"
           />
         </>
@@ -161,18 +167,20 @@ function MilestoneSection({
   title,
   milestones,
   projects,
+  stages,
   empty
 }: {
   title: string;
   milestones: Milestone[];
   projects: Project[];
+  stages: ProjectStage[];
   empty: string;
 }) {
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
       {milestones.length ? (
-        <MilestoneTable milestones={milestones} projects={projects} />
+        <MilestoneTable milestones={milestones} projects={projects} stages={stages} />
       ) : (
         <EmptyState title="沒有需要處理的關鍵節點" description={empty} />
       )}

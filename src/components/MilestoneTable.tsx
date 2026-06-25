@@ -1,21 +1,24 @@
 import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDate, isDateOverdue } from "@/lib/date";
-import type { Milestone, Project } from "@/lib/types";
+import type { Milestone, Project, ProjectStage } from "@/lib/types";
 import { CompletionBadge, RiskBadge } from "./StatusBadges";
 
 export function MilestoneTable({
   milestones,
   projects,
+  stages = [],
   onEdit,
   onDelete
 }: {
   milestones: Milestone[];
   projects: Project[];
+  stages?: ProjectStage[];
   onEdit?: (milestone: Milestone) => void;
   onDelete?: (milestone: Milestone) => void;
 }) {
   const projectById = new Map(projects.map((project) => [project.id, project]));
+  const stageById = new Map(stages.map((stage) => [stage.id, stage]));
 
   return (
     <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
@@ -25,6 +28,7 @@ export function MilestoneTable({
             <tr>
               <th className="px-4 py-3">關鍵節點</th>
               <th className="px-4 py-3">案件</th>
+              <th className="px-4 py-3">所屬工期</th>
               <th className="px-4 py-3">到期日</th>
               <th className="px-4 py-3">完成</th>
               <th className="px-4 py-3">風險</th>
@@ -34,6 +38,7 @@ export function MilestoneTable({
           <tbody className="divide-y divide-stone-100 bg-white">
             {milestones.map((milestone) => {
               const project = projectById.get(milestone.projectId);
+              const stage = milestone.stageId ? stageById.get(milestone.stageId) : null;
               const overdue = !milestone.completed && isDateOverdue(milestone.dueDate);
 
               return (
@@ -55,6 +60,7 @@ export function MilestoneTable({
                       "未綁定"
                     )}
                   </td>
+                  <td className="px-4 py-4 text-slate-600">{stage?.stageName ?? "未掛工期"}</td>
                   <td className="px-4 py-4">
                     <span className={overdue ? "font-semibold text-red-700" : "text-slate-600"}>
                       {formatDate(milestone.dueDate)}

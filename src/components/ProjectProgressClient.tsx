@@ -209,6 +209,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
         <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
           <MilestoneForm
             projectId={projectId}
+            stages={stages}
             submitLabel="建立關鍵節點"
             onSubmit={handleCreateMilestone}
           />
@@ -221,6 +222,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
           <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
             <MilestoneForm
               projectId={projectId}
+              stages={stages}
               initialValue={editingMilestone}
               submitLabel="儲存關鍵節點"
               onCancel={() => setEditingMilestone(null)}
@@ -236,6 +238,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
           <MilestoneTable
             milestones={milestones}
             projects={[project]}
+            stages={stages}
             onEdit={setEditingMilestone}
             onDelete={handleDeleteMilestone}
           />

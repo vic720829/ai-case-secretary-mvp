@@ -4,17 +4,19 @@ import { Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { riskLevelOptions } from "@/lib/constants";
 import { todayInputValue } from "@/lib/date";
-import type { MilestoneInput, RiskLevel } from "@/lib/types";
+import type { MilestoneInput, ProjectStage, RiskLevel } from "@/lib/types";
 import { Button, ErrorMessage } from "./Ui";
 
 export function MilestoneForm({
   projectId,
+  stages = [],
   initialValue,
   submitLabel,
   onSubmit,
   onCancel
 }: {
   projectId: string;
+  stages?: ProjectStage[];
   initialValue?: MilestoneInput;
   submitLabel: string;
   onSubmit: (value: MilestoneInput) => Promise<void>;
@@ -23,6 +25,7 @@ export function MilestoneForm({
   const [value, setValue] = useState<MilestoneInput>(
     initialValue ?? {
       projectId,
+      stageId: "",
       title: "",
       description: "",
       dueDate: todayInputValue(),
@@ -46,6 +49,7 @@ export function MilestoneForm({
       await onSubmit({
         ...value,
         projectId,
+        stageId: value.stageId ?? "",
         title: value.title.trim(),
         description: value.description.trim()
       });
@@ -53,6 +57,7 @@ export function MilestoneForm({
       if (!initialValue) {
         setValue({
           projectId,
+          stageId: "",
           title: "",
           description: "",
           dueDate: todayInputValue(),
@@ -97,6 +102,20 @@ export function MilestoneForm({
             {riskLevelOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="所屬工期節點">
+          <select
+            className={inputClassName}
+            value={value.stageId ?? ""}
+            onChange={(event) => updateField("stageId", event.target.value)}
+          >
+            <option value="">未掛工期節點</option>
+            {stages.map((stage) => (
+              <option key={stage.id} value={stage.id}>
+                {stage.sortOrder}. {stage.stageName}
               </option>
             ))}
           </select>

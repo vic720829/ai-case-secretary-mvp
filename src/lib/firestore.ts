@@ -116,6 +116,7 @@ function milestoneFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Milest
   return {
     id: snapshot.id,
     projectId: data.projectId ?? "",
+    stageId: data.stageId ?? "",
     title: data.title ?? "",
     description: data.description ?? "",
     dueDate: data.dueDate ?? "",

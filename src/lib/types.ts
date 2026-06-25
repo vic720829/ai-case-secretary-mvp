@@ -55,6 +55,7 @@ export type ProjectStage = ProjectStageInput & {
 
 export type MilestoneInput = {
   projectId: string;
+  stageId?: string;
   title: string;
   description: string;
   dueDate: string;

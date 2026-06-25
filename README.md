@@ -1,6 +1,6 @@
 # AI 案件秘書 MVP
 
-室內設計公司用的第一階段基礎後台。此版本先提供 Firebase Authentication、Firestore 案件與任務 CRUD、今日風險中心，不接 AI、不接 LINE。
+室內設計公司用的 AI 案件秘書 MVP。此版本提供 Firebase Authentication、Firestore 案件與任務 CRUD、工期管理、LINE 同步、AI 任務追蹤與今日風險中心。
 
 ## 功能
 
@@ -8,6 +8,9 @@
 - LINE 訊息中心：群組綁定、案件訊息、訊息同步
 - AI 任務追蹤：從 LINE 文字訊息分析承諾、變更、追蹤、收款、發票事項
 - 案件管理：列表、新增、詳情編輯、刪除
+- 工期總表：集中查看全部案件的工期節點、逾期狀態與關鍵節點
+- 案件進度：每個案件可管理工期節點與關鍵節點
+- 關鍵節點：可綁定到指定工期節點
 - 任務管理：列表、新增、詳情編輯、刪除
 - 任務可綁定案件
 - Firebase Authentication Email/Password 登入與註冊
@@ -50,6 +53,8 @@ npm run dev
 - groupId
 - projectId
 - groupName
+- groupType: `project` / `admin`
+- allowAssistantReplies
 - createdAt
 
 ### messages
@@ -76,6 +81,29 @@ npm run dev
 - dueDate
 - createdByAI
 - createdAt
+
+### projectStages
+
+- projectId
+- stageName
+- startDate
+- endDate
+- status: `todo` / `doing` / `done`
+- sortOrder
+- createdAt
+- updatedAt
+
+### milestones
+
+- projectId
+- stageId
+- title
+- description
+- dueDate
+- completed
+- riskLevel: `low` / `medium` / `high`
+- createdAt
+- updatedAt
 
 ## LINE Webhook
 
