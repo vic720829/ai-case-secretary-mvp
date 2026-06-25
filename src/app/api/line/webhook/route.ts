@@ -37,13 +37,12 @@ export async function POST(request: Request) {
     const { handleLineWebhookEvents } = await import("./handler");
     return await handleLineWebhookEvents(events as LineWebhookEvent[]);
   } catch (caught) {
-    const detail = caught instanceof Error ? caught.message : "Unknown handler error";
+    console.error("LINE webhook handler failed", caught);
 
     return NextResponse.json(
       {
         ok: false,
-        error: "LINE webhook handler failed",
-        detail
+        error: "LINE webhook handler failed"
       },
       { status: 500 }
     );
