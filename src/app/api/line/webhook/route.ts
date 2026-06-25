@@ -484,17 +484,18 @@ async function findLineMember(
   lineUserId: string,
   projectId: string
 ): Promise<{ displayName: string; role: LineSenderRole }> {
-  if (!lineUserId) return { displayName: "", role: "unknown" };
+  const defaultRole: LineSenderRole = projectId ? "client" : "unknown";
+  if (!lineUserId) return { displayName: "", role: defaultRole };
 
   const snapshot = await db.collection("line_members").where("lineUserId", "==", lineUserId).get();
-  if (snapshot.empty) return { displayName: "", role: "unknown" };
+  if (snapshot.empty) return { displayName: "", role: defaultRole };
 
   const members = snapshot.docs.map((doc) => doc.data());
   const matched =
     members.find((member) => String(member.projectId ?? "") === projectId) ??
     members.find((member) => !member.projectId) ??
     members[0];
-  const role = normalizeSenderRole(String(matched.role ?? "unknown"));
+  const role = normalizeSenderRole(String(matched.role ?? ""), defaultRole);
 
   return {
     displayName: String(matched.displayName ?? ""),
@@ -502,9 +503,9 @@ async function findLineMember(
   };
 }
 
-function normalizeSenderRole(role: string): LineSenderRole {
+function normalizeSenderRole(role: string, fallback: LineSenderRole = "unknown"): LineSenderRole {
   if (role === "internal" || role === "client" || role === "vendor") return role;
-  return "unknown";
+  return fallback;
 }
 
 function normalizeMessageType(type: string): "text" | "image" | "audio" {
