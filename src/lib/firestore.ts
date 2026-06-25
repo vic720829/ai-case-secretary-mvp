@@ -30,6 +30,7 @@ import type {
   LineMember,
   LineMemberInput,
   Message,
+  MessageAttachment,
   Project,
   ProjectInput,
   ProjectStage,
@@ -74,6 +75,33 @@ function readTimestamp(value: unknown) {
   }
 
   return null;
+}
+
+function readAttachments(value: unknown): MessageAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const attachment = item as Record<string, unknown>;
+
+      return {
+        messageId: String(attachment.messageId ?? ""),
+        fileUrl: String(attachment.fileUrl ?? ""),
+        fileType:
+          attachment.fileType === "audio" || attachment.fileType === "image" || attachment.fileType === "text"
+            ? attachment.fileType
+            : "image",
+        senderName: String(attachment.senderName ?? ""),
+        senderRole:
+          attachment.senderRole === "internal" || attachment.senderRole === "client" || attachment.senderRole === "vendor"
+            ? attachment.senderRole
+            : "unknown",
+        text: String(attachment.text ?? ""),
+        createdAt: readTimestamp(attachment.createdAt)
+      } satisfies MessageAttachment;
+    })
+    .filter((attachment): attachment is MessageAttachment => Boolean(attachment?.messageId && attachment.fileUrl));
 }
 
 function projectFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Project {
@@ -131,6 +159,7 @@ function auditLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AuditLo
 
 function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
   const data = snapshot.data();
+  const attachments = readAttachments(data.attachments);
 
   return {
     id: snapshot.id,
@@ -142,6 +171,11 @@ function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     status: data.status ?? "todo",
     source: data.source ?? "manual",
     riskLevel: data.riskLevel ?? "low",
+    attachments,
+    attachmentMessageIds: Array.isArray(data.attachmentMessageIds)
+      ? data.attachmentMessageIds.map((id: unknown) => String(id)).filter(Boolean)
+      : attachments.map((attachment) => attachment.messageId),
+    attachmentCount: Number(data.attachmentCount ?? attachments.length),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
@@ -234,12 +268,14 @@ function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message 
 
 function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
   const data = snapshot.data();
+  const attachments = readAttachments(data.attachments);
 
   return {
     id: snapshot.id,
     projectId: data.projectId ?? "",
     sourceMessageId: data.sourceMessageId ?? "",
     sourceGroupId: data.sourceGroupId ?? "",
+    sourceSenderId: data.sourceSenderId ?? "",
     sourceSenderName: data.sourceSenderName ?? "",
     sourceSenderRole: data.sourceSenderRole ?? "unknown",
     title: data.title ?? "",
@@ -257,6 +293,11 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     linkedAiTaskId: data.linkedAiTaskId ?? "",
     resolutionHint: data.resolutionHint ?? "",
     resolutionLinkedAt: readTimestamp(data.resolutionLinkedAt),
+    attachments,
+    attachmentMessageIds: Array.isArray(data.attachmentMessageIds)
+      ? data.attachmentMessageIds.map((id: unknown) => String(id)).filter(Boolean)
+      : attachments.map((attachment) => attachment.messageId),
+    attachmentCount: Number(data.attachmentCount ?? attachments.length),
     createdAt: readTimestamp(data.createdAt)
   };
 }
@@ -831,9 +872,16 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
     if (reviewStatus !== "pending") {
       throw new Error("這筆 AI 草稿已經審核過。");
     }
+    const aiTaskData = aiTaskSnapshot.data();
+    const attachments = readAttachments(aiTaskData.attachments).length
+      ? readAttachments(aiTaskData.attachments)
+      : readAttachments(input.attachments);
 
     transaction.set(taskRef, {
       ...input,
+      attachments,
+      attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
+      attachmentCount: attachments.length,
       source: "ai",
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()

@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Bot, CheckCircle2, ExternalLink, Save, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, ImageIcon, Save, XCircle } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
@@ -106,7 +107,7 @@ export function AiTaskReviewClient() {
     try {
       const draft = normalizeDraftInput(draftValues[task.id] ?? toDraftInput(task));
       await updateAiTaskDraft(task.id, draft);
-      await approveAiTask(task.id, toTaskInput(draft), user?.email ?? user?.uid ?? "unknown");
+      await approveAiTask(task.id, toTaskInput(draft, task), user?.email ?? user?.uid ?? "unknown");
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
@@ -245,6 +246,7 @@ function AiTaskReviewTable({
                       </div>
                     ) : null}
                     <ResolutionHint task={task} />
+                    <AttachmentPreview attachments={task.attachments ?? []} />
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     <select
@@ -496,7 +498,43 @@ function normalizeDraftInput(input: AiTaskDraftUpdateInput): AiTaskDraftUpdateIn
   };
 }
 
-function toTaskInput(input: AiTaskDraftUpdateInput): TaskInput {
+function AttachmentPreview({ attachments }: { attachments: AiTask["attachments"] }) {
+  if (!attachments?.length) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
+        <ImageIcon className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+        相關圖片 {attachments.length} 張
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {attachments.map((attachment) => (
+          <a
+            key={attachment.messageId}
+            className="block overflow-hidden rounded-md border border-stone-200 bg-white"
+            href={attachment.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="開啟原圖"
+          >
+            <Image
+              className="h-20 w-20 object-cover"
+              src={attachment.fileUrl}
+              alt="LINE 附件"
+              width={80}
+              height={80}
+              unoptimized
+            />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function toTaskInput(input: AiTaskDraftUpdateInput, task: AiTask): TaskInput {
+  const attachments = task.attachments ?? [];
+
   return {
     title: input.title,
     description: input.description,
@@ -505,7 +543,10 @@ function toTaskInput(input: AiTaskDraftUpdateInput): TaskInput {
     dueDate: input.dueDate,
     status: input.status,
     source: "ai",
-    riskLevel: riskByAiTaskType[input.taskType]
+    riskLevel: riskByAiTaskType[input.taskType],
+    attachments,
+    attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
+    attachmentCount: attachments.length
   };
 }
 

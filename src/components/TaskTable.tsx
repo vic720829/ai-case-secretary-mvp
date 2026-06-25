@@ -1,4 +1,4 @@
-import { Pencil, Trash2 } from "lucide-react";
+import { Paperclip, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDate, formatDateTime, isTaskOverdue } from "@/lib/date";
 import type { Project, Task } from "@/lib/types";
@@ -46,6 +46,12 @@ export function TaskTable({
                     {task.description ? (
                       <div className="mt-1 line-clamp-2 max-w-sm text-xs leading-5 text-slate-500">
                         {task.description}
+                      </div>
+                    ) : null}
+                    {task.attachmentCount ? (
+                      <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-100">
+                        <Paperclip className="h-3 w-3" aria-hidden />
+                        附件 {task.attachmentCount}
                       </div>
                     ) : null}
                   </td>

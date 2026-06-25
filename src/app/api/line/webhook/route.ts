@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
-import type { AiTaskType, LineSenderRole } from "@/lib/types";
+import type { AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
 import {
   analyzeMessageForAiTasks,
   dateStringToTimestamp,
@@ -29,6 +29,16 @@ type DraftRelationHint = {
   sourceDraftId: string;
   targetDraftId: string;
   hint: string;
+};
+
+type LineAttachmentForWrite = {
+  messageId: string;
+  fileUrl: string;
+  fileType: LineMessageType;
+  senderName: string;
+  senderRole: LineSenderRole;
+  text: string;
+  createdAt: Timestamp | null;
 };
 
 export async function POST(request: Request) {
@@ -120,39 +130,42 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   if (messageType === "text" && event.message.text) {
     const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
     const recentMessages = shouldCreateAiDrafts ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
-    const suggestions = shouldCreateAiDrafts
+    const nearbyAttachments = shouldCreateAiDrafts
+      ? await loadRecentImageAttachments(db, {
+          groupId,
+          projectId,
+          senderId: event.source?.userId ?? "",
+          currentMessageId: messageRef.id,
+          currentTimestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null
+        })
+      : [];
+    const baseSuggestions = shouldCreateAiDrafts
       ? await analyzeMessageForAiTasks(event.message.text, senderRole, { recentMessages })
       : [];
+    const suggestions =
+      baseSuggestions.length || !nearbyAttachments.length
+        ? baseSuggestions
+        : [buildImageReviewSuggestion(event.message.text)];
 
-    const createdDraftIds = await Promise.all(
-      suggestions.map(async (suggestion) => {
-        const draftRef = await db.collection("ai_tasks").add({
+    const pendingImageDraft = nearbyAttachments.length
+      ? await findPendingImageDraftForAttachments(db, {
           projectId,
-          sourceMessageId: messageRef.id,
-          sourceGroupId: groupId,
-          sourceSenderName: senderName,
-          sourceSenderRole: senderRole,
-          title: suggestion.title,
-          description: suggestion.description,
-          taskType: suggestion.taskType,
-          status: "todo",
-          assignedTo: suggestion.assignedTo ?? "",
-          dueDate: dateStringToTimestamp(suggestion.dueDate),
-          createdByAI: true,
-          reviewStatus: "pending",
-          reviewedBy: "",
-          reviewedAt: null,
-          approvedTaskId: "",
-          resolutionStatus: "open",
-          linkedAiTaskId: "",
-          resolutionHint: "",
-          resolutionLinkedAt: null,
-          createdAt: FieldValue.serverTimestamp()
-        });
-
-        return draftRef.id;
-      })
-    );
+          groupId,
+          senderId: event.source?.userId ?? "",
+          attachmentMessageIds: nearbyAttachments.map((attachment) => attachment.messageId)
+        })
+      : null;
+    const createdDraftIds = await createAiTaskDrafts(db, {
+      projectId,
+      groupId,
+      sourceMessageId: messageRef.id,
+      sourceSenderId: event.source?.userId ?? "",
+      senderName,
+      senderRole,
+      suggestions,
+      attachments: nearbyAttachments,
+      reusableDraftId: pendingImageDraft?.id ?? ""
+    });
     const relationHints = suggestions.length
       ? await linkPossibleAnsweredFollowups(db, {
           projectId,
@@ -171,7 +184,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           text: event.message.text,
           suggestions,
           createdDraftIds,
-          relationHints
+          relationHints,
+          attachmentCount: nearbyAttachments.length
         })
       : { sent: 0, failed: 0, groups: 0 };
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
@@ -203,6 +217,85 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       messageText: event.message.text,
       aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+    };
+  }
+
+  if (messageType === "image" && fileUrl) {
+    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const nearbyText = shouldCreateAiDrafts
+      ? await loadRecentTextForImage(db, {
+          groupId,
+          projectId,
+          senderId: event.source?.userId ?? "",
+          currentMessageId: messageRef.id,
+          currentTimestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null
+        })
+      : "";
+    const attachment = buildLineAttachment({
+      messageId: messageRef.id,
+      fileUrl,
+      fileType: messageType,
+      senderName,
+      senderRole,
+      text: nearbyText,
+      createdAt: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null
+    });
+    const baseSuggestions =
+      shouldCreateAiDrafts && nearbyText
+        ? await analyzeMessageForAiTasks(nearbyText, senderRole, { recentMessages: [] })
+        : [];
+    const suggestions = shouldCreateAiDrafts
+      ? baseSuggestions.length
+        ? baseSuggestions
+        : [buildImageReviewSuggestion(nearbyText)]
+      : [];
+    const createdDraftIds = await createAiTaskDrafts(db, {
+      projectId,
+      groupId,
+      sourceMessageId: messageRef.id,
+      sourceSenderId: event.source?.userId ?? "",
+      senderName,
+      senderRole,
+      suggestions,
+      attachments: [attachment]
+    });
+    const adminNotification = suggestions.length
+      ? await notifyAdminGroupsAboutAiDrafts(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: nearbyText || "客戶傳送圖片，尚未提供文字說明。",
+          suggestions,
+          createdDraftIds,
+          relationHints: [],
+          attachmentCount: 1
+        })
+      : { sent: 0, failed: 0, groups: 0 };
+    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
+      ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
+          groupId,
+          senderName,
+          senderRole,
+          text: "客戶傳送圖片",
+          reason: getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+        })
+      : { sent: 0, failed: 0, groups: 0 };
+
+    if (shouldCreateAiDrafts) {
+      await messageRef.update({ isProcessed: true });
+    }
+
+    return {
+      messageId: messageRef.id,
+      lineMessageId,
+      aiTaskDrafts: suggestions.length,
+      adminNotifications: adminNotification.sent + unboundNotification.sent,
+      adminNotificationFailures: adminNotification.failed + unboundNotification.failed,
+      projectId,
+      senderName,
+      senderRole,
+      messageText: nearbyText,
+      attachmentCount: 1
     };
   }
 
@@ -555,6 +648,200 @@ async function syncLineGroupName(
   );
 }
 
+async function createAiTaskDrafts(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    groupId: string;
+    sourceMessageId: string;
+    sourceSenderId: string;
+    senderName: string;
+    senderRole: LineSenderRole;
+    suggestions: AiTaskSuggestion[];
+    attachments: LineAttachmentForWrite[];
+    reusableDraftId?: string;
+  }
+) {
+  const attachmentMessageIds = input.attachments.map((attachment) => attachment.messageId);
+  const createdDraftIds: string[] = [];
+
+  for (const [index, suggestion] of input.suggestions.entries()) {
+    const payload = {
+      projectId: input.projectId,
+      sourceMessageId: input.sourceMessageId,
+      sourceGroupId: input.groupId,
+      sourceSenderId: input.sourceSenderId,
+      sourceSenderName: input.senderName,
+      sourceSenderRole: input.senderRole,
+      title: suggestion.title,
+      description: suggestion.description,
+      taskType: suggestion.taskType,
+      status: "todo",
+      assignedTo: suggestion.assignedTo ?? "",
+      dueDate: dateStringToTimestamp(suggestion.dueDate),
+      createdByAI: true,
+      reviewStatus: "pending",
+      reviewedBy: "",
+      reviewedAt: null,
+      approvedTaskId: "",
+      resolutionStatus: "open",
+      linkedAiTaskId: "",
+      resolutionHint: "",
+      resolutionLinkedAt: null,
+      attachments: input.attachments,
+      attachmentMessageIds,
+      attachmentCount: input.attachments.length,
+      updatedAt: FieldValue.serverTimestamp()
+    };
+
+    if (index === 0 && input.reusableDraftId) {
+      await db.collection("ai_tasks").doc(input.reusableDraftId).set(payload, { merge: true });
+      createdDraftIds.push(input.reusableDraftId);
+      continue;
+    }
+
+    const draftRef = await db.collection("ai_tasks").add({
+      ...payload,
+      createdAt: FieldValue.serverTimestamp()
+    });
+    createdDraftIds.push(draftRef.id);
+  }
+
+  return createdDraftIds;
+}
+
+async function findPendingImageDraftForAttachments(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    groupId: string;
+    senderId: string;
+    attachmentMessageIds: string[];
+  }
+) {
+  if (!input.attachmentMessageIds.length) return null;
+
+  const snapshot = await db.collection("ai_tasks").where("projectId", "==", input.projectId).get();
+  const attachmentIds = new Set(input.attachmentMessageIds);
+  const cutoff = Date.now() - 30 * 60 * 1000;
+
+  return (
+    snapshot.docs
+      .map((doc) => ({ id: doc.id, data: doc.data() }))
+      .filter((item) => item.data.sourceGroupId === input.groupId)
+      .filter((item) => !input.senderId || item.data.sourceSenderId === input.senderId)
+      .filter((item) => item.data.reviewStatus === "pending")
+      .filter((item) => String(item.data.title ?? "").includes("圖片待確認"))
+      .filter((item) => timestampToMillis(item.data.createdAt) >= cutoff)
+      .find((item) => {
+        const rawIds = Array.isArray(item.data.attachmentMessageIds) ? item.data.attachmentMessageIds : [];
+        return rawIds.some((id) => attachmentIds.has(String(id)));
+      }) ?? null
+  );
+}
+
+async function loadRecentImageAttachments(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    groupId: string;
+    projectId: string;
+    senderId: string;
+    currentMessageId: string;
+    currentTimestamp: Timestamp | null;
+  }
+) {
+  const currentMillis = input.currentTimestamp?.toMillis() ?? Date.now();
+  const cutoff = currentMillis - 10 * 60 * 1000;
+  const snapshot = await db.collection("messages").where("groupId", "==", input.groupId).get();
+
+  return snapshot.docs
+    .filter((doc) => doc.id !== input.currentMessageId)
+    .map((doc) => ({ id: doc.id, data: doc.data() }))
+    .filter((item) => String(item.data.projectId ?? "") === input.projectId)
+    .filter((item) => !input.senderId || String(item.data.senderId ?? "") === input.senderId)
+    .filter((item) => item.data.messageType === "image")
+    .filter((item) => String(item.data.fileUrl ?? ""))
+    .filter((item) => {
+      const time = timestampToMillis(item.data.timestamp) || timestampToMillis(item.data.createdAt);
+      return time >= cutoff && time <= currentMillis;
+    })
+    .sort((a, b) => (timestampToMillis(a.data.timestamp) || 0) - (timestampToMillis(b.data.timestamp) || 0))
+    .slice(-4)
+    .map((item) =>
+      buildLineAttachment({
+        messageId: item.id,
+        fileUrl: String(item.data.fileUrl ?? ""),
+        fileType: "image",
+        senderName: String(item.data.senderName ?? ""),
+        senderRole: normalizeSenderRole(String(item.data.senderRole ?? "unknown")),
+        text: String(item.data.text ?? ""),
+        createdAt: item.data.timestamp instanceof Timestamp ? item.data.timestamp : null
+      })
+    );
+}
+
+async function loadRecentTextForImage(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    groupId: string;
+    projectId: string;
+    senderId: string;
+    currentMessageId: string;
+    currentTimestamp: Timestamp | null;
+  }
+) {
+  const currentMillis = input.currentTimestamp?.toMillis() ?? Date.now();
+  const cutoff = currentMillis - 10 * 60 * 1000;
+  const snapshot = await db.collection("messages").where("groupId", "==", input.groupId).get();
+
+  return snapshot.docs
+    .filter((doc) => doc.id !== input.currentMessageId)
+    .map((doc) => ({ id: doc.id, data: doc.data() }))
+    .filter((item) => String(item.data.projectId ?? "") === input.projectId)
+    .filter((item) => !input.senderId || String(item.data.senderId ?? "") === input.senderId)
+    .filter((item) => item.data.messageType === "text")
+    .filter((item) => String(item.data.text ?? "").trim())
+    .filter((item) => {
+      const time = timestampToMillis(item.data.timestamp) || timestampToMillis(item.data.createdAt);
+      return time >= cutoff && time <= currentMillis;
+    })
+    .sort((a, b) => (timestampToMillis(a.data.timestamp) || 0) - (timestampToMillis(b.data.timestamp) || 0))
+    .slice(-4)
+    .map((item) => String(item.data.text ?? "").trim())
+    .join("\n");
+}
+
+function buildLineAttachment(input: LineAttachmentForWrite): LineAttachmentForWrite {
+  return {
+    messageId: input.messageId,
+    fileUrl: input.fileUrl,
+    fileType: input.fileType,
+    senderName: input.senderName,
+    senderRole: input.senderRole,
+    text: input.text,
+    createdAt: input.createdAt
+  };
+}
+
+function buildImageReviewSuggestion(text: string): AiTaskSuggestion {
+  const trimmedText = text.trim();
+
+  return {
+    title: trimmedText ? `圖片待確認：${shortText(trimmedText, 22)}` : "圖片待確認",
+    description: trimmedText
+      ? `客戶傳送圖片，並提供相關文字：\n${trimmedText}\n\n請確認是否需要建立修補、變更或追蹤待辦。`
+      : "客戶傳送圖片，但目前沒有前後文字說明。請人工確認圖片用途，判斷是否需要建立修補、變更或追蹤待辦。",
+    taskType: "followup",
+    dueDate: "",
+    assignedTo: ""
+  };
+}
+
+function shortText(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
 async function notifyAdminGroupsAboutAiDrafts(
   db: FirebaseFirestore.Firestore,
   input: {
@@ -565,6 +852,7 @@ async function notifyAdminGroupsAboutAiDrafts(
     suggestions: AiTaskSuggestion[];
     createdDraftIds: string[];
     relationHints: DraftRelationHint[];
+    attachmentCount?: number;
   }
 ) {
   try {
@@ -586,6 +874,7 @@ async function notifyAdminGroupsAboutAiDrafts(
       `案件：${projectName}`,
       `來源：${input.senderName || "LINE 使用者"}（${senderRoleLabel(input.senderRole)}）`,
       `原對話：${input.text}`,
+      input.attachmentCount ? `附件：${input.attachmentCount} 張圖片` : "",
       "",
       ...input.suggestions.slice(0, 5).map((suggestion, index) => {
         const dueDate = suggestion.dueDate ? `｜截止：${suggestion.dueDate.replaceAll("-", "/")}` : "";
@@ -681,6 +970,7 @@ async function isAssistantAdminGroup(db: FirebaseFirestore.Firestore, groupId: s
 
 function buildTaskFromAiDraft(aiTask: FirebaseFirestore.DocumentData) {
   const taskType = normalizeAiTaskType(String(aiTask.taskType ?? ""));
+  const attachments = readLineAttachments(aiTask.attachments);
 
   return {
     title: String(aiTask.title ?? "").trim(),
@@ -690,8 +980,35 @@ function buildTaskFromAiDraft(aiTask: FirebaseFirestore.DocumentData) {
     dueDate: timestampToTaipeiInputDate(aiTask.dueDate),
     status: normalizeTaskStatus(String(aiTask.status ?? "")),
     source: "ai" as const,
-    riskLevel: riskByAiTaskType[taskType]
+    riskLevel: riskByAiTaskType[taskType],
+    attachments,
+    attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
+    attachmentCount: attachments.length
   };
+}
+
+function readLineAttachments(value: unknown): LineAttachmentForWrite[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const attachment = item as Record<string, unknown>;
+      const fileUrl = String(attachment.fileUrl ?? "");
+      const messageId = String(attachment.messageId ?? "");
+      if (!fileUrl || !messageId) return null;
+
+      return buildLineAttachment({
+        messageId,
+        fileUrl,
+        fileType: attachment.fileType === "audio" ? "audio" : "image",
+        senderName: String(attachment.senderName ?? ""),
+        senderRole: normalizeSenderRole(String(attachment.senderRole ?? "unknown")),
+        text: String(attachment.text ?? ""),
+        createdAt: attachment.createdAt instanceof Timestamp ? attachment.createdAt : null
+      });
+    })
+    .filter((attachment): attachment is LineAttachmentForWrite => Boolean(attachment));
 }
 
 const riskByAiTaskType: Record<AiTaskType, "low" | "medium" | "high"> = {

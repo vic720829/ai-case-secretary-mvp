@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Edit3, Gauge, MessageSquareText, Plus, X } from "lucide-react";
+import { ArrowLeft, Edit3, Gauge, ImageIcon, MessageSquareText, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
@@ -109,6 +109,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             <SecondaryLink href={`/projects/${projectId}/messages`}>
               <MessageSquareText className="h-4 w-4" aria-hidden />
               LINE 對話
+            </SecondaryLink>
+            <SecondaryLink href={`/projects/${projectId}/attachments`}>
+              <ImageIcon className="h-4 w-4" aria-hidden />
+              案件附件
             </SecondaryLink>
             <ConfirmDeleteButton
               confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}

@@ -61,6 +61,9 @@ export type TaskInput = {
   status: TaskStatus;
   source: TaskSource;
   riskLevel: RiskLevel;
+  attachments?: MessageAttachment[];
+  attachmentMessageIds?: string[];
+  attachmentCount?: number;
 };
 
 export type Task = TaskInput & {
@@ -150,10 +153,21 @@ export type Message = Omit<MessageInput, "timestamp"> & {
   createdAt: Date | null;
 };
 
+export type MessageAttachment = {
+  messageId: string;
+  fileUrl: string;
+  fileType: LineMessageType;
+  senderName: string;
+  senderRole: LineSenderRole;
+  text: string;
+  createdAt: Date | null;
+};
+
 export type AiTaskInput = {
   projectId: string;
   sourceMessageId: string;
   sourceGroupId: string;
+  sourceSenderId?: string;
   sourceSenderName: string;
   sourceSenderRole: LineSenderRole;
   title: string;
@@ -171,6 +185,9 @@ export type AiTaskInput = {
   linkedAiTaskId: string;
   resolutionHint: string;
   resolutionLinkedAt: Date | null;
+  attachments?: MessageAttachment[];
+  attachmentMessageIds?: string[];
+  attachmentCount?: number;
 };
 
 export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt" | "resolutionLinkedAt"> & {

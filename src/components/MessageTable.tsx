@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/date";
 import type { LineGroup, LineSenderRole, Message, Project } from "@/lib/types";
@@ -96,6 +97,28 @@ function MessageContent({ message }: { message: Message }) {
   if (message.text) return message.text;
 
   if (message.fileUrl) {
+    if (message.messageType === "image") {
+      return (
+        <a
+          className="inline-block overflow-hidden rounded-md border border-stone-200 bg-stone-50"
+          href={message.fileUrl}
+          target="_blank"
+          rel="noreferrer"
+          title="開啟原圖"
+        >
+          <Image
+            className="h-20 w-28 object-cover"
+            src={message.fileUrl}
+            alt="LINE 圖片"
+            width={112}
+            height={80}
+            unoptimized
+          />
+          <div className="px-2 py-1 text-xs font-medium text-teal-700">開啟原圖</div>
+        </a>
+      );
+    }
+
     return (
       <a
         className="font-medium text-teal-700 hover:text-teal-800"
@@ -103,7 +126,7 @@ function MessageContent({ message }: { message: Message }) {
         target="_blank"
         rel="noreferrer"
       >
-        {message.messageType === "image" ? "查看圖片" : "播放語音"}
+        播放語音
       </a>
     );
   }
