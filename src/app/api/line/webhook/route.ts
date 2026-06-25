@@ -78,13 +78,22 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
   if (event.type !== "message" || !event.message) {
     const pendingGroup = await syncLinePendingGroup(db, null, event);
+    const adminNotification = pendingGroup
+      ? await notifyAdminGroupsAboutPendingLineGroup(db, {
+          groupId: pendingGroup.groupId,
+          groupName: pendingGroup.groupName,
+          eventType: event.type ?? ""
+        })
+      : { sent: 0, failed: 0, groups: 0 };
 
     return pendingGroup
       ? {
           ok: true,
           reason: "LINE group recorded for binding",
           groupId: pendingGroup.groupId,
-          groupName: pendingGroup.groupName
+          groupName: pendingGroup.groupName,
+          adminNotifications: adminNotification.sent,
+          adminNotificationFailures: adminNotification.failed
         }
       : { skipped: true, reason: "Unsupported event" };
   }
@@ -1009,6 +1018,42 @@ async function notifyAdminGroupsAboutUnboundLineMessage(
       `原對話：${input.text}`,
       "",
       lineGroupsUrl ? `請先綁定 LINE 群組：${lineGroupsUrl}` : "請到網站 LINE 群組頁綁定案件。"
+    ].join("\n");
+    const results = await Promise.allSettled(
+      adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
+    );
+
+    return {
+      sent: results.filter((result) => result.status === "fulfilled").length,
+      failed: results.filter((result) => result.status === "rejected").length,
+      groups: adminGroups.length
+    };
+  } catch {
+    return { sent: 0, failed: 1, groups: 0 };
+  }
+}
+
+async function notifyAdminGroupsAboutPendingLineGroup(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    groupId: string;
+    groupName: string;
+    eventType: string;
+  }
+) {
+  try {
+    const adminGroups = await listAssistantAdminGroupIds(db);
+    if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+
+    const lineGroupsUrl = getSiteUrl() ? `${getSiteUrl()}/line-groups` : "";
+    const text = [
+      "發現未綁定 LINE 群組",
+      `群組：${input.groupName || "尚未取得群組名稱"}`,
+      `事件：${input.eventType || "LINE event"}`,
+      `groupId：${input.groupId}`,
+      "",
+      "這個群組尚未綁定案件，也不是公司後台群組。",
+      lineGroupsUrl ? `請到網站綁定：${lineGroupsUrl}` : "請到網站的 LINE群組 頁面綁定。"
     ].join("\n");
     const results = await Promise.allSettled(
       adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
