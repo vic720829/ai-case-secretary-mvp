@@ -137,3 +137,20 @@ Publish directory:
 ```
 
 請在 Netlify Site settings 裡設定 `.env.example` 對應的環境變數。
+
+### 每日 LINE 提醒
+
+系統會透過 Netlify Scheduled Function 執行每日提醒：
+
+- Function: `daily-reminder`
+- Schedule: `0 1 * * *`
+- 台灣時間：每天早上 9:00
+- 發送對象：訊息中心設定為「公司後台群組」的 LINE 群組
+
+提醒內容包含：
+
+- 今天到期
+- 已逾期
+- 高風險
+
+部署後可到 Netlify 的 Functions 頁面找到 `daily-reminder`，使用 `Run now` 手動測試。

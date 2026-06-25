@@ -56,3 +56,25 @@ export async function replyLineText(replyToken: string | undefined, text: string
     })
   });
 }
+
+export async function pushLineText(to: string, text: string) {
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!to || !accessToken) return;
+
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      to,
+      messages: [
+        {
+          type: "text",
+          text: text.slice(0, 4900)
+        }
+      ]
+    })
+  });
+}
