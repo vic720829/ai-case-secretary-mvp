@@ -210,6 +210,10 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     approvedTaskId: data.approvedTaskId ?? "",
     reviewedBy: data.reviewedBy ?? "",
     reviewedAt: readTimestamp(data.reviewedAt),
+    resolutionStatus: data.resolutionStatus ?? "open",
+    linkedAiTaskId: data.linkedAiTaskId ?? "",
+    resolutionHint: data.resolutionHint ?? "",
+    resolutionLinkedAt: readTimestamp(data.resolutionLinkedAt),
     createdAt: readTimestamp(data.createdAt)
   };
 }

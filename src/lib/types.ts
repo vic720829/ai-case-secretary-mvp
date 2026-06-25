@@ -7,6 +7,7 @@ export type LineMemberRole = "internal" | "client" | "vendor";
 export type LineSenderRole = LineMemberRole | "unknown";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
+export type AiTaskResolutionStatus = "open" | "maybe_answered" | "confirmed_resolved";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
 export type ReminderType =
   | "stage_before_start"
@@ -148,12 +149,17 @@ export type AiTaskInput = {
   approvedTaskId: string;
   reviewedBy: string;
   reviewedAt: Date | null;
+  resolutionStatus: AiTaskResolutionStatus;
+  linkedAiTaskId: string;
+  resolutionHint: string;
+  resolutionLinkedAt: Date | null;
 };
 
-export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt"> & {
+export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt" | "resolutionLinkedAt"> & {
   id: string;
   dueDate: Date | null;
   reviewedAt: Date | null;
+  resolutionLinkedAt: Date | null;
   createdAt: Date | null;
 };
 

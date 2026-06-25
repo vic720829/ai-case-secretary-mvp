@@ -244,6 +244,7 @@ function AiTaskReviewTable({
                         來源：{task.sourceSenderName} · {getSenderRoleLabel(task.sourceSenderRole)}
                       </div>
                     ) : null}
+                    <ResolutionHint task={task} />
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     <select
@@ -441,6 +442,27 @@ function ReviewStatusBadge({ status }: { status: AiTaskReviewStatus }) {
     >
       {label}
     </span>
+  );
+}
+
+function ResolutionHint({ task }: { task: AiTask }) {
+  if (!task.resolutionHint && !task.linkedAiTaskId) return null;
+
+  const isMaybeAnswered = task.resolutionStatus === "maybe_answered";
+
+  return (
+    <div
+      className={cn(
+        "mt-3 rounded-md border px-3 py-2 text-xs leading-5",
+        isMaybeAnswered
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-teal-200 bg-teal-50 text-teal-900"
+      )}
+    >
+      <div className="font-semibold">{isMaybeAnswered ? "可能已被回覆" : "可能關聯上一筆待回覆"}</div>
+      <div className="mt-1">{task.resolutionHint || `關聯草稿：${task.linkedAiTaskId}`}</div>
+      <div className="mt-1 text-slate-500">系統只提示可能關聯，不會自動關閉或核准。</div>
+    </div>
   );
 }
 

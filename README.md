@@ -17,6 +17,7 @@
 - LINE 回覆限制：客戶群只同步與記錄，助理只在公司後台群組回答問題與發提醒。
 - LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「延後3天」「仍待處理」。
 - AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，並即時通知公司後台群組，可先編輯再核准成正式任務。
+- AI 保守關聯提示：客戶追問後若內部人員稍後承諾回覆，只標示「可能已回覆」，不自動關閉、不自動核准。
 - Firebase Authentication：Email/Password 登入。
 - Firestore Rules：MVP4 角色權限版，支援 `owner` / `admin` / `staff` / `viewer`。
 - Netlify 部署與排程提醒。
@@ -193,6 +194,10 @@ OPENAI_MODEL=
 - approvedTaskId
 - reviewedBy
 - reviewedAt
+- resolutionStatus: `open` / `maybe_answered` / `confirmed_resolved`
+- linkedAiTaskId
+- resolutionHint
+- resolutionLinkedAt
 - createdAt
 
 ### reminder_logs
@@ -276,6 +281,7 @@ AI 建任務時會這樣分：
 - 客戶說「我明天回覆顏色」：建立 `等待客戶回覆` 草稿。
 - 廠商說「我明天安排師傅」：建立 `追蹤廠商承諾` 草稿。
 - 客戶說「顏色想改」「尺寸改小」：建立 `客戶變更` 草稿。
+- 客戶問「我的工期表呢」後，內部人員稍後回「好明天給你」：系統只標示兩筆草稿可能相關，由人工審核決定保留、核准或拒絕。
 
 ## Netlify
 

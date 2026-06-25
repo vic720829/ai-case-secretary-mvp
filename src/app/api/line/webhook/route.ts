@@ -19,6 +19,12 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type DraftRelationHint = {
+  sourceDraftId: string;
+  targetDraftId: string;
+  hint: string;
+};
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("x-line-signature");
@@ -130,12 +136,26 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           reviewedBy: "",
           reviewedAt: null,
           approvedTaskId: "",
+          resolutionStatus: "open",
+          linkedAiTaskId: "",
+          resolutionHint: "",
+          resolutionLinkedAt: null,
           createdAt: FieldValue.serverTimestamp()
         });
 
         return draftRef.id;
       })
     );
+    const relationHints = suggestions.length
+      ? await linkPossibleAnsweredFollowups(db, {
+          projectId,
+          groupId,
+          senderName,
+          senderRole,
+          suggestions,
+          createdDraftIds
+        })
+      : [];
     const adminNotification = suggestions.length
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
@@ -143,7 +163,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           senderRole,
           text: event.message.text,
           suggestions,
-          createdDraftIds
+          createdDraftIds,
+          relationHints
         })
       : { sent: 0, failed: 0, groups: 0 };
 
@@ -159,6 +180,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       lineMessageId,
       aiTaskDrafts: suggestions.length,
       adminNotifications: adminNotification.sent,
+      aiDraftRelations: relationHints.length,
       projectId,
       aiSkippedReason: shouldCreateAiDrafts ? "" : "Only bound project LINE groups create AI task drafts"
     };
@@ -268,6 +290,7 @@ async function notifyAdminGroupsAboutAiDrafts(
     text: string;
     suggestions: AiTaskSuggestion[];
     createdDraftIds: string[];
+    relationHints: DraftRelationHint[];
   }
 ) {
   try {
@@ -286,6 +309,9 @@ async function notifyAdminGroupsAboutAiDrafts(
       ? `${String(project.name)}${project.clientName ? ` / ${String(project.clientName)}` : ""}`
       : "未綁定案件";
     const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
+    const relationLines = input.relationHints.length
+      ? ["", "保守關聯提示：", ...input.relationHints.map((relation) => `- ${relation.hint}`)]
+      : [];
     const text = [
       "AI案件秘書建立審核草稿",
       `案件：${projectName}`,
@@ -297,6 +323,7 @@ async function notifyAdminGroupsAboutAiDrafts(
         const draftId = input.createdDraftIds[index] ? `｜草稿ID：${input.createdDraftIds[index]}` : "";
         return `- ${suggestion.title}｜${suggestion.taskType}${dueDate}${draftId}`;
       }),
+      ...relationLines,
       "",
       reviewUrl ? `審核：${reviewUrl}` : "請到網站 AI 審核頁確認。"
     ].join("\n");
@@ -312,6 +339,80 @@ async function notifyAdminGroupsAboutAiDrafts(
   } catch {
     return { sent: 0, failed: 1, groups: 0 };
   }
+}
+
+async function linkPossibleAnsweredFollowups(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    groupId: string;
+    senderName: string;
+    senderRole: LineSenderRole;
+    suggestions: AiTaskSuggestion[];
+    createdDraftIds: string[];
+  }
+): Promise<DraftRelationHint[]> {
+  if (!input.projectId || !input.groupId || input.senderRole === "client") return [];
+
+  const answerDrafts = input.suggestions
+    .map((suggestion, index) => ({ suggestion, draftId: input.createdDraftIds[index] ?? "" }))
+    .filter((draft) => draft.draftId && isPotentialAnswerDraft(draft.suggestion, input.senderRole));
+  if (!answerDrafts.length) return [];
+
+  const snapshot = await db
+    .collection("ai_tasks")
+    .where("projectId", "==", input.projectId)
+    .where("sourceGroupId", "==", input.groupId)
+    .where("reviewStatus", "==", "pending")
+    .get();
+  const cutoff = Date.now() - 12 * 60 * 60 * 1000;
+  const candidates = snapshot.docs
+    .map((doc) => ({ id: doc.id, data: doc.data() }))
+    .filter((item) => !input.createdDraftIds.includes(item.id))
+    .filter((item) => item.data.taskType === "followup")
+    .filter((item) => item.data.sourceSenderRole === "client" || item.data.sourceSenderRole === "unknown")
+    .filter((item) => !item.data.linkedAiTaskId)
+    .filter((item) => item.data.resolutionStatus !== "confirmed_resolved")
+    .filter((item) => timestampToMillis(item.data.createdAt) >= cutoff)
+    .sort((a, b) => timestampToMillis(b.data.createdAt) - timestampToMillis(a.data.createdAt));
+
+  if (candidates.length !== 1) return [];
+
+  const candidate = candidates[0];
+  const answerDraft = answerDrafts[0];
+  const answerTitle = answerDraft.suggestion.title;
+  const candidateTitle = String(candidate.data.title ?? "待回覆事項");
+  const hint = `「${answerTitle}」可能回覆了「${candidateTitle}」，請人工確認。`;
+
+  await Promise.all([
+    db.collection("ai_tasks").doc(candidate.id).set(
+      {
+        resolutionStatus: "maybe_answered",
+        linkedAiTaskId: answerDraft.draftId,
+        resolutionHint: hint,
+        resolutionLinkedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    ),
+    db.collection("ai_tasks").doc(answerDraft.draftId).set(
+      {
+        linkedAiTaskId: candidate.id,
+        resolutionHint: hint,
+        resolutionLinkedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    )
+  ]);
+
+  return [
+    {
+      sourceDraftId: candidate.id,
+      targetDraftId: answerDraft.draftId,
+      hint
+    }
+  ];
 }
 
 async function writeWebhookLog(
@@ -351,6 +452,28 @@ function senderRoleLabel(role: LineSenderRole) {
     vendor: "廠商",
     unknown: "身份未登記"
   }[role];
+}
+
+function isPotentialAnswerDraft(suggestion: AiTaskSuggestion, senderRole: LineSenderRole) {
+  if (senderRole === "client") return false;
+  if (suggestion.taskType === "promise") return true;
+
+  return (
+    suggestion.taskType === "followup" &&
+    /(承諾|待判斷|回覆|確認|提供|安排|給你|給您|傳給你|傳給您)/.test(
+      `${suggestion.title}\n${suggestion.description}`
+    )
+  );
+}
+
+function timestampToMillis(value: unknown) {
+  if (!value) return 0;
+  if (value instanceof Timestamp) return value.toMillis();
+  if (typeof value === "object" && "toDate" in value) {
+    return (value as { toDate: () => Date }).toDate().getTime();
+  }
+
+  return 0;
 }
 
 async function findLineMember(
