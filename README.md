@@ -16,7 +16,7 @@
 - LINE Webhook 紀錄：記錄成功、略過、錯誤與 AI 草稿建立數，方便除錯。
 - LINE 回覆限制：客戶群只同步與記錄，助理只在公司後台群組回答問題與發提醒。
 - LINE 提醒按鈕：公司後台群組可直接點「已確認」「明天再提醒」「延後3天」「仍待處理」。
-- AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，可先編輯再核准成正式任務。
+- AI 任務審核：案件 LINE 群組會依發話者身份產生 AI 草稿，並即時通知公司後台群組，可先編輯再核准成正式任務。
 - Firebase Authentication：Email/Password 登入。
 - Firestore Rules：MVP4 角色權限版，支援 `owner` / `admin` / `staff` / `viewer`。
 - Netlify 部署與排程提醒。
@@ -254,6 +254,7 @@ LINE 訊息進入後會：
 - 客戶群組只儲存訊息，不主動回覆。
 - 公司後台群組可以回答問題與接收提醒。
 - 只有已綁定案件的客戶群組會建立 AI 任務草稿。
+- AI 任務草稿建立後，會立即推播通知到 `groupType=admin` 且允許助理回覆的公司後台群組。
 - 若 `line_members` 有登記發話者身份，AI 會依身份區分公司承諾、等待客戶回覆、追蹤廠商承諾。
 - 文字訊息存到 Firestore `messages.text`。
 - 圖片與語音會下載到 Firebase Storage，並把公開下載連結存到 `messages.fileUrl`。

@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import type { LineSenderRole } from "@/lib/types";
-import { analyzeMessageForAiTasks, dateStringToTimestamp } from "@/services/aiTasks";
+import { analyzeMessageForAiTasks, dateStringToTimestamp, type AiTaskSuggestion } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import {
   downloadLineMessageContent,
   getEventGroupId,
   getLineGroupName,
   getLineSenderName,
+  pushLineMessages,
   replyLineText,
   verifyLineSignature,
   type LineWebhookEvent
@@ -110,9 +111,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       ? await analyzeMessageForAiTasks(event.message.text, senderRole)
       : [];
 
-    await Promise.all(
-      suggestions.map((suggestion) =>
-        db.collection("ai_tasks").add({
+    const createdDraftIds = await Promise.all(
+      suggestions.map(async (suggestion) => {
+        const draftRef = await db.collection("ai_tasks").add({
           projectId,
           sourceMessageId: messageRef.id,
           sourceGroupId: groupId,
@@ -130,9 +131,21 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           reviewedAt: null,
           approvedTaskId: "",
           createdAt: FieldValue.serverTimestamp()
-        })
-      )
+        });
+
+        return draftRef.id;
+      })
     );
+    const adminNotification = suggestions.length
+      ? await notifyAdminGroupsAboutAiDrafts(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: event.message.text,
+          suggestions,
+          createdDraftIds
+        })
+      : { sent: 0, failed: 0, groups: 0 };
 
     if (shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text)) {
       const answer = await answerQuestionFromFirestore(event.message.text, projectId);
@@ -145,6 +158,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       messageId: messageRef.id,
       lineMessageId,
       aiTaskDrafts: suggestions.length,
+      adminNotifications: adminNotification.sent,
       projectId,
       aiSkippedReason: shouldCreateAiDrafts ? "" : "Only bound project LINE groups create AI task drafts"
     };
@@ -245,6 +259,61 @@ async function syncLineGroupName(
   );
 }
 
+async function notifyAdminGroupsAboutAiDrafts(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    senderName: string;
+    senderRole: LineSenderRole;
+    text: string;
+    suggestions: AiTaskSuggestion[];
+    createdDraftIds: string[];
+  }
+) {
+  try {
+    const adminGroupSnapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
+    const adminGroups = adminGroupSnapshot.docs
+      .map((doc) => doc.data())
+      .filter((group) => group.allowAssistantReplies !== false)
+      .map((group) => String(group.groupId ?? ""))
+      .filter(Boolean);
+
+    if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+
+    const projectSnapshot = input.projectId ? await db.collection("projects").doc(input.projectId).get() : null;
+    const project = projectSnapshot?.exists ? projectSnapshot.data() ?? {} : {};
+    const projectName = project.name
+      ? `${String(project.name)}${project.clientName ? ` / ${String(project.clientName)}` : ""}`
+      : "未綁定案件";
+    const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
+    const text = [
+      "AI案件秘書建立審核草稿",
+      `案件：${projectName}`,
+      `來源：${input.senderName || "LINE 使用者"}（${senderRoleLabel(input.senderRole)}）`,
+      `原訊息：${input.text}`,
+      "",
+      ...input.suggestions.slice(0, 5).map((suggestion, index) => {
+        const dueDate = suggestion.dueDate ? `｜截止：${suggestion.dueDate.replaceAll("-", "/")}` : "";
+        const draftId = input.createdDraftIds[index] ? `｜草稿ID：${input.createdDraftIds[index]}` : "";
+        return `- ${suggestion.title}｜${suggestion.taskType}${dueDate}${draftId}`;
+      }),
+      "",
+      reviewUrl ? `審核：${reviewUrl}` : "請到網站 AI 審核頁確認。"
+    ].join("\n");
+    const results = await Promise.allSettled(
+      adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
+    );
+
+    return {
+      sent: results.filter((result) => result.status === "fulfilled").length,
+      failed: results.filter((result) => result.status === "rejected").length,
+      groups: adminGroups.length
+    };
+  } catch {
+    return { sent: 0, failed: 1, groups: 0 };
+  }
+}
+
 async function writeWebhookLog(
   db: FirebaseFirestore.Firestore,
   event: LineWebhookEvent,
@@ -268,6 +337,20 @@ async function writeWebhookLog(
   } catch {
     // Webhook logs are for diagnostics only; LINE processing should not fail because logging failed.
   }
+}
+
+function getSiteUrl() {
+  const value = process.env.NEXT_PUBLIC_SITE_URL || process.env.URL || process.env.DEPLOY_URL || "";
+  return value.replace(/\/$/, "");
+}
+
+function senderRoleLabel(role: LineSenderRole) {
+  return {
+    internal: "內部人員",
+    client: "客戶",
+    vendor: "廠商",
+    unknown: "身份未登記"
+  }[role];
 }
 
 async function findLineMember(

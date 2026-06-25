@@ -59,6 +59,8 @@ async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Prom
           "- senderRole=internal：我確認、我回覆、我安排、我提供，通常是公司承諾 promise。",
           "- senderRole=client：我回覆、我確認、我挑好，通常是等待客戶回覆 followup，不是公司承諾。",
           "- senderRole=vendor：我安排、我確認，通常是追蹤廠商承諾 followup。",
+          "- 客戶詢問工期表、報價、圖面、進度、什麼時候給，建立 followup。",
+          "- 內部人員或身份未登記者回覆「好明天給你」「明天給您」「今晚傳給你」，建立 promise 或 followup。",
           "- 客戶提出改顏色、改尺寸、新增、取消、不要做，建立 change。",
           "- 款項、請款、尾款、二期款建立 payment。",
           "- 發票、統編、報帳建立 invoice。",
@@ -126,6 +128,15 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     });
   }
 
+  if (isClientRequestQuestion(text)) {
+    suggestions.push({
+      title: makeTitle(text, senderRole === "client" ? "待回覆客戶" : "待追蹤需求"),
+      description: text,
+      taskType: "followup",
+      dueDate
+    });
+  }
+
   if (hasCommitmentWords(text)) {
     if (senderRole === "internal") {
       suggestions.push({
@@ -162,7 +173,11 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
 }
 
 function hasCommitmentWords(text: string) {
-  return /(我|我們|這邊|師傅|廠商).{0,8}(確認|回覆|提供|安排|處理|報價|給你|給您|再看|挑好)|明天.{0,8}(確認|回覆|提供|安排|處理)|今晚.{0,8}(確認|回覆|提供|安排|處理)|等一下.{0,8}(確認|回覆|提供|安排|處理)/.test(text);
+  return /(我|我們|這邊|師傅|廠商).{0,8}(確認|回覆|提供|安排|處理|報價|給你|給您|傳給你|傳給您|再看|挑好)|(?:好)?(?:今天|明天|後天|今晚|等一下|稍後).{0,8}(確認|回覆|提供|安排|處理|報價|給你|給您|傳給你|傳給您|補給你|補給您)|會.{0,8}(確認|回覆|提供|安排|處理|報價|給你|給您|傳給你|傳給您)/.test(text);
+}
+
+function isClientRequestQuestion(text: string) {
+  return /(工期表|工程表|排程|時程|進度表|報價|估價|圖面|平面圖|立面圖|效果圖|合約|請款單|發票).{0,12}(呢|嗎|了嗎|\?|？|什麼時候|何時)|(?:我的|我們的).{0,8}(工期表|工程表|排程|時程|進度表|報價|估價|圖面)/.test(text);
 }
 
 function inferDueDate(text: string) {
