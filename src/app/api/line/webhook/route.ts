@@ -10,6 +10,7 @@ import {
   type AiTaskSuggestion
 } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
+import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
 import {
   downloadLineMessageContent,
   getEventGroupId,
@@ -18,7 +19,6 @@ import {
   pushLineMessages,
   replyLineText,
   verifyLineSignature,
-  type LinePushMessage,
   type LineWebhookEvent
 } from "@/services/line";
 
@@ -469,8 +469,12 @@ async function notifyAdminGroupsAboutAiDrafts(
       projectName,
       reviewUrl,
       summaryText: text,
-      suggestions: input.suggestions,
-      createdDraftIds: input.createdDraftIds
+      items: input.suggestions.map((suggestion, index) => ({
+        id: input.createdDraftIds[index] ?? "",
+        title: suggestion.title,
+        taskType: suggestion.taskType,
+        dueDate: suggestion.dueDate
+      }))
     });
     const results = await Promise.allSettled(
       adminGroups.map((groupId) => pushLineMessages(groupId, reviewMessages))
@@ -484,60 +488,6 @@ async function notifyAdminGroupsAboutAiDrafts(
   } catch {
     return { sent: 0, failed: 1, groups: 0 };
   }
-}
-
-function buildAiDraftReviewLineMessages(input: {
-  projectName: string;
-  reviewUrl: string;
-  summaryText: string;
-  suggestions: AiTaskSuggestion[];
-  createdDraftIds: string[];
-}): LinePushMessage[] {
-  const messages: LinePushMessage[] = [{ type: "text", text: input.summaryText }];
-  const buttonMessages = input.suggestions.slice(0, 4).flatMap((suggestion, index): LinePushMessage[] => {
-    const draftId = input.createdDraftIds[index];
-    if (!draftId) return [];
-
-    const editUrl = input.reviewUrl ? `${input.reviewUrl}?draftId=${encodeURIComponent(draftId)}` : "";
-    const dueDate = suggestion.dueDate ? `截止：${suggestion.dueDate.replaceAll("-", "/")}` : "截止：未設定";
-    const templateActions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
-      {
-        type: "postback",
-        label: "通過建立任務",
-        data: `action=approve_ai_task&key=${draftId}`,
-        displayText: `通過 AI 草稿：${suggestion.title}`
-      },
-      {
-        type: "postback",
-        label: "拒絕草稿",
-        data: `action=reject_ai_task&key=${draftId}`,
-        displayText: `拒絕 AI 草稿：${suggestion.title}`
-      }
-    ];
-
-    if (editUrl) {
-      templateActions.push({
-        type: "uri",
-        label: "網站編輯",
-        uri: editUrl
-      });
-    }
-
-    return [
-      {
-        type: "template",
-        altText: `AI 草稿待審核：${suggestion.title}`,
-        template: {
-          type: "buttons",
-          title: `AI 草稿：${input.projectName}`.slice(0, 40),
-          text: `${suggestion.title}\n${suggestion.taskType}｜${dueDate}`,
-          actions: templateActions
-        }
-      }
-    ];
-  });
-
-  return [...messages, ...buttonMessages].slice(0, 5);
 }
 
 async function notifyAdminGroupsAboutUnboundLineMessage(

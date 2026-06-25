@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey } from "../lib/reminders";
+import { buildAiDraftReviewLineMessages } from "./aiDraftReviewLineMessages";
 import { pushLineMessages } from "./line";
 
 const pendingReviewMinutes = 30;
@@ -104,9 +105,12 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
 
     if (shouldNotify30m) {
       const notificationResult = await notifyAdminGroups(adminGroups, {
+        draftId: doc.id,
         title,
         projectName: getProjectName(projects.get(projectId)),
         sourceSenderName,
+        taskType: String(aiTask.taskType ?? ""),
+        dueDate: timestampToTaipeiDate(aiTask.dueDate),
         createdAt,
         ageMinutes
       });
@@ -133,9 +137,12 @@ async function listAdminGroups(): Promise<AdminGroup[]> {
 async function notifyAdminGroups(
   adminGroups: AdminGroup[],
   input: {
+    draftId: string;
     title: string;
     projectName: string;
     sourceSenderName: string;
+    taskType: string;
+    dueDate: string;
     createdAt: Date | null;
     ageMinutes: number;
   }
@@ -155,8 +162,21 @@ async function notifyAdminGroups(
   ]
     .filter(Boolean)
     .join("\n");
+  const messages = buildAiDraftReviewLineMessages({
+    summaryText: text,
+    projectName: input.projectName,
+    reviewUrl,
+    items: [
+      {
+        id: input.draftId,
+        title: input.title,
+        taskType: input.taskType,
+        dueDate: input.dueDate
+      }
+    ]
+  });
   const results = await Promise.allSettled(
-    adminGroups.map((group) => pushLineMessages(group.groupId, [{ type: "text", text }]))
+    adminGroups.map((group) => pushLineMessages(group.groupId, messages))
   );
 
   return {
@@ -177,6 +197,11 @@ function timestampToDate(value: unknown) {
   }
 
   return null;
+}
+
+function timestampToTaipeiDate(value: unknown) {
+  const date = timestampToDate(value);
+  return date ? taipeiDateString(date) : "";
 }
 
 function getAgeMinutes(createdAt: Date | null, now: Date) {

@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey, dateMinusDays } from "../lib/reminders";
 import type { ReminderPriority, ReminderSourceType, ReminderType } from "../lib/types";
+import { buildAiDraftReviewTemplateMessage } from "./aiDraftReviewLineMessages";
 import { pushLineMessages, type LinePushMessage } from "./line";
 
 type ReminderItem = {
@@ -17,6 +18,7 @@ type ReminderItem = {
   firstTriggeredOn: string;
   lastRemindedOn: string;
   snoozedUntil?: string;
+  taskType?: string;
 };
 
 type ProjectSummary = {
@@ -58,9 +60,10 @@ export async function buildDailyReminderText() {
 
 export async function buildDailyReminderMessages(): Promise<LinePushMessage[]> {
   const content = await buildDailyReminderContent();
+  const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
   const actionMessages = content.pendingItems
     .slice(0, 4)
-    .map((item) => toReminderActionMessage(item, content.projects));
+    .flatMap((item) => toDailyActionMessage(item, content.projects, reviewUrl));
 
   return [{ type: "text", text: content.text }, ...actionMessages];
 }
@@ -177,12 +180,13 @@ async function buildDailyReminderContent() {
     const createdDate = timestampToTaipeiDate(aiTask.createdAt);
     const projectId = String(aiTask.projectId ?? "");
     const title = String(aiTask.title ?? "未命名 AI 任務");
+    const taskType = String(aiTask.taskType ?? "");
 
     if (reviewStatus === "pending") {
       if (!createdDate || createdDate >= today) return;
 
-      candidates.push(
-        toReminderItem(
+      candidates.push({
+        ...toReminderItem(
           "ai_task",
           doc.id,
           "ai_task_pending_review",
@@ -192,8 +196,9 @@ async function buildDailyReminderContent() {
           createdDate,
           today,
           "high"
-        )
-      );
+        ),
+        taskType
+      });
       return;
     }
 
@@ -275,7 +280,8 @@ async function listPendingReminderItems(today: string) {
       priority: (data.priority === "high" ? "high" : "normal") as ReminderPriority,
       firstTriggeredOn: String(data.firstTriggeredOn ?? today),
       lastRemindedOn: String(data.lastRemindedOn ?? today),
-      snoozedUntil: data.snoozedUntil ? String(data.snoozedUntil) : ""
+      snoozedUntil: data.snoozedUntil ? String(data.snoozedUntil) : "",
+      taskType: String(data.taskType ?? "")
     }))
     .filter((item) => !item.snoozedUntil || item.snoozedUntil <= today);
 
@@ -363,6 +369,23 @@ function toReminderActionMessage(item: ReminderItem, projects: Map<string, Proje
   };
 }
 
+function toDailyActionMessage(
+  item: ReminderItem,
+  projects: Map<string, ProjectSummary>,
+  reviewUrl: string
+): LinePushMessage[] {
+  if (item.reminderType === "ai_task_pending_review") {
+    return buildAiDraftReviewTemplateMessage(getProjectName(item, projects), reviewUrl, {
+      id: item.sourceId,
+      title: item.title,
+      taskType: item.taskType,
+      dueDate: item.dueDate
+    });
+  }
+
+  return [toReminderActionMessage(item, projects)];
+}
+
 function formatSection(title: string, items: ReminderItem[], projects: Map<string, ProjectSummary>) {
   if (!items.length) return "";
 
@@ -420,6 +443,11 @@ function taipeiDateString(date = new Date()) {
   const day = parts.find((part) => part.type === "day")?.value ?? "01";
 
   return `${year}-${month}-${day}`;
+}
+
+function getSiteUrl() {
+  const value = process.env.NEXT_PUBLIC_SITE_URL || process.env.URL || process.env.DEPLOY_URL || "";
+  return value.replace(/\/$/, "");
 }
 
 function truncate(value: string, maxLength: number) {
