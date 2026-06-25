@@ -8,9 +8,11 @@ import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { createProjectStage, listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress } from "@/lib/progress";
+import { commonStageNames } from "@/lib/stageNames";
 import type { Milestone, Project, ProjectStage, ProjectStageStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "./PageHeader";
+import { StageNameInput } from "./StageNameInput";
 import { ProjectStageStatusBadge } from "./StatusBadges";
 
 type StageFilter = "all" | "overdue" | ProjectStageStatus;
@@ -203,7 +205,7 @@ function ScheduleCalendarCreator({
 }) {
   const [monthDate, setMonthDate] = useState(() => monthStartFromDateString(todayInputValue()));
   const [projectId, setProjectId] = useState("");
-  const [stageName, setStageName] = useState("木工進場");
+  const [stageName, setStageName] = useState(commonStageNames[0]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reminderDaysBefore, setReminderDaysBefore] = useState(3);
@@ -251,7 +253,7 @@ function ScheduleCalendarCreator({
         endDate: endDate || startDate,
         reminderDaysBefore
       });
-      setStageName("");
+      setStageName(commonStageNames[0]);
       setStartDate("");
       setEndDate("");
     } catch (caught) {
@@ -282,11 +284,10 @@ function ScheduleCalendarCreator({
             </select>
           </Field>
           <Field label="工程名稱">
-            <input
+            <StageNameInput
               className={inputClassName}
               value={stageName}
-              onChange={(event) => setStageName(event.target.value)}
-              placeholder="例如：木工進場"
+              onChange={setStageName}
               required
             />
           </Field>

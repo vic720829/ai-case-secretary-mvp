@@ -4,6 +4,7 @@ import { Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { projectStageStatusOptions } from "@/lib/constants";
 import type { ProjectStageInput, ProjectStageStatus } from "@/lib/types";
+import { StageNameInput } from "./StageNameInput";
 import { Button, ErrorMessage } from "./Ui";
 
 export function ProjectStageForm({
@@ -75,10 +76,10 @@ export function ProjectStageForm({
       <ErrorMessage message={error} />
       <div className="grid gap-4 md:grid-cols-6">
         <Field label="節點名稱">
-          <input
+          <StageNameInput
             className={inputClassName}
             value={value.stageName}
-            onChange={(event) => updateField("stageName", event.target.value)}
+            onChange={(nextValue) => updateField("stageName", nextValue)}
             required
           />
         </Field>
