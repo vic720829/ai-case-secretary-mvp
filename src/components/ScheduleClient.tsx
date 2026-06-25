@@ -513,7 +513,10 @@ function MilestonePill({ milestone }: { milestone: Milestone }) {
       )}
     >
       <div className="font-semibold">{milestone.title}</div>
-      <div className="mt-1 text-slate-500">{formatDate(milestone.dueDate)}</div>
+      <div className="mt-1 text-slate-500">
+        {formatDate(milestone.dueDate)}
+        {milestone.reminderDaysBefore > 0 ? ` · 前 ${milestone.reminderDaysBefore} 天提醒` : ""}
+      </div>
     </div>
   );
 }

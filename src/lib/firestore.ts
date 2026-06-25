@@ -123,6 +123,7 @@ function milestoneFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Milest
     dueDate: data.dueDate ?? "",
     completed: Boolean(data.completed ?? false),
     riskLevel: data.riskLevel ?? "low",
+    reminderDaysBefore: Number(data.reminderDaysBefore ?? 0),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };

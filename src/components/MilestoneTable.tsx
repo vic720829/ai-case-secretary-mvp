@@ -30,6 +30,7 @@ export function MilestoneTable({
               <th className="px-4 py-3">案件</th>
               <th className="px-4 py-3">所屬工期</th>
               <th className="px-4 py-3">到期日</th>
+              <th className="px-4 py-3">提醒</th>
               <th className="px-4 py-3">完成</th>
               <th className="px-4 py-3">風險</th>
               <th className="px-4 py-3 text-right">操作</th>
@@ -65,6 +66,9 @@ export function MilestoneTable({
                     <span className={overdue ? "font-semibold text-red-700" : "text-slate-600"}>
                       {formatDate(milestone.dueDate)}
                     </span>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {milestone.reminderDaysBefore > 0 ? `到期前 ${milestone.reminderDaysBefore} 天` : "不提醒"}
                   </td>
                   <td className="px-4 py-4">
                     <CompletionBadge completed={milestone.completed} />

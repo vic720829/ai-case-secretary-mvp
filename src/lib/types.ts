@@ -62,6 +62,7 @@ export type MilestoneInput = {
   dueDate: string;
   completed: boolean;
   riskLevel: RiskLevel;
+  reminderDaysBefore: number;
 };
 
 export type Milestone = MilestoneInput & {

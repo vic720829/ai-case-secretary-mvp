@@ -63,6 +63,7 @@ export async function buildDailyReminderText() {
 
   const dueToday: ReminderItem[] = [];
   const stageStartReminders: ReminderItem[] = [];
+  const milestoneReminders: ReminderItem[] = [];
   const overdue: ReminderItem[] = [];
   const highRisk: ReminderItem[] = [];
 
@@ -82,12 +83,18 @@ export async function buildDailyReminderText() {
     const milestone = doc.data();
     const completed = Boolean(milestone.completed);
     const dueDate = String(milestone.dueDate ?? "");
+    const reminderDaysBefore = Number(milestone.reminderDaysBefore ?? 0);
     const item = toReminderItem(milestone.projectId, "關鍵節點", milestone.title, dueDate);
 
     if (completed) return;
     if (dueDate === today) dueToday.push(item);
     if (dueDate && dueDate < today) overdue.push(item);
     if (milestone.riskLevel === "high") highRisk.push(item);
+    if (dueDate && reminderDaysBefore > 0 && dateMinusDays(dueDate, reminderDaysBefore) === today) {
+      milestoneReminders.push(
+        toReminderItem(milestone.projectId, `關鍵節點提醒：${reminderDaysBefore} 天後`, milestone.title, dueDate)
+      );
+    }
   });
 
   stageSnapshot.docs.forEach((doc) => {
@@ -121,6 +128,7 @@ export async function buildDailyReminderText() {
 
   const sections = [
     formatSection("進場提醒", stageStartReminders, projects),
+    formatSection("關鍵節點提醒", milestoneReminders, projects),
     formatSection("今天到期", dueToday, projects),
     formatSection("已逾期", overdue, projects),
     formatSection("高風險", highRisk, projects)

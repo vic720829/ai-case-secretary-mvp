@@ -30,7 +30,8 @@ export function MilestoneForm({
       description: "",
       dueDate: todayInputValue(),
       completed: false,
-      riskLevel: "low"
+      riskLevel: "low",
+      reminderDaysBefore: 2
     }
   );
   const [error, setError] = useState("");
@@ -51,7 +52,8 @@ export function MilestoneForm({
         projectId,
         stageId: value.stageId ?? "",
         title: value.title.trim(),
-        description: value.description.trim()
+        description: value.description.trim(),
+        reminderDaysBefore: Number(value.reminderDaysBefore || 0)
       });
 
       if (!initialValue) {
@@ -62,7 +64,8 @@ export function MilestoneForm({
           description: "",
           dueDate: todayInputValue(),
           completed: false,
-          riskLevel: "low"
+          riskLevel: "low",
+          reminderDaysBefore: value.reminderDaysBefore
         });
       }
     } catch (caught) {
@@ -131,6 +134,18 @@ export function MilestoneForm({
             已完成
           </span>
         </label>
+        <Field label="到期前提醒">
+          <div className="flex items-center gap-2">
+            <input
+              className={inputClassName}
+              min={0}
+              type="number"
+              value={value.reminderDaysBefore}
+              onChange={(event) => updateField("reminderDaysBefore", Number(event.target.value))}
+            />
+            <span className="shrink-0 text-sm text-slate-600">天</span>
+          </div>
+        </Field>
       </div>
       <Field label="內容">
         <textarea
