@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /projects/{projectId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /tasks/{taskId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /projectStages/{stageId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /milestones/{milestoneId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /line_groups/{lineGroupId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /messages/{messageId} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /ai_tasks/{aiTaskId} {
+      allow read, create, update, delete: if signedIn();
+    }
+  }
+}

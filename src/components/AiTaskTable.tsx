@@ -1,0 +1,68 @@
+import Link from "next/link";
+import { formatDate, formatDateTime } from "@/lib/date";
+import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
+import type { AiTask, Project } from "@/lib/types";
+
+export function AiTaskTable({
+  aiTasks,
+  projects
+}: {
+  aiTasks: AiTask[];
+  projects: Project[];
+}) {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const typeLabel = new Map(aiTaskTypeOptions.map((option) => [option.value, option.label]));
+  const statusLabel = new Map(taskStatusOptions.map((option) => [option.value, option.label]));
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-stone-200 text-sm">
+          <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
+            <tr>
+              <th className="px-4 py-3">AI 任務</th>
+              <th className="px-4 py-3">案件</th>
+              <th className="px-4 py-3">類型</th>
+              <th className="px-4 py-3">狀態</th>
+              <th className="px-4 py-3">截止日</th>
+              <th className="px-4 py-3">建立時間</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100 bg-white">
+            {aiTasks.map((task) => {
+              const project = projectById.get(task.projectId);
+
+              return (
+                <tr key={task.id} className="hover:bg-stone-50">
+                  <td className="px-4 py-4">
+                    <div className="font-semibold text-slate-950">{task.title}</div>
+                    {task.description ? (
+                      <div className="mt-1 line-clamp-2 max-w-sm text-xs leading-5 text-slate-500">
+                        {task.description}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {project ? (
+                      <Link className="hover:text-teal-700" href={`/projects/${project.id}`}>
+                        {project.name}
+                      </Link>
+                    ) : (
+                      "未綁定"
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">{typeLabel.get(task.taskType) ?? task.taskType}</td>
+                  <td className="px-4 py-4 text-slate-600">{statusLabel.get(task.status) ?? task.status}</td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {task.dueDate ? formatDate(task.dueDate.toISOString().slice(0, 10)) : "未設定"}
+                  </td>
+                  <td className="px-4 py-4 text-xs text-slate-500">{formatDateTime(task.createdAt)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

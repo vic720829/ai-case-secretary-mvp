@@ -1,0 +1,36 @@
+"use client";
+
+import { ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { PageHeader } from "@/components/PageHeader";
+import { ProjectForm } from "@/components/ProjectForm";
+import { SecondaryLink } from "@/components/Ui";
+import { createProject } from "@/lib/firestore";
+import type { ProjectInput } from "@/lib/types";
+
+export default function NewProjectPage() {
+  const router = useRouter();
+
+  async function handleSubmit(value: ProjectInput) {
+    const id = await createProject(value);
+    router.push(`/projects/${id}`);
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="新增案件"
+        description="建立案件後，可以在任務新增頁面把任務綁定到此案件。"
+        action={
+          <SecondaryLink href="/projects">
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            回案件列表
+          </SecondaryLink>
+        }
+      />
+      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+        <ProjectForm submitLabel="建立案件" onSubmit={handleSubmit} />
+      </section>
+    </div>
+  );
+}

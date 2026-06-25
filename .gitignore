@@ -1,0 +1,16 @@
+.next
+node_modules
+out
+dist
+.env
+.env*.local
+*.log
+firebase-debug.log
+firestore-debug.log
+.netlify
+.vercel
+coverage
+tsconfig.tsbuildinfo
+dev-server.log
+dev-server-error.log
+.dev-server.pid

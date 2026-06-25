@@ -1,0 +1,88 @@
+"use client";
+
+import { Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
+import { TaskTable } from "@/components/TaskTable";
+import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
+import { getReadableError } from "@/lib/errors";
+import { deleteTask, listProjects, listTasks } from "@/lib/firestore";
+import type { Project, Task } from "@/lib/types";
+
+export default function TasksPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadData() {
+    setError("");
+
+    try {
+      const [nextProjects, nextTasks] = await Promise.all([listProjects(), listTasks()]);
+      setProjects(nextProjects);
+      setTasks(nextTasks);
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  async function handleDelete(task: Task) {
+    const confirmed = window.confirm(`確定刪除任務「${task.title}」？`);
+    if (!confirmed) return;
+
+    try {
+      await deleteTask(task.id);
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+    } catch (caught) {
+      setError(getReadableError(caught));
+    }
+  }
+
+  if (loading) {
+    return <LoadingState label="正在讀取任務" />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="任務列表"
+        description="追蹤所有案件任務，包含來源、負責人、截止日與風險等級。"
+        action={
+          <PrimaryLink href="/tasks/new">
+            <Plus className="h-4 w-4" aria-hidden />
+            新增任務
+          </PrimaryLink>
+        }
+      />
+      <ErrorMessage message={error} />
+      {error ? (
+        <EmptyState
+          title="任務讀取失敗"
+          description="請先確認 Firebase Authentication 已登入，並在 Firestore Rules 發布登入後可讀寫的規則。"
+        />
+      ) : null}
+      {!error && tasks.length ? (
+        <TaskTable tasks={tasks} projects={projects} onDelete={handleDelete} />
+      ) : null}
+      {!error && !tasks.length ? (
+        <EmptyState
+          title="尚未建立任務"
+          description="新增任務後，今日風險中心會自動整理高風險、逾期與今天到期項目。"
+          action={
+            <PrimaryLink href="/tasks/new">
+              <Plus className="h-4 w-4" aria-hidden />
+              新增任務
+            </PrimaryLink>
+          }
+        />
+      ) : null}
+    </div>
+  );
+}

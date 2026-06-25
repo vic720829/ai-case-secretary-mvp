@@ -1,0 +1,139 @@
+# AI 案件秘書 MVP
+
+室內設計公司用的第一階段基礎後台。此版本先提供 Firebase Authentication、Firestore 案件與任務 CRUD、今日風險中心，不接 AI、不接 LINE。
+
+## 功能
+
+- 今日風險中心：高風險任務、已逾期任務、今天到期任務
+- LINE 訊息中心：群組綁定、案件訊息、訊息同步
+- AI 任務追蹤：從 LINE 文字訊息分析承諾、變更、追蹤、收款、發票事項
+- 案件管理：列表、新增、詳情編輯、刪除
+- 任務管理：列表、新增、詳情編輯、刪除
+- 任務可綁定案件
+- Firebase Authentication Email/Password 登入與註冊
+- Firestore rules：登入後才可讀寫
+- Netlify 部署設定
+
+## 本機啟動
+
+1. 複製環境變數範例：
+
+```bash
+cp .env.example .env.local
+```
+
+2. 到 Firebase Console 建立 Web App，開啟 Authentication 的 Email/Password provider，並把 Firebase config 填入 `.env.local`。
+
+3. 安裝並啟動：
+
+```bash
+npm install
+npm run dev
+```
+
+## Firestore Collections
+
+### projects
+
+- name
+- clientName
+- currentStage
+- designer
+- assistant
+- status
+- expectedFinishDate
+- createdAt
+- updatedAt
+
+### line_groups
+
+- groupId
+- projectId
+- groupName
+- createdAt
+
+### messages
+
+- projectId
+- groupId
+- senderId
+- senderName
+- messageType: `text` / `image` / `audio`
+- text
+- fileUrl
+- timestamp
+- isProcessed
+
+### ai_tasks
+
+- projectId
+- sourceMessageId
+- title
+- description
+- taskType: `promise` / `change` / `followup` / `payment` / `invoice`
+- status: `todo` / `doing` / `done`
+- assignedTo
+- dueDate
+- createdByAI
+- createdAt
+
+## LINE Webhook
+
+Webhook route:
+
+```text
+/api/line/webhook
+```
+
+本機測試需要 tunnel，例如 ngrok 或 Netlify dev tunnel。正式部署後，LINE Developers 後台的 Webhook URL 會像：
+
+```text
+https://your-site.netlify.app/api/line/webhook
+```
+
+需要設定環境變數：
+
+```env
+LINE_CHANNEL_SECRET=
+LINE_CHANNEL_ACCESS_TOKEN=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+FIREBASE_SERVICE_ACCOUNT_BASE64=
+```
+
+`FIREBASE_SERVICE_ACCOUNT_BASE64` 可放 Firebase service account JSON 的 base64 字串；也可改用：
+
+```env
+FIREBASE_ADMIN_PROJECT_ID=
+FIREBASE_ADMIN_CLIENT_EMAIL=
+FIREBASE_ADMIN_PRIVATE_KEY=
+```
+
+### tasks
+
+- title
+- description
+- projectId
+- assignee
+- dueDate
+- status: `todo` / `doing` / `done`
+- source: `manual` / `line` / `ai` / `voice`
+- riskLevel: `low` / `medium` / `high`
+- createdAt
+- updatedAt
+
+## Netlify
+
+Netlify build command:
+
+```bash
+npm run build
+```
+
+Publish directory:
+
+```text
+.next
+```
+
+請在 Netlify Site settings 裡設定 `.env.example` 對應的環境變數。
