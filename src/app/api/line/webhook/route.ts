@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import type { LineSenderRole } from "@/lib/types";
-import { analyzeMessageForAiTasks, dateStringToTimestamp, type AiTaskSuggestion } from "@/services/aiTasks";
+import {
+  analyzeMessageForAiTasks,
+  dateStringToTimestamp,
+  type AiMessageContextItem,
+  type AiTaskSuggestion
+} from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import {
   downloadLineMessageContent,
@@ -113,8 +118,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
   if (messageType === "text" && event.message.text) {
     const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const recentMessages = shouldCreateAiDrafts ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
     const suggestions = shouldCreateAiDrafts
-      ? await analyzeMessageForAiTasks(event.message.text, senderRole)
+      ? await analyzeMessageForAiTasks(event.message.text, senderRole, { recentMessages })
       : [];
 
     const createdDraftIds = await Promise.all(
@@ -416,6 +422,39 @@ async function linkPossibleAnsweredFollowups(
       hint
     }
   ];
+}
+
+async function loadRecentMessageContext(
+  db: FirebaseFirestore.Firestore,
+  groupId: string,
+  currentMessageId: string
+): Promise<AiMessageContextItem[]> {
+  if (!groupId) return [];
+
+  try {
+    const snapshot = await db.collection("messages").where("groupId", "==", groupId).get();
+    const cutoff = Date.now() - 6 * 60 * 60 * 1000;
+
+    return snapshot.docs
+      .filter((doc) => doc.id !== currentMessageId)
+      .map((doc) => {
+        const data = doc.data();
+        const timestamp = timestampToMillis(data.timestamp) || timestampToMillis(data.createdAt);
+
+        return {
+          senderName: String(data.senderName ?? ""),
+          senderRole: normalizeSenderRole(String(data.senderRole ?? "unknown")),
+          text: String(data.text ?? ""),
+          timestamp
+        };
+      })
+      .filter((message) => message.text.trim())
+      .filter((message) => !message.timestamp || message.timestamp >= cutoff)
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+      .slice(-8);
+  } catch {
+    return [];
+  }
 }
 
 async function writeWebhookLog(

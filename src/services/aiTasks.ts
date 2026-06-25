@@ -9,6 +9,17 @@ export type AiTaskSuggestion = {
   dueDate?: string;
 };
 
+export type AiMessageContextItem = {
+  senderName: string;
+  senderRole: LineSenderRole;
+  text: string;
+  timestamp?: number;
+};
+
+export type AiMessageContext = {
+  recentMessages?: AiMessageContextItem[];
+};
+
 const taskTypes: AiTaskType[] = ["promise", "change", "followup", "payment", "invoice"];
 
 export function dateStringToTimestamp(value?: string) {
@@ -22,18 +33,23 @@ export function dateStringToTimestamp(value?: string) {
 
 export async function analyzeMessageForAiTasks(
   text: string,
-  senderRole: LineSenderRole = "unknown"
+  senderRole: LineSenderRole = "unknown",
+  context: AiMessageContext = {}
 ): Promise<AiTaskSuggestion[]> {
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  const openAiSuggestions = await analyzeWithOpenAi(trimmed, senderRole);
-  if (openAiSuggestions.length) return openAiSuggestions;
+  const openAiSuggestions = await analyzeWithOpenAi(trimmed, senderRole, context);
+  if (openAiSuggestions.length) return enrichSuggestionsWithContext(openAiSuggestions, trimmed, senderRole, context);
 
-  return analyzeWithRules(trimmed, senderRole);
+  return enrichSuggestionsWithContext(analyzeWithRules(trimmed, senderRole), trimmed, senderRole, context);
 }
 
-async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Promise<AiTaskSuggestion[]> {
+async function analyzeWithOpenAi(
+  text: string,
+  senderRole: LineSenderRole,
+  context: AiMessageContext
+): Promise<AiTaskSuggestion[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL;
   if (!apiKey || !model) return [];
@@ -60,13 +76,18 @@ async function analyzeWithOpenAi(text: string, senderRole: LineSenderRole): Prom
           "- senderRole=client：我回覆、我確認、我挑好，通常是等待客戶回覆 followup，不是公司承諾。",
           "- senderRole=vendor：我安排、我確認，通常是追蹤廠商承諾 followup。",
           "- 客戶詢問工期表、報價、圖面、進度、什麼時候給，建立 followup。",
+          "- 客戶用一般問句詢問，例如「天花板有做嗎」「這個有包含嗎」「可以改嗎」，也建立 followup。",
           "- 內部人員或身份未登記者回覆「好明天給你」「明天給您」「今晚傳給你」，建立 promise 或 followup。",
+          "- 若內部人員的承諾需要上下文，請參考最近訊息，讓 title/description 寫出要回覆哪一件事。",
           "- 客戶提出改顏色、改尺寸、新增、取消、不要做，建立 change。",
           "- 款項、請款、尾款、二期款建立 payment。",
           "- 發票、統編、報帳建立 invoice。",
           "",
           `senderRole: ${senderRole}`,
-          `LINE 訊息: ${text}`
+          `LINE 訊息: ${text}`,
+          "",
+          "最近同群組訊息：",
+          formatRecentMessagesForPrompt(context.recentMessages)
         ].join("\n")
       })
     });
@@ -128,7 +149,7 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     });
   }
 
-  if (isClientRequestQuestion(text)) {
+  if (senderRole !== "internal" && isClientRequestQuestion(text)) {
     suggestions.push({
       title: makeTitle(text, senderRole === "client" ? "待回覆客戶" : "待追蹤需求"),
       description: text,
@@ -177,7 +198,80 @@ function hasCommitmentWords(text: string) {
 }
 
 function isClientRequestQuestion(text: string) {
-  return /(工期表|工程表|排程|時程|進度表|報價|估價|圖面|平面圖|立面圖|效果圖|合約|請款單|發票).{0,12}(呢|嗎|了嗎|\?|？|什麼時候|何時)|(?:我的|我們的).{0,8}(工期表|工程表|排程|時程|進度表|報價|估價|圖面)/.test(text);
+  const trimmed = text.trim();
+  return (
+    /(工期表|工程表|排程|時程|進度表|報價|估價|圖面|平面圖|立面圖|效果圖|合約|請款單|發票).{0,12}(呢|嗎|了嗎|\?|？|什麼時候|何時)|(?:我的|我們的).{0,8}(工期表|工程表|排程|時程|進度表|報價|估價|圖面)/.test(text) ||
+    /(有沒有|是不是|是否|可不可以|能不能|需不需要|要不要|怎麼|如何|哪裡|什麼|何時|幾點|幾天|有做嗎|做了嗎|好了嗎|包含嗎)/.test(text) ||
+    /[嗎?？]$/.test(trimmed)
+  );
+}
+
+function enrichSuggestionsWithContext(
+  suggestions: AiTaskSuggestion[],
+  text: string,
+  senderRole: LineSenderRole,
+  context: AiMessageContext
+) {
+  if (!suggestions.length || senderRole === "client") return suggestions;
+
+  const previousClientQuestion = findPreviousClientQuestion(context.recentMessages);
+  if (!previousClientQuestion) return suggestions;
+
+  return suggestions.map((suggestion) => {
+    if (!isContextualAnswerSuggestion(suggestion)) return suggestion;
+
+    return {
+      ...suggestion,
+      title: makeTitle(previousClientQuestion.text, "回覆客戶"),
+      description: [
+        `客戶前一句：${previousClientQuestion.senderName || "客戶"}：${previousClientQuestion.text}`,
+        `內部回覆承諾：${text}`,
+        suggestion.description && suggestion.description !== text ? `AI補充：${suggestion.description}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n")
+    };
+  });
+}
+
+function findPreviousClientQuestion(messages: AiMessageContextItem[] = []) {
+  return [...messages]
+    .filter((message) => message.text.trim())
+    .filter((message) => message.senderRole === "client" || message.senderRole === "unknown")
+    .filter((message) => isClientRequestQuestion(message.text))
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))[0];
+}
+
+function isContextualAnswerSuggestion(suggestion: AiTaskSuggestion) {
+  if (suggestion.taskType === "promise") return true;
+
+  return (
+    suggestion.taskType === "followup" &&
+    /(承諾|待判斷|回覆|確認|提供|安排|給你|給您|傳給你|傳給您)/.test(
+      `${suggestion.title}\n${suggestion.description}`
+    )
+  );
+}
+
+function formatRecentMessagesForPrompt(messages: AiMessageContextItem[] = []) {
+  if (!messages.length) return "無";
+
+  return messages
+    .slice(-8)
+    .map((message) => {
+      const sender = message.senderName || senderRoleLabel(message.senderRole);
+      return `- ${sender}（${senderRoleLabel(message.senderRole)}）：${message.text}`;
+    })
+    .join("\n");
+}
+
+function senderRoleLabel(role: LineSenderRole) {
+  return {
+    internal: "內部人員",
+    client: "客戶",
+    vendor: "廠商",
+    unknown: "身份未登記"
+  }[role];
 }
 
 function inferDueDate(text: string) {
