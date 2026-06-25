@@ -1,112 +1,506 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebaseAdmin";
-import { isDateOverdue, todayInputValue } from "@/lib/date";
+
+type ProjectSummary = {
+  id: string;
+  name: string;
+  clientName: string;
+  currentStage: string;
+};
+
+type TaskSummary = {
+  id: string;
+  projectId: string;
+  title: string;
+  status: string;
+  dueDate: string;
+  riskLevel: string;
+};
+
+type MilestoneSummary = {
+  id: string;
+  projectId: string;
+  title: string;
+  dueDate: string;
+  completed: boolean;
+  riskLevel: string;
+};
+
+type StageSummary = {
+  id: string;
+  projectId: string;
+  stageName: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  sortOrder: number;
+};
+
+type AiTaskSummary = {
+  id: string;
+  projectId: string;
+  title: string;
+  taskType: string;
+  status: string;
+  dueDate: string;
+  reviewStatus: string;
+};
+
+type AssistantData = {
+  today: string;
+  tomorrow: string;
+  projects: ProjectSummary[];
+  tasks: TaskSummary[];
+  milestones: MilestoneSummary[];
+  stages: StageSummary[];
+  aiTasks: AiTaskSummary[];
+};
+
+type AssistantIntent =
+  | "today"
+  | "tomorrow"
+  | "risk"
+  | "payment"
+  | "invoice"
+  | "project_progress"
+  | "forgotten"
+  | "unknown";
 
 export function shouldAnswerLineQuestion(text: string) {
-  return /(今天|明天|有哪些|什麼事情|有什麼|風險|款項|發票|做到哪裡|做到哪|忘記)/.test(text);
+  const normalized = normalizeText(text);
+
+  return [
+    "今天",
+    "明天",
+    "待辦",
+    "事情",
+    "風險",
+    "款",
+    "付款",
+    "收款",
+    "請款",
+    "發票",
+    "統編",
+    "忘記",
+    "逾期",
+    "做到哪",
+    "做到哪裡",
+    "進度",
+    "做到",
+    "哪裡",
+    "有哪些",
+    "有什麼",
+    "還沒"
+  ].some((keyword) => normalized.includes(keyword));
 }
 
-export async function answerQuestionFromFirestore(question: string, projectId = "") {
+export async function answerQuestionFromFirestore(question: string, contextProjectId = "") {
+  const data = await loadAssistantData();
+  const intent = detectIntent(question);
+  const matchedProject = findProjectInQuestion(question, data.projects, contextProjectId);
+
+  if (intent === "today") {
+    return summarizeDateItems(data, data.today, "今天", matchedProject?.id ?? contextProjectId);
+  }
+
+  if (intent === "tomorrow") {
+    return summarizeDateItems(data, data.tomorrow, "明天", matchedProject?.id ?? contextProjectId);
+  }
+
+  if (intent === "risk") {
+    return summarizeRiskProjects(data, matchedProject?.id ?? contextProjectId);
+  }
+
+  if (intent === "payment") {
+    return summarizeAiTaskType(data, "payment", "款項", matchedProject?.id ?? contextProjectId);
+  }
+
+  if (intent === "invoice") {
+    return summarizeAiTaskType(data, "invoice", "發票", matchedProject?.id ?? contextProjectId);
+  }
+
+  if (intent === "project_progress") {
+    if (!matchedProject) {
+      return "我還找不到你問的是哪個案件。可以用「案件名稱 + 做到哪裡」，例如：三重元泰做到哪裡？";
+    }
+
+    return summarizeProjectProgress(data, matchedProject);
+  }
+
+  if (intent === "forgotten") {
+    return summarizeForgottenItems(data, matchedProject?.id ?? contextProjectId);
+  }
+
+  if (matchedProject) {
+    return summarizeProjectProgress(data, matchedProject);
+  }
+
+  return [
+    "我可以查這幾種問題：",
+    "1. 今天有什麼事情？",
+    "2. 明天有什麼事情？",
+    "3. 有哪些案件有風險？",
+    "4. 有哪些款項要收？",
+    "5. 有哪些發票還沒開？",
+    "6. 某個案件做到哪裡？",
+    "7. 最近有哪些事情被忘記？"
+  ].join("\n");
+}
+
+async function loadAssistantData(): Promise<AssistantData> {
   const db = getAdminDb();
-  const today = todayInputValue();
-  const tomorrowDate = new Date(`${today}T00:00:00+08:00`);
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrow = [
-    tomorrowDate.getFullYear(),
-    String(tomorrowDate.getMonth() + 1).padStart(2, "0"),
-    String(tomorrowDate.getDate()).padStart(2, "0")
-  ].join("-");
-
-  if (/明天/.test(question)) {
-    return summarizeDueItems(db, tomorrow, projectId, "明天");
-  }
-
-  if (/今天/.test(question)) {
-    return summarizeDueItems(db, today, projectId, "今天");
-  }
-
-  if (/款項|收款|請款|尾款|付款/.test(question)) {
-    return summarizeAiTasks("payment", projectId, "款項");
-  }
-
-  if (/發票|統編|報帳/.test(question)) {
-    return summarizeAiTasks("invoice", projectId, "發票");
-  }
-
-  if (/風險|忘記/.test(question)) {
-    return summarizeRisks(projectId);
-  }
-
-  return "我目前可以查今天/明天待辦、風險案件、收款事項與發票事項。";
-}
-
-async function summarizeDueItems(db: FirebaseFirestore.Firestore, date: string, projectId: string, label: string) {
-  const [taskSnapshot, milestoneSnapshot] = await Promise.all([
-    db.collection("tasks").where("dueDate", "==", date).get(),
-    db.collection("milestones").where("dueDate", "==", date).get()
-  ]);
-
-  const taskLines = taskSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((task) => !projectId || task.projectId === projectId)
-    .filter((task) => task.status !== "done")
-    .map((task) => `任務：${task.title}`);
-  const milestoneLines = milestoneSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((milestone) => !projectId || milestone.projectId === projectId)
-    .filter((milestone) => !milestone.completed)
-    .map((milestone) => `節點：${milestone.title}`);
-
-  const lines = [...taskLines, ...milestoneLines];
-  return lines.length ? `${label}待辦：\n${lines.join("\n")}` : `${label}目前沒有到期事項。`;
-}
-
-async function summarizeAiTasks(taskType: string, projectId: string, label: string) {
-  const db = getAdminDb();
-  const snapshot = await db.collection("ai_tasks").where("taskType", "==", taskType).get();
-  const lines = snapshot.docs
-    .map((doc) => doc.data())
-    .filter((task) => !projectId || task.projectId === projectId)
-    .filter((task) => task.reviewStatus === "approved")
-    .filter((task) => task.status !== "done")
-    .map((task) => `${task.title}`);
-
-  return lines.length ? `${label}待處理：\n${lines.join("\n")}` : `目前沒有待處理的${label}事項。`;
-}
-
-async function summarizeRisks(projectId: string) {
-  const db = getAdminDb();
-  const [taskSnapshot, milestoneSnapshot, aiTaskSnapshot] = await Promise.all([
+  const today = taipeiDateString();
+  const tomorrow = datePlusDays(today, 1);
+  const [projectSnapshot, taskSnapshot, milestoneSnapshot, stageSnapshot, aiTaskSnapshot] = await Promise.all([
+    db.collection("projects").get(),
     db.collection("tasks").get(),
     db.collection("milestones").get(),
+    db.collection("projectStages").get(),
     db.collection("ai_tasks").get()
   ]);
 
-  const taskLines = taskSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((task) => !projectId || task.projectId === projectId)
-    .filter((task) => task.status !== "done" && (task.riskLevel === "high" || isDateOverdue(task.dueDate)))
-    .map((task) => `任務：${task.title}`);
-  const milestoneLines = milestoneSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((milestone) => !projectId || milestone.projectId === projectId)
-    .filter((milestone) => !milestone.completed && (milestone.riskLevel === "high" || isDateOverdue(milestone.dueDate)))
-    .map((milestone) => `節點：${milestone.title}`);
-  const aiTaskLines = aiTaskSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((task) => !projectId || task.projectId === projectId)
-    .filter((task) => task.reviewStatus === "approved")
-    .filter((task) => task.status !== "done" && isAiTaskOverdue(task.dueDate))
-    .map((task) => `AI任務：${task.title}`);
-
-  const lines = [...taskLines, ...milestoneLines, ...aiTaskLines];
-  return lines.length ? `目前風險摘要：\n${lines.join("\n")}` : "目前沒有明顯風險。";
+  return {
+    today,
+    tomorrow,
+    projects: projectSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: String(data.name ?? ""),
+        clientName: String(data.clientName ?? ""),
+        currentStage: String(data.currentStage ?? "")
+      };
+    }),
+    tasks: taskSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        projectId: String(data.projectId ?? ""),
+        title: String(data.title ?? "未命名任務"),
+        status: String(data.status ?? "todo"),
+        dueDate: String(data.dueDate ?? ""),
+        riskLevel: String(data.riskLevel ?? "low")
+      };
+    }),
+    milestones: milestoneSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        projectId: String(data.projectId ?? ""),
+        title: String(data.title ?? "未命名關鍵節點"),
+        dueDate: String(data.dueDate ?? ""),
+        completed: Boolean(data.completed ?? false),
+        riskLevel: String(data.riskLevel ?? "low")
+      };
+    }),
+    stages: stageSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        projectId: String(data.projectId ?? ""),
+        stageName: String(data.stageName ?? "未命名工期"),
+        startDate: String(data.startDate ?? ""),
+        endDate: String(data.endDate ?? ""),
+        status: String(data.status ?? "todo"),
+        sortOrder: Number(data.sortOrder ?? 0)
+      };
+    }),
+    aiTasks: aiTaskSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        projectId: String(data.projectId ?? ""),
+        title: String(data.title ?? "未命名 AI 任務"),
+        taskType: String(data.taskType ?? "followup"),
+        status: String(data.status ?? "todo"),
+        dueDate: timestampToTaipeiDate(data.dueDate),
+        reviewStatus: String(data.reviewStatus ?? "pending")
+      };
+    })
+  };
 }
 
-function isAiTaskOverdue(value: unknown) {
-  if (value instanceof Timestamp) {
-    return isDateOverdue(value.toDate().toISOString().slice(0, 10));
+function detectIntent(question: string): AssistantIntent {
+  const normalized = normalizeText(question);
+
+  if (normalized.includes("明天")) return "tomorrow";
+  if (normalized.includes("今天")) return "today";
+  if (/(款|付款|收款|請款|尾款|訂金|二期款|第二期)/.test(normalized)) return "payment";
+  if (/(發票|統編|報帳|收據)/.test(normalized)) return "invoice";
+  if (/(忘記|漏掉|逾期|沒做|還沒處理)/.test(normalized)) return "forgotten";
+  if (/(風險|危險|卡住|延誤)/.test(normalized)) return "risk";
+  if (/(做到哪|做到哪裡|進度|目前階段|到哪裡|做到什麼)/.test(normalized)) return "project_progress";
+
+  return "unknown";
+}
+
+function summarizeDateItems(data: AssistantData, date: string, label: string, projectId = "") {
+  const tasks = data.tasks
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => task.dueDate === date);
+  const milestones = data.milestones
+    .filter((milestone) => !milestone.completed)
+    .filter((milestone) => !projectId || milestone.projectId === projectId)
+    .filter((milestone) => milestone.dueDate === date);
+  const startingStages = data.stages
+    .filter((stage) => stage.status !== "done")
+    .filter((stage) => !projectId || stage.projectId === projectId)
+    .filter((stage) => stage.startDate === date);
+  const endingStages = data.stages
+    .filter((stage) => stage.status !== "done")
+    .filter((stage) => !projectId || stage.projectId === projectId)
+    .filter((stage) => stage.endDate === date);
+
+  const lines = [
+    ...tasks.map((task) => `任務：${task.title}${projectSuffix(task.projectId, data.projects)}`),
+    ...milestones.map((milestone) => `關鍵節點：${milestone.title}${projectSuffix(milestone.projectId, data.projects)}`),
+    ...startingStages.map((stage) => `工期進場：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`),
+    ...endingStages.map((stage) => `工期結束：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`)
+  ];
+
+  if (!lines.length) {
+    return `${label}沒有查到到期任務、關鍵節點或工期提醒。`;
   }
 
-  return false;
+  return [`${label}有 ${lines.length} 件事：`, ...lines.slice(0, 12), moreLine(lines.length, 12)].filter(Boolean).join("\n");
+}
+
+function summarizeRiskProjects(data: AssistantData, projectId = "") {
+  const targetProjects = data.projects.filter((project) => !projectId || project.id === projectId);
+  const riskRows = targetProjects
+    .map((project) => {
+      const reasons = getProjectRiskReasons(data, project.id);
+      return { project, reasons };
+    })
+    .filter((row) => row.reasons.length);
+
+  if (!riskRows.length) {
+    return projectId ? "這個案件目前沒有查到高風險、逾期任務或逾期關鍵節點。" : "目前沒有查到高風險案件。";
+  }
+
+  return [
+    `目前有 ${riskRows.length} 個風險案件：`,
+    ...riskRows.slice(0, 8).map((row) => `- ${projectName(row.project)}：${row.reasons.join("、")}`),
+    moreLine(riskRows.length, 8)
+  ].filter(Boolean).join("\n");
+}
+
+function summarizeAiTaskType(data: AssistantData, taskType: string, label: string, projectId = "") {
+  const items = data.aiTasks
+    .filter((task) => task.taskType === taskType)
+    .filter((task) => task.reviewStatus !== "rejected")
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"));
+
+  if (!items.length) {
+    return `目前沒有查到待處理的${label}事項。`;
+  }
+
+  return [
+    `目前有 ${items.length} 個${label}事項：`,
+    ...items.slice(0, 10).map((item) => {
+      const reviewLabel = item.reviewStatus === "approved" ? "已核准" : "待審核";
+      return `- ${item.title}${item.dueDate ? `（${formatDate(item.dueDate)}）` : ""}${projectSuffix(item.projectId, data.projects)}｜${reviewLabel}`;
+    }),
+    moreLine(items.length, 10)
+  ].filter(Boolean).join("\n");
+}
+
+function summarizeProjectProgress(data: AssistantData, project: ProjectSummary) {
+  const stages = data.stages
+    .filter((stage) => stage.projectId === project.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.startDate.localeCompare(b.startDate));
+  const milestones = data.milestones.filter((milestone) => milestone.projectId === project.id);
+  const currentStage = getCurrentStage(project, stages);
+  const progress = getProjectProgress(stages);
+  const nextStage = stages.find((stage) => stage.status !== "done" && stage.stageName !== currentStage);
+  const nextMilestone = milestones
+    .filter((milestone) => !milestone.completed)
+    .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))[0];
+  const riskReasons = getProjectRiskReasons(data, project.id);
+
+  return [
+    `${projectName(project)} 目前狀態：`,
+    `目前階段：${currentStage}`,
+    `完成比例：${progress}%`,
+    `下一階段：${nextStage ? formatStage(nextStage) : "尚未設定或已全部完成"}`,
+    `下一個關鍵節點：${nextMilestone ? `${nextMilestone.title}${nextMilestone.dueDate ? `（${formatDate(nextMilestone.dueDate)}）` : ""}` : "尚未設定"}`,
+    `目前風險：${riskReasons.length ? riskReasons.join("、") : "未查到明顯風險"}`
+  ].join("\n");
+}
+
+function summarizeForgottenItems(data: AssistantData, projectId = "") {
+  const overdueTasks = data.tasks
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => isOverdue(task.dueDate, data.today));
+  const overdueMilestones = data.milestones
+    .filter((milestone) => !milestone.completed)
+    .filter((milestone) => !projectId || milestone.projectId === projectId)
+    .filter((milestone) => isOverdue(milestone.dueDate, data.today));
+  const overdueStages = data.stages
+    .filter((stage) => stage.status !== "done")
+    .filter((stage) => !projectId || stage.projectId === projectId)
+    .filter((stage) => isOverdue(stage.endDate, data.today));
+  const overdueAiTasks = data.aiTasks
+    .filter((task) => task.reviewStatus === "approved")
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => isOverdue(task.dueDate, data.today));
+
+  const lines = [
+    ...overdueTasks.map((task) => `任務逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`),
+    ...overdueMilestones.map((milestone) => `關鍵節點逾期：${milestone.title}${projectSuffix(milestone.projectId, data.projects)}`),
+    ...overdueStages.map((stage) => `工期逾期：${stage.stageName}${projectSuffix(stage.projectId, data.projects)}`),
+    ...overdueAiTasks.map((task) => `AI任務逾期：${task.title}${projectSuffix(task.projectId, data.projects)}`)
+  ];
+
+  if (!lines.length) {
+    return "目前沒有查到逾期或可能被忘記的事項。";
+  }
+
+  return [`最近可能被忘記的事項有 ${lines.length} 件：`, ...lines.slice(0, 12), moreLine(lines.length, 12)]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getProjectRiskReasons(data: AssistantData, projectId: string) {
+  const reasons: string[] = [];
+  const overdueTasks = data.tasks.filter(
+    (task) => task.projectId === projectId && isActiveStatus(task.status) && isOverdue(task.dueDate, data.today)
+  );
+  const highRiskTasks = data.tasks.filter(
+    (task) => task.projectId === projectId && isActiveStatus(task.status) && task.riskLevel === "high"
+  );
+  const overdueMilestones = data.milestones.filter(
+    (milestone) => milestone.projectId === projectId && !milestone.completed && isOverdue(milestone.dueDate, data.today)
+  );
+  const highRiskMilestones = data.milestones.filter(
+    (milestone) => milestone.projectId === projectId && !milestone.completed && milestone.riskLevel === "high"
+  );
+  const overdueStages = data.stages.filter(
+    (stage) => stage.projectId === projectId && stage.status !== "done" && isOverdue(stage.endDate, data.today)
+  );
+
+  if (overdueTasks.length) reasons.push(`逾期任務 ${overdueTasks.length} 件`);
+  if (highRiskTasks.length) reasons.push(`高風險任務 ${highRiskTasks.length} 件`);
+  if (overdueMilestones.length) reasons.push(`逾期關鍵節點 ${overdueMilestones.length} 件`);
+  if (highRiskMilestones.length) reasons.push(`高風險關鍵節點 ${highRiskMilestones.length} 件`);
+  if (overdueStages.length) reasons.push(`工期逾期 ${overdueStages.length} 件`);
+
+  return reasons;
+}
+
+function findProjectInQuestion(question: string, projects: ProjectSummary[], contextProjectId: string) {
+  if (contextProjectId) {
+    const contextProject = projects.find((project) => project.id === contextProjectId);
+    if (contextProject) return contextProject;
+  }
+
+  const normalizedQuestion = normalizeText(question);
+  const sortedProjects = [...projects].sort((a, b) => {
+    const aLength = `${a.name}${a.clientName}`.length;
+    const bLength = `${b.name}${b.clientName}`.length;
+    return bLength - aLength;
+  });
+
+  return sortedProjects.find((project) => {
+    const names = [project.name, project.clientName].filter(Boolean).map(normalizeText);
+    return names.some((name) => name && normalizedQuestion.includes(name));
+  });
+}
+
+function getProjectProgress(stages: StageSummary[]) {
+  if (!stages.length) return 0;
+  return Math.round((stages.filter((stage) => stage.status === "done").length / stages.length) * 100);
+}
+
+function getCurrentStage(project: ProjectSummary, stages: StageSummary[]) {
+  const doingStage = stages.find((stage) => stage.status === "doing");
+  if (doingStage) return doingStage.stageName;
+
+  const nextStage = stages.find((stage) => stage.status !== "done");
+  if (nextStage) return nextStage.stageName;
+
+  const lastStage = stages[stages.length - 1];
+  return lastStage?.stageName || project.currentStage || "未設定";
+}
+
+function timestampToTaipeiDate(value: unknown) {
+  if (value instanceof Timestamp) {
+    return taipeiDateString(value.toDate());
+  }
+
+  if (value && typeof value === "object" && "toDate" in value) {
+    return taipeiDateString((value as { toDate: () => Date }).toDate());
+  }
+
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+
+  return "";
+}
+
+function taipeiDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+
+  return `${year}-${month}-${day}`;
+}
+
+function datePlusDays(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+
+  return [
+    parsed.getUTCFullYear(),
+    String(parsed.getUTCMonth() + 1).padStart(2, "0"),
+    String(parsed.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function isActiveStatus(status: string) {
+  return status !== "done";
+}
+
+function isOverdue(date: string, today: string) {
+  return Boolean(date && date < today);
+}
+
+function formatDate(date: string) {
+  return date.replaceAll("-", "/");
+}
+
+function formatStage(stage: StageSummary) {
+  const dates = [stage.startDate, stage.endDate].filter(Boolean).map(formatDate).join(" - ");
+  return dates ? `${stage.stageName}（${dates}）` : stage.stageName;
+}
+
+function projectName(project: ProjectSummary) {
+  return project.clientName ? `${project.name} / ${project.clientName}` : project.name;
+}
+
+function projectSuffix(projectId: string, projects: ProjectSummary[]) {
+  const project = projects.find((item) => item.id === projectId);
+  return project ? `｜${project.name}` : "";
+}
+
+function moreLine(total: number, shown: number) {
+  const hidden = total - shown;
+  return hidden > 0 ? `另有 ${hidden} 件未列出。` : "";
+}
+
+function normalizeText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "");
 }
