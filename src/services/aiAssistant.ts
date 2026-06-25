@@ -66,8 +66,53 @@ type AssistantIntent =
   | "forgotten"
   | "unknown";
 
+type AssistantIntentResult = {
+  intent: AssistantIntent;
+  projectName: string;
+  confidence: number;
+};
+
+const assistantIntents: AssistantIntent[] = [
+  "today",
+  "tomorrow",
+  "risk",
+  "payment",
+  "invoice",
+  "project_progress",
+  "forgotten",
+  "unknown"
+];
+
+const conversationalQuestionKeywords = [
+  "今天",
+  "明天",
+  "風險",
+  "逾期",
+  "高風險",
+  "收款",
+  "款項",
+  "錢",
+  "發票",
+  "做到哪",
+  "做到哪裡",
+  "進度",
+  "現在怎樣",
+  "那邊怎樣",
+  "狀況",
+  "忘記",
+  "沒回",
+  "還沒回",
+  "確認了嗎",
+  "有沒有",
+  "要處理",
+  "要追"
+];
+
 export function shouldAnswerLineQuestion(text: string) {
   const normalized = normalizeText(text);
+
+  if (/[\?？]/.test(text)) return true;
+  if (conversationalQuestionKeywords.some((keyword) => normalized.includes(normalizeText(keyword)))) return true;
 
   return [
     "今天",
@@ -96,8 +141,11 @@ export function shouldAnswerLineQuestion(text: string) {
 
 export async function answerQuestionFromFirestore(question: string, contextProjectId = "") {
   const data = await loadAssistantData();
-  const intent = detectIntent(question);
-  const matchedProject = findProjectInQuestion(question, data.projects, contextProjectId);
+  const understood = await understandAssistantIntent(question, data.projects);
+  const intent = understood.intent;
+  const matchedProject =
+    findProjectInQuestion(understood.projectName || question, data.projects, contextProjectId) ??
+    findProjectInQuestion(question, data.projects, contextProjectId);
 
   if (intent === "today") {
     return summarizeDateItems(data, data.today, "今天", matchedProject?.id ?? contextProjectId);
@@ -145,6 +193,89 @@ export async function answerQuestionFromFirestore(question: string, contextProje
     "6. 某個案件做到哪裡？",
     "7. 最近有哪些事情被忘記？"
   ].join("\n");
+}
+
+async function understandAssistantIntent(question: string, projects: ProjectSummary[]): Promise<AssistantIntentResult> {
+  const fallback: AssistantIntentResult = {
+    intent: detectIntent(question),
+    projectName: "",
+    confidence: 0
+  };
+  const openAiIntent = await understandAssistantIntentWithOpenAi(question, projects);
+
+  if (!openAiIntent || openAiIntent.intent === "unknown") return fallback;
+
+  return openAiIntent;
+}
+
+async function understandAssistantIntentWithOpenAi(
+  question: string,
+  projects: ProjectSummary[]
+): Promise<AssistantIntentResult | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_MODEL;
+  if (!apiKey || !model) return null;
+
+  try {
+    const projectList = projects
+      .slice(0, 80)
+      .map((project) => `- ${project.name}${project.clientName ? ` / ${project.clientName}` : ""}`)
+      .join("\n");
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          "你是室內設計工程公司的 LINE 後台秘書，只做問題意圖分類。",
+          "請只回 JSON，不要解釋，也不要回答問題本身。",
+          "",
+          "可用 intent：today, tomorrow, risk, payment, invoice, project_progress, forgotten, unknown",
+          "",
+          "分類規則：",
+          "- 問今天事項、今天到期：today",
+          "- 問明天事項、明天到期：tomorrow",
+          "- 問風險、異常、怪怪的、危險案件：risk",
+          "- 問款項、收款、付款、錢、尾款、二期款：payment",
+          "- 問發票、統編、報帳：invoice",
+          "- 問某案件做到哪裡、進度、目前狀況、下一步：project_progress",
+          "- 問忘記、逾期、沒回、還沒確認、卡住：forgotten",
+          "",
+          "projectName 請從案件清單抓最可能的案件名稱或客戶名稱；沒有就空字串。",
+          "confidence 用 0 到 1。",
+          "",
+          "案件清單：",
+          projectList || "- 目前沒有案件",
+          "",
+          `使用者問題：${question}`,
+          "",
+          'JSON 格式：{"intent":"project_progress","projectName":"三重元泰","confidence":0.8}'
+        ].join("\n")
+      })
+    });
+
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{ content?: Array<{ text?: string }> }>;
+    };
+    const parsed = JSON.parse(stripJsonFence(readOpenAiOutputText(data))) as Partial<AssistantIntentResult>;
+    const intent = normalizeAssistantIntent(parsed.intent);
+
+    if (!intent) return null;
+
+    return {
+      intent,
+      projectName: typeof parsed.projectName === "string" ? parsed.projectName : "",
+      confidence: clampConfidence(parsed.confidence)
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function loadAssistantData(): Promise<AssistantData> {
@@ -220,8 +351,49 @@ async function loadAssistantData(): Promise<AssistantData> {
   };
 }
 
+function readOpenAiOutputText(data: {
+  output_text?: string;
+  output?: Array<{ content?: Array<{ text?: string }> }>;
+}) {
+  return (
+    data.output_text ??
+    data.output?.flatMap((item) => item.content ?? []).map((content) => content.text ?? "").join("\n") ??
+    ""
+  );
+}
+
+function stripJsonFence(value: string) {
+  return value
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+function normalizeAssistantIntent(value: unknown): AssistantIntent | null {
+  if (typeof value !== "string") return null;
+  const intent = value.trim() as AssistantIntent;
+  return assistantIntents.includes(intent) ? intent : null;
+}
+
+function clampConfidence(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(1, numeric));
+}
+
 function detectIntent(question: string): AssistantIntent {
   const normalized = normalizeText(question);
+
+  if (/(明天|明日)/.test(normalized)) return "tomorrow";
+  if (/(今天|今日)/.test(normalized)) return "today";
+  if (/(收款|款項|付款|尾款|二期款|錢|請款)/.test(normalized)) return "payment";
+  if (/(發票|統編|報帳)/.test(normalized)) return "invoice";
+  if (/(忘記|逾期|沒回|還沒回|尚未回|還沒確認|尚未確認|卡住)/.test(normalized)) return "forgotten";
+  if (/(風險|高風險|異常|怪怪|危險|預警)/.test(normalized)) return "risk";
+  if (/(做到哪|做到哪裡|進度|目前狀況|現在怎樣|那邊怎樣|下一步|目前階段)/.test(normalized)) {
+    return "project_progress";
+  }
 
   if (normalized.includes("明天")) return "tomorrow";
   if (normalized.includes("今天")) return "today";
@@ -408,7 +580,9 @@ function findProjectInQuestion(question: string, projects: ProjectSummary[], con
 
   return sortedProjects.find((project) => {
     const names = [project.name, project.clientName].filter(Boolean).map(normalizeText);
-    return names.some((name) => name && normalizedQuestion.includes(name));
+    return names.some(
+      (name) => name && (normalizedQuestion.includes(name) || (normalizedQuestion.length >= 2 && name.includes(normalizedQuestion)))
+    );
   });
 }
 
