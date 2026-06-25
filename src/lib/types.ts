@@ -12,6 +12,7 @@ export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
 export type ReminderType =
   | "stage_before_start"
   | "milestone_before_due"
+  | "ai_task_pending_review"
   | "due_today"
   | "overdue"
   | "high_risk";

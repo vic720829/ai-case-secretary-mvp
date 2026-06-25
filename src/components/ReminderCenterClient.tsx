@@ -103,7 +103,7 @@ export function ReminderCenterClient() {
     <div className="space-y-6">
       <PageHeader
         title="提醒中心"
-        description="集中處理工期、關鍵節點、任務與 AI 任務提醒。按已處理後，後台 LINE 每日提醒就不會再推送該項目。"
+        description="集中處理工期、關鍵節點、任務、AI 任務與待審核草稿提醒。按已處理後，後台 LINE 每日提醒就不會再推送該項目。"
       />
 
       <ErrorMessage message={error} />
@@ -124,7 +124,7 @@ export function ReminderCenterClient() {
             onConfirm={handleConfirm}
           />
         ) : (
-          <EmptyState title="目前沒有待處理提醒" description="工期進場提醒、關鍵節點提醒、逾期與高風險事項會出現在這裡。" />
+          <EmptyState title="目前沒有待處理提醒" description="AI 草稿待審核、工期進場提醒、關鍵節點提醒、逾期與高風險事項會出現在這裡。" />
         )}
       </section>
 
@@ -289,6 +289,7 @@ function StatusBadge({ status }: { status: ReminderLog["status"] }) {
 }
 
 function getReminderHref(reminder: ReminderLog) {
+  if (reminder.sourceType === "ai_task" && reminder.reminderType === "ai_task_pending_review") return "/ai-tasks";
   if (reminder.sourceType === "task") return `/tasks/${reminder.sourceId}`;
   if (reminder.projectId) return `/projects/${reminder.projectId}/progress`;
   return "/risk-center";

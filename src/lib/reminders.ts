@@ -105,6 +105,22 @@ export function buildReminderCandidates({
   });
 
   aiTasks.forEach((aiTask) => {
+    if (aiTask.reviewStatus === "pending") {
+      candidates.push(
+        toCandidate(
+          "ai_task",
+          aiTask.id,
+          "ai_task_pending_review",
+          aiTask.projectId,
+          "AI 草稿待審核",
+          aiTask.title,
+          dateToInputValue(aiTask.createdAt ?? new Date()),
+          today
+        )
+      );
+      return;
+    }
+
     if (aiTask.reviewStatus !== "approved") return;
     if (aiTask.status === "done") return;
 

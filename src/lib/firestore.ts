@@ -660,6 +660,7 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
   const database = requireDb();
   const aiTaskRef = doc(database, AI_TASKS_COLLECTION, id);
   const taskRef = doc(collection(database, TASKS_COLLECTION));
+  const pendingReviewReminderRef = doc(database, REMINDER_LOGS_COLLECTION, `ai_task_${id}_ai_task_pending_review`);
   const batch = writeBatch(database);
 
   batch.set(taskRef, {
@@ -677,6 +678,17 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
     reviewedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  batch.set(
+    pendingReviewReminderRef,
+    {
+      status: "confirmed",
+      confirmedBy: reviewedBy,
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      lastAction: "approved_ai_task"
+    },
+    { merge: true }
+  );
 
   await batch.commit();
   return taskRef.id;
@@ -684,13 +696,27 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
 
 export async function rejectAiTask(id: string, reviewedBy: string) {
   const database = requireDb();
+  const batch = writeBatch(database);
 
-  await updateDoc(doc(database, AI_TASKS_COLLECTION, id), {
+  batch.update(doc(database, AI_TASKS_COLLECTION, id), {
     reviewStatus: "rejected",
     reviewedBy,
     reviewedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  batch.set(
+    doc(database, REMINDER_LOGS_COLLECTION, `ai_task_${id}_ai_task_pending_review`),
+    {
+      status: "confirmed",
+      confirmedBy: reviewedBy,
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      lastAction: "rejected_ai_task"
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
 }
 
 export async function listReminderLogs() {

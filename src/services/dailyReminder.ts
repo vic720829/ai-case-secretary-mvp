@@ -176,6 +176,22 @@ async function buildDailyReminderContent() {
     const projectId = String(aiTask.projectId ?? "");
     const title = String(aiTask.title ?? "未命名 AI 任務");
 
+    if (reviewStatus === "pending") {
+      candidates.push(
+        toReminderItem(
+          "ai_task",
+          doc.id,
+          "ai_task_pending_review",
+          projectId,
+          "AI 草稿待審核",
+          title,
+          timestampToTaipeiDate(aiTask.createdAt) || today,
+          today
+        )
+      );
+      return;
+    }
+
     if (reviewStatus !== "approved") return;
     if (status === "done" || !dueDate) return;
     if (dueDate === today) {
@@ -190,6 +206,7 @@ async function buildDailyReminderContent() {
   const pendingItems = await listPendingReminderItems(today);
 
   const sections = [
+    formatSection("AI 草稿待審核", pendingItems.filter((item) => item.reminderType === "ai_task_pending_review"), projects),
     formatSection("進場提醒", pendingItems.filter((item) => item.reminderType === "stage_before_start"), projects),
     formatSection("關鍵節點提醒", pendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
     formatSection("今天到期", pendingItems.filter((item) => item.reminderType === "due_today"), projects),
