@@ -96,9 +96,12 @@ function WebhookLogTable({ logs }: { logs: WebhookLog[] }) {
               <th className="px-4 py-3">時間</th>
               <th className="px-4 py-3">狀態</th>
               <th className="px-4 py-3">事件</th>
+              <th className="px-4 py-3">來源</th>
+              <th className="px-4 py-3">訊息</th>
               <th className="px-4 py-3">groupId</th>
               <th className="px-4 py-3">messageId</th>
               <th className="px-4 py-3">AI 草稿</th>
+              <th className="px-4 py-3">後台通知</th>
               <th className="px-4 py-3">說明</th>
             </tr>
           </thead>
@@ -113,11 +116,24 @@ function WebhookLogTable({ logs }: { logs: WebhookLog[] }) {
                   {log.eventType}
                   {log.messageType ? ` / ${log.messageType}` : ""}
                 </td>
+                <td className="px-4 py-4 text-slate-600">
+                  <div>{log.senderName || "未記錄"}</div>
+                  <div className="mt-1 text-xs text-slate-500">{log.senderRole || "未記錄身份"}</div>
+                </td>
+                <td className="max-w-80 px-4 py-4 text-slate-700">
+                  <div className="line-clamp-3 whitespace-pre-wrap">{log.messageText || "未記錄"}</div>
+                </td>
                 <td className="max-w-56 break-all px-4 py-4 font-mono text-xs text-slate-500">{log.groupId || "未提供"}</td>
                 <td className="max-w-56 break-all px-4 py-4 font-mono text-xs text-slate-500">
                   {log.lineMessageId || log.messageId || "未提供"}
                 </td>
                 <td className="px-4 py-4 text-slate-600">{log.aiTaskDrafts}</td>
+                <td className="px-4 py-4 text-slate-600">
+                  {log.adminNotifications}
+                  {log.adminNotificationFailures ? (
+                    <span className="ml-1 text-xs text-red-600">失敗 {log.adminNotificationFailures}</span>
+                  ) : null}
+                </td>
                 <td className="min-w-64 px-4 py-4 text-slate-600">
                   {log.errorMessage || log.reason || "處理完成"}
                 </td>

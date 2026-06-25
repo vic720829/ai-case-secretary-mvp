@@ -173,6 +173,15 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           relationHints
         })
       : { sent: 0, failed: 0, groups: 0 };
+    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
+      ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
+          groupId,
+          senderName,
+          senderRole,
+          text: event.message.text,
+          reason: getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+        })
+      : { sent: 0, failed: 0, groups: 0 };
 
     if (shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text)) {
       const answer = await answerQuestionFromFirestore(event.message.text, projectId);
@@ -185,10 +194,14 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       messageId: messageRef.id,
       lineMessageId,
       aiTaskDrafts: suggestions.length,
-      adminNotifications: adminNotification.sent,
+      adminNotifications: adminNotification.sent + unboundNotification.sent,
+      adminNotificationFailures: adminNotification.failed + unboundNotification.failed,
       aiDraftRelations: relationHints.length,
       projectId,
-      aiSkippedReason: shouldCreateAiDrafts ? "" : "Only bound project LINE groups create AI task drafts"
+      senderName,
+      senderRole,
+      messageText: event.message.text,
+      aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
 
@@ -300,12 +313,7 @@ async function notifyAdminGroupsAboutAiDrafts(
   }
 ) {
   try {
-    const adminGroupSnapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
-    const adminGroups = adminGroupSnapshot.docs
-      .map((doc) => doc.data())
-      .filter((group) => group.allowAssistantReplies !== false)
-      .map((group) => String(group.groupId ?? ""))
-      .filter(Boolean);
+    const adminGroups = await listAssistantAdminGroupIds(db);
 
     if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
 
@@ -345,6 +353,54 @@ async function notifyAdminGroupsAboutAiDrafts(
   } catch {
     return { sent: 0, failed: 1, groups: 0 };
   }
+}
+
+async function notifyAdminGroupsAboutUnboundLineMessage(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    groupId: string;
+    senderName: string;
+    senderRole: LineSenderRole;
+    text: string;
+    reason: string;
+  }
+) {
+  try {
+    const adminGroups = await listAssistantAdminGroupIds(db);
+    if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+
+    const lineGroupsUrl = getSiteUrl() ? `${getSiteUrl()}/line-groups` : "";
+    const text = [
+      "AI案件秘書收到未處理的 LINE 訊息",
+      `原因：${input.reason}`,
+      `groupId：${input.groupId || "未提供"}`,
+      `來源：${input.senderName || "LINE 使用者"}（${senderRoleLabel(input.senderRole)}）`,
+      `原訊息：${input.text}`,
+      "",
+      lineGroupsUrl ? `請先綁定 LINE 群組：${lineGroupsUrl}` : "請到網站 LINE 群組頁綁定案件。"
+    ].join("\n");
+    const results = await Promise.allSettled(
+      adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
+    );
+
+    return {
+      sent: results.filter((result) => result.status === "fulfilled").length,
+      failed: results.filter((result) => result.status === "rejected").length,
+      groups: adminGroups.length
+    };
+  } catch {
+    return { sent: 0, failed: 1, groups: 0 };
+  }
+}
+
+async function listAssistantAdminGroupIds(db: FirebaseFirestore.Firestore) {
+  const adminGroupSnapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
+
+  return adminGroupSnapshot.docs
+    .map((doc) => doc.data())
+    .filter((group) => group.allowAssistantReplies !== false)
+    .map((group) => String(group.groupId ?? ""))
+    .filter(Boolean);
 }
 
 async function linkPossibleAnsweredFollowups(
@@ -472,7 +528,12 @@ async function writeWebhookLog(
       messageId: String(result.messageId ?? ""),
       lineMessageId: String(result.lineMessageId ?? event.message?.id ?? ""),
       messageType: event.message?.type ?? "",
+      senderName: String(result.senderName ?? ""),
+      senderRole: String(result.senderRole ?? ""),
+      messageText: String(result.messageText ?? event.message?.text ?? "").slice(0, 500),
       aiTaskDrafts: Number(result.aiTaskDrafts ?? 0),
+      adminNotifications: Number(result.adminNotifications ?? 0),
+      adminNotificationFailures: Number(result.adminNotificationFailures ?? 0),
       reason: String(result.reason ?? result.aiSkippedReason ?? ""),
       errorMessage: String(result.errorMessage ?? ""),
       createdAt: FieldValue.serverTimestamp()
@@ -485,6 +546,18 @@ async function writeWebhookLog(
 function getSiteUrl() {
   const value = process.env.NEXT_PUBLIC_SITE_URL || process.env.URL || process.env.DEPLOY_URL || "";
   return value.replace(/\/$/, "");
+}
+
+function getAiSkippedReason(
+  lineGroup: FirebaseFirestore.DocumentData | null,
+  projectId: string,
+  isAdminGroup: boolean
+) {
+  if (isAdminGroup) return "後台群組不建立 AI 草稿";
+  if (!lineGroup) return "這個 LINE 群組尚未綁定案件";
+  if (!projectId) return "這個 LINE 群組沒有選擇案件";
+
+  return "沒有符合 AI 草稿條件";
 }
 
 function senderRoleLabel(role: LineSenderRole) {

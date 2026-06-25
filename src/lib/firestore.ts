@@ -257,7 +257,12 @@ function webhookLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Webho
     messageId: data.messageId ?? "",
     lineMessageId: data.lineMessageId ?? "",
     messageType: data.messageType ?? "",
+    senderName: data.senderName ?? "",
+    senderRole: data.senderRole ?? "",
+    messageText: data.messageText ?? "",
     aiTaskDrafts: Number(data.aiTaskDrafts ?? 0),
+    adminNotifications: Number(data.adminNotifications ?? 0),
+    adminNotificationFailures: Number(data.adminNotificationFailures ?? 0),
     reason: data.reason ?? "",
     errorMessage: data.errorMessage ?? "",
     createdAt: readTimestamp(data.createdAt)

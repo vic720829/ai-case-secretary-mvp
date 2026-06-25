@@ -149,9 +149,9 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     });
   }
 
-  if (senderRole !== "internal" && isClientRequestQuestion(text)) {
+  if (isClientRequestQuestion(text)) {
     suggestions.push({
-      title: makeTitle(text, senderRole === "client" ? "待回覆客戶" : "待追蹤需求"),
+      title: makeTitle(text, senderRole === "internal" ? "客戶問句待確認" : "待回覆客戶"),
       description: text,
       taskType: "followup",
       dueDate

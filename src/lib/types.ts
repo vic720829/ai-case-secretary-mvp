@@ -208,7 +208,12 @@ export type WebhookLog = {
   messageId: string;
   lineMessageId: string;
   messageType: string;
+  senderName: string;
+  senderRole: string;
+  messageText: string;
   aiTaskDrafts: number;
+  adminNotifications: number;
+  adminNotificationFailures: number;
   reason: string;
   errorMessage: string;
   createdAt: Date | null;
