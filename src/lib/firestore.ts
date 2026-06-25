@@ -7,6 +7,7 @@ import {
   getDocs,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -662,62 +663,83 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
   const aiTaskRef = doc(database, AI_TASKS_COLLECTION, id);
   const taskRef = doc(collection(database, TASKS_COLLECTION));
   const pendingReviewReminderRef = doc(database, REMINDER_LOGS_COLLECTION, `ai_task_${id}_ai_task_pending_review`);
-  const batch = writeBatch(database);
 
-  batch.set(taskRef, {
-    ...input,
-    source: "ai",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  batch.update(aiTaskRef, {
-    status: input.status,
-    assignedTo: input.assignee,
-    reviewStatus: "approved",
-    approvedTaskId: taskRef.id,
-    reviewedBy,
-    reviewedAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  batch.set(
-    pendingReviewReminderRef,
-    {
-      status: "confirmed",
-      confirmedBy: reviewedBy,
-      confirmedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastAction: "approved_ai_task"
-    },
-    { merge: true }
-  );
+  await runTransaction(database, async (transaction) => {
+    const aiTaskSnapshot = await transaction.get(aiTaskRef);
+    if (!aiTaskSnapshot.exists()) {
+      throw new Error("找不到這筆 AI 草稿。");
+    }
 
-  await batch.commit();
+    const reviewStatus = String(aiTaskSnapshot.data().reviewStatus ?? "pending");
+    if (reviewStatus !== "pending") {
+      throw new Error("這筆 AI 草稿已經審核過。");
+    }
+
+    transaction.set(taskRef, {
+      ...input,
+      source: "ai",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    transaction.update(aiTaskRef, {
+      status: input.status,
+      assignedTo: input.assignee,
+      reviewStatus: "approved",
+      approvedTaskId: taskRef.id,
+      reviewedBy,
+      reviewedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    transaction.set(
+      pendingReviewReminderRef,
+      {
+        status: "confirmed",
+        confirmedBy: reviewedBy,
+        confirmedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastAction: "approved_ai_task"
+      },
+      { merge: true }
+    );
+  });
+
   return taskRef.id;
 }
 
 export async function rejectAiTask(id: string, reviewedBy: string) {
   const database = requireDb();
-  const batch = writeBatch(database);
+  const aiTaskRef = doc(database, AI_TASKS_COLLECTION, id);
+  const pendingReviewReminderRef = doc(database, REMINDER_LOGS_COLLECTION, `ai_task_${id}_ai_task_pending_review`);
 
-  batch.update(doc(database, AI_TASKS_COLLECTION, id), {
-    reviewStatus: "rejected",
-    reviewedBy,
-    reviewedAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+  await runTransaction(database, async (transaction) => {
+    const aiTaskSnapshot = await transaction.get(aiTaskRef);
+    if (!aiTaskSnapshot.exists()) {
+      throw new Error("找不到這筆 AI 草稿。");
+    }
+
+    const reviewStatus = String(aiTaskSnapshot.data().reviewStatus ?? "pending");
+    if (reviewStatus !== "pending") {
+      throw new Error("這筆 AI 草稿已經審核過。");
+    }
+
+    transaction.update(aiTaskRef, {
+      reviewStatus: "rejected",
+      reviewedBy,
+      reviewedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    transaction.set(
+      pendingReviewReminderRef,
+      {
+        status: "confirmed",
+        confirmedBy: reviewedBy,
+        confirmedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastAction: "rejected_ai_task"
+      },
+      { merge: true }
+    );
   });
-  batch.set(
-    doc(database, REMINDER_LOGS_COLLECTION, `ai_task_${id}_ai_task_pending_review`),
-    {
-      status: "confirmed",
-      confirmedBy: reviewedBy,
-      confirmedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastAction: "rejected_ai_task"
-    },
-    { merge: true }
-  );
-
-  await batch.commit();
 }
 
 export async function listReminderLogs() {

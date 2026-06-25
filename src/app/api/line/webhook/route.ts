@@ -303,55 +303,109 @@ async function handleAiTaskReviewPostback(
   const senderName = await getLineSenderName(event);
   const reviewedBy = `LINE:${senderName}`;
   const aiTaskRef = db.collection("ai_tasks").doc(key);
-  const aiTaskSnapshot = await aiTaskRef.get();
+  const reminderRef = db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`);
+  const result = await db.runTransaction(async (transaction) => {
+    const aiTaskSnapshot = await transaction.get(aiTaskRef);
 
-  if (!aiTaskSnapshot.exists) {
-    await replyLineText(event.replyToken, "找不到這筆 AI 草稿，可能已被刪除。");
-    return { skipped: true, reason: "AI task draft not found", key };
-  }
+    if (!aiTaskSnapshot.exists) {
+      return { status: "not_found" as const };
+    }
 
-  const aiTask = aiTaskSnapshot.data() ?? {};
-  const title = String(aiTask.title ?? "未命名草稿").trim() || "未命名草稿";
-  const reviewStatus = String(aiTask.reviewStatus ?? "pending");
+    const aiTask = aiTaskSnapshot.data() ?? {};
+    const title = String(aiTask.title ?? "未命名草稿").trim() || "未命名草稿";
+    const reviewStatus = String(aiTask.reviewStatus ?? "pending");
 
-  if (reviewStatus !== "pending") {
-    await replyLineText(event.replyToken, `這筆 AI 草稿已經審核過：${title}`);
-    return { skipped: true, reason: "AI task draft already reviewed", key };
-  }
+    if (reviewStatus !== "pending") {
+      return { status: "already_reviewed" as const, title };
+    }
 
-  if (action === "reject_ai_task") {
-    const batch = db.batch();
-    batch.update(aiTaskRef, {
-      reviewStatus: "rejected",
+    if (action === "reject_ai_task") {
+      transaction.update(aiTaskRef, {
+        reviewStatus: "rejected",
+        reviewedBy,
+        reviewedAt: FieldValue.serverTimestamp(),
+        reviewedVia: "line",
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      transaction.set(
+        reminderRef,
+        {
+          status: "confirmed",
+          confirmedBy: reviewedBy,
+          confirmedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          lastAction: "rejected_ai_task_line"
+        },
+        { merge: true }
+      );
+
+      return { status: "rejected" as const, title };
+    }
+
+    const taskInput = buildTaskFromAiDraft(aiTask);
+    if (!taskInput.projectId || !taskInput.title) {
+      return { status: "needs_edit" as const, title };
+    }
+
+    const taskRef = db.collection("tasks").doc();
+    transaction.set(taskRef, {
+      ...taskInput,
+      source: "ai",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    transaction.update(aiTaskRef, {
+      status: taskInput.status,
+      assignedTo: taskInput.assignee,
+      reviewStatus: "approved",
+      approvedTaskId: taskRef.id,
       reviewedBy,
       reviewedAt: FieldValue.serverTimestamp(),
       reviewedVia: "line",
       updatedAt: FieldValue.serverTimestamp()
     });
-    batch.set(
-      db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`),
+    transaction.set(
+      reminderRef,
       {
         status: "confirmed",
         confirmedBy: reviewedBy,
         confirmedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-        lastAction: "rejected_ai_task_line"
+        lastAction: "approved_ai_task_line"
       },
       { merge: true }
     );
-    await batch.commit();
-    await replyLineText(event.replyToken, `已拒絕 AI 草稿：${title}`);
 
-    return { ok: true, action, key, senderName, messageText: `拒絕 AI 草稿：${title}` };
+    return {
+      status: "approved" as const,
+      title: taskInput.title,
+      projectId: taskInput.projectId,
+      approvedTaskId: taskRef.id
+    };
+  });
+
+  if (result.status === "not_found") {
+    await replyLineText(event.replyToken, "找不到這筆 AI 草稿，可能已被刪除。");
+    return { skipped: true, reason: "AI task draft not found", key };
   }
 
-  const taskInput = buildTaskFromAiDraft(aiTask);
-  if (!taskInput.projectId || !taskInput.title) {
+  if (result.status === "already_reviewed") {
+    await replyLineText(event.replyToken, `這筆 AI 草稿已經審核過：${result.title}`);
+    return { skipped: true, reason: "AI task draft already reviewed", key };
+  }
+
+  if (result.status === "rejected") {
+    await replyLineText(event.replyToken, `已拒絕 AI 草稿：${result.title}`);
+
+    return { ok: true, action, key, senderName, messageText: `拒絕 AI 草稿：${result.title}` };
+  }
+
+  if (result.status === "needs_edit") {
     const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
     await replyLineText(
       event.replyToken,
       [
-        `這筆 AI 草稿不能直接在 LINE 通過：${title}`,
+        `這筆 AI 草稿不能直接在 LINE 通過：${result.title}`,
         "原因：缺少案件或標題。",
         reviewUrl ? `請到網站編輯：${reviewUrl}` : "請到網站 AI 審核頁補齊資料。"
       ].join("\n")
@@ -360,46 +414,16 @@ async function handleAiTaskReviewPostback(
     return { skipped: true, reason: "AI task draft requires website editing", key };
   }
 
-  const taskRef = db.collection("tasks").doc();
-  const batch = db.batch();
-  batch.set(taskRef, {
-    ...taskInput,
-    source: "ai",
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  });
-  batch.update(aiTaskRef, {
-    status: taskInput.status,
-    assignedTo: taskInput.assignee,
-    reviewStatus: "approved",
-    approvedTaskId: taskRef.id,
-    reviewedBy,
-    reviewedAt: FieldValue.serverTimestamp(),
-    reviewedVia: "line",
-    updatedAt: FieldValue.serverTimestamp()
-  });
-  batch.set(
-    db.collection("reminder_logs").doc(`ai_task_${key}_ai_task_pending_review`),
-    {
-      status: "confirmed",
-      confirmedBy: reviewedBy,
-      confirmedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-      lastAction: "approved_ai_task_line"
-    },
-    { merge: true }
-  );
-  await batch.commit();
-  await replyLineText(event.replyToken, `已通過並建立任務：${taskInput.title}`);
+  await replyLineText(event.replyToken, `已通過並建立任務：${result.title}`);
 
   return {
     ok: true,
     action,
     key,
-    projectId: taskInput.projectId,
+    projectId: result.projectId,
     senderName,
-    messageText: `通過 AI 草稿並建立任務：${taskInput.title}`,
-    approvedTaskId: taskRef.id
+    messageText: `通過 AI 草稿並建立任務：${result.title}`,
+    approvedTaskId: result.approvedTaskId
   };
 }
 
