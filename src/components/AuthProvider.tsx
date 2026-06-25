@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -22,7 +21,6 @@ type AuthContextValue = {
   loading: boolean;
   user: User | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
   signOutUser: () => Promise<void>;
 };
 
@@ -62,10 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signIn(email, password) {
         if (!auth) throw new Error("Firebase 尚未設定。");
         await signInWithEmailAndPassword(auth, email, password);
-      },
-      async signUp(email, password) {
-        if (!auth) throw new Error("Firebase 尚未設定。");
-        await createUserWithEmailAndPassword(auth, email, password);
       },
       async signOutUser() {
         if (!auth) return;

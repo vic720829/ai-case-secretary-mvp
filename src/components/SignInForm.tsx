@@ -1,12 +1,11 @@
 "use client";
 
-import { LogIn, UserPlus } from "lucide-react";
+import { LogIn } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 
 export function SignInForm() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -18,11 +17,7 @@ export function SignInForm() {
     setSubmitting(true);
 
     try {
-      if (mode === "signin") {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password);
-      }
+      await signIn(email, password);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "登入失敗，請稍後再試。";
       setError(message);
@@ -38,28 +33,11 @@ export function SignInForm() {
           <p className="text-sm font-medium text-teal-700">AI 案件秘書 MVP</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">登入後台</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            第一階段先管理案件、任務與今日風險，不接 AI 與 LINE。
+            請使用管理者在員工管理頁建立的帳號登入。
           </p>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 rounded-md bg-slate-100 p-1 text-sm font-medium">
-          <button
-            className={`rounded px-3 py-2 ${mode === "signin" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-            type="button"
-            onClick={() => setMode("signin")}
-          >
-            登入
-          </button>
-          <button
-            className={`rounded px-3 py-2 ${mode === "signup" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}
-            type="button"
-            onClick={() => setMode("signup")}
-          >
-            註冊
-          </button>
-        </div>
-
-        <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Email</span>
             <input
@@ -93,8 +71,8 @@ export function SignInForm() {
             type="submit"
             disabled={submitting}
           >
-            {mode === "signin" ? <LogIn className="h-4 w-4" aria-hidden /> : <UserPlus className="h-4 w-4" aria-hidden />}
-            {submitting ? "處理中" : mode === "signin" ? "登入" : "建立帳號"}
+            <LogIn className="h-4 w-4" aria-hidden />
+            {submitting ? "處理中" : "登入"}
           </button>
         </form>
       </section>
