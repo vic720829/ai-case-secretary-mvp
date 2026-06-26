@@ -125,9 +125,24 @@ export async function getLineGroupName(event: LineWebhookEvent) {
   }
 }
 
-export async function replyLineText(replyToken: string | undefined, text: string) {
+export type LineReplyResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      status?: number;
+      errorMessage: string;
+    };
+
+export async function replyLineText(replyToken: string | undefined, text: string): Promise<LineReplyResult> {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!replyToken || !accessToken) return;
+  if (!replyToken) {
+    return { ok: false, errorMessage: "Missing LINE reply token" };
+  }
+  if (!accessToken) {
+    return { ok: false, errorMessage: "Missing LINE channel access token" };
+  }
 
   const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -148,8 +163,14 @@ export async function replyLineText(replyToken: string | undefined, text: string
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`LINE reply failed: ${response.status}${body ? ` ${body.slice(0, 300)}` : ""}`);
+    return {
+      ok: false,
+      status: response.status,
+      errorMessage: `LINE reply failed: ${response.status}${body ? ` ${body.slice(0, 300)}` : ""}`
+    };
   }
+
+  return { ok: true };
 }
 
 export async function downloadLineMessageContent(messageId: string) {

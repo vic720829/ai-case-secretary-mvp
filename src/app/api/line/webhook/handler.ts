@@ -212,12 +212,19 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
     const didReplyHelp = shouldReplyInLineChat(event, canAssistantReply) && isLineAssistantHelpCommand(event.message.text);
     const didReplyQuestion = !didReplyHelp && shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text);
+    let assistantReplyError = "";
 
     if (didReplyHelp) {
-      await replyLineText(event.replyToken, buildLineAdminHelpText());
+      const replyResult = await replyLineText(event.replyToken, buildLineAdminHelpText());
+      assistantReplyError = replyResult.ok ? "" : replyResult.errorMessage;
     } else if (didReplyQuestion) {
-      const answer = await answerQuestionFromFirestore(event.message.text, projectId);
-      await replyLineText(event.replyToken, answer);
+      try {
+        const answer = await answerQuestionFromFirestore(event.message.text, projectId);
+        const replyResult = await replyLineText(event.replyToken, answer);
+        assistantReplyError = replyResult.ok ? "" : replyResult.errorMessage;
+      } catch (caught) {
+        assistantReplyError = caught instanceof Error ? caught.message : "Unknown LINE assistant reply error";
+      }
     }
 
     await messageRef.update({ isProcessed: true });
@@ -234,6 +241,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       messageText: event.message.text,
       assistantReply: didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
+      assistantReplyError,
       aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
@@ -1304,6 +1312,7 @@ async function writeWebhookLog(
       adminNotifications: Number(result.adminNotifications ?? 0),
       adminNotificationFailures: Number(result.adminNotificationFailures ?? 0),
       assistantReply: String(result.assistantReply ?? ""),
+      assistantReplyError: String(result.assistantReplyError ?? ""),
       reason: String(result.reason ?? result.aiSkippedReason ?? ""),
       errorMessage: String(result.errorMessage ?? ""),
       createdAt: FieldValue.serverTimestamp()
