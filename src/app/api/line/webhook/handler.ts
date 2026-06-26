@@ -427,64 +427,97 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
 
   const senderName = await getLineSenderName(event);
   const reminderRef = db.collection("reminder_logs").doc(key);
-  const reminderSnapshot = await reminderRef.get();
+  const result = await db.runTransaction(async (transaction) => {
+    const reminderSnapshot = await transaction.get(reminderRef);
 
-  if (!reminderSnapshot.exists) {
+    if (!reminderSnapshot.exists) {
+      return { status: "not_found" as const };
+    }
+
+    const reminder = reminderSnapshot.data() ?? {};
+    const title = String(reminder.title ?? "未命名提醒");
+    const confirmedBy = String(reminder.confirmedBy ?? reminder.actionBy ?? "");
+
+    if (reminder.status === "confirmed") {
+      return { status: "already_confirmed" as const, title, confirmedBy };
+    }
+
+    if (action === "confirm_reminder") {
+      transaction.set(
+        reminderRef,
+        {
+          status: "confirmed",
+          confirmedBy: senderName,
+          confirmedAt: FieldValue.serverTimestamp(),
+          snoozedUntil: FieldValue.delete(),
+          lastAction: "confirmed",
+          actionBy: senderName,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      return { status: "confirmed" as const, title };
+    }
+
+    if (action === "snooze_reminder") {
+      const days = clampNumber(Number(params.get("days") ?? 1), 1, 14);
+      const snoozedUntil = datePlusDays(taipeiDateString(), days);
+
+      transaction.set(
+        reminderRef,
+        {
+          status: "pending",
+          snoozedUntil,
+          lastAction: "snoozed",
+          actionBy: senderName,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      return { status: "snoozed" as const, title, snoozedUntil };
+    }
+
+    transaction.set(
+      reminderRef,
+      {
+        status: "pending",
+        snoozedUntil: FieldValue.delete(),
+        lastAction: "kept_pending",
+        actionBy: senderName,
+        updatedAt: FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    return { status: "kept_pending" as const, title };
+  });
+
+  if (result.status === "not_found") {
     await replyLineText(event.replyToken, "找不到這筆提醒，可能已被刪除或重新建立。");
     return { skipped: true, reason: "Reminder not found", key };
   }
 
-  const reminder = reminderSnapshot.data() ?? {};
-  const title = String(reminder.title ?? "未命名提醒");
-
-  if (action === "confirm_reminder") {
-    await reminderRef.set(
-      {
-        status: "confirmed",
-        confirmedBy: senderName,
-        confirmedAt: FieldValue.serverTimestamp(),
-        snoozedUntil: FieldValue.delete(),
-        lastAction: "confirmed",
-        actionBy: senderName,
-        updatedAt: FieldValue.serverTimestamp()
-      },
-      { merge: true }
-    );
-    await replyLineText(event.replyToken, `已確認：${title}\n這筆提醒不會再出現在每日提醒。`);
-    return { ok: true, action, key };
+  if (result.status === "already_confirmed") {
+    const actor = result.confirmedBy || "其他人";
+    await replyLineText(event.replyToken, `這筆提醒已由 ${actor} 確認：${result.title}\n後續按鈕不會覆蓋已確認結果。`);
+    return { skipped: true, reason: "Reminder already confirmed", key, actionBy: senderName, messageText: result.title };
   }
 
-  if (action === "snooze_reminder") {
-    const days = clampNumber(Number(params.get("days") ?? 1), 1, 14);
-    const snoozedUntil = datePlusDays(taipeiDateString(), days);
-
-    await reminderRef.set(
-      {
-        status: "pending",
-        snoozedUntil,
-        lastAction: "snoozed",
-        actionBy: senderName,
-        updatedAt: FieldValue.serverTimestamp()
-      },
-      { merge: true }
-    );
-    await replyLineText(event.replyToken, `已延後提醒：${title}\n下次提醒日：${snoozedUntil.replaceAll("-", "/")}`);
-    return { ok: true, action, key, snoozedUntil };
+  if (result.status === "confirmed") {
+    await replyLineText(event.replyToken, `已確認：${result.title}\n其他後台群再按按鈕不會覆蓋這次結果。`);
+    return { ok: true, action, key, actionBy: senderName, messageText: result.title };
   }
 
-  await reminderRef.set(
-    {
-      status: "pending",
-      snoozedUntil: FieldValue.delete(),
-      lastAction: "kept_pending",
-      actionBy: senderName,
-      updatedAt: FieldValue.serverTimestamp()
-    },
-    { merge: true }
-  );
-  await replyLineText(event.replyToken, `已保留待處理：${title}`);
+  if (result.status === "snoozed") {
+    await replyLineText(event.replyToken, `已延後提醒：${result.title}\n下次提醒日：${result.snoozedUntil.replaceAll("-", "/")}`);
+    return { ok: true, action, key, actionBy: senderName, snoozedUntil: result.snoozedUntil, messageText: result.title };
+  }
 
-  return { ok: true, action, key };
+  await replyLineText(event.replyToken, `已保留待處理：${result.title}`);
+
+  return { ok: true, action, key, actionBy: senderName, messageText: result.title };
 }
 
 async function handleAiFollowupPostback(
@@ -509,16 +542,37 @@ async function handleAiFollowupPostback(
     const days = clampNumber(Number(params.get("days") ?? 1), 1, 14);
     const snoozedUntil = datePlusDays(taipeiDateString(), days);
 
-    await reminderRef.set(
-      {
-        status: "pending",
-        snoozedUntil,
-        lastAction: "snoozed_customer_followup",
-        actionBy,
-        updatedAt: FieldValue.serverTimestamp()
-      },
-      { merge: true }
-    );
+    const result = await db.runTransaction(async (transaction) => {
+      const reminderSnapshot = await transaction.get(reminderRef);
+      const reminder = reminderSnapshot.data() ?? {};
+      const title = String(reminder.title ?? "客戶回覆追蹤");
+      const confirmedBy = String(reminder.confirmedBy ?? reminder.actionBy ?? "");
+
+      if (reminderSnapshot.exists && reminder.status === "confirmed") {
+        return { status: "already_confirmed" as const, title, confirmedBy };
+      }
+
+      transaction.set(
+        reminderRef,
+        {
+          status: "pending",
+          snoozedUntil,
+          lastAction: "snoozed_customer_followup",
+          actionBy,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      return { status: "snoozed" as const, title };
+    });
+
+    if (result.status === "already_confirmed") {
+      const actor = result.confirmedBy || "其他人";
+      await replyLineText(event.replyToken, `這筆客戶追蹤已由 ${actor} 確認：${result.title}\n後續按鈕不會覆蓋已確認結果。`);
+      return { skipped: true, reason: "AI followup already confirmed", key, senderName, messageText: result.title };
+    }
+
     await replyLineText(event.replyToken, `已設定明天追蹤。\n下次提醒日：${snoozedUntil.replaceAll("-", "/")}`);
 
     return { ok: true, action, key, senderName, messageText: "明天追蹤客戶回覆" };
@@ -527,11 +581,18 @@ async function handleAiFollowupPostback(
   const result = await db.runTransaction(async (transaction) => {
     const aiTaskSnapshot = await transaction.get(aiTaskRef);
     if (!aiTaskSnapshot.exists) return { status: "not_found" as const };
+    const reminderSnapshot = await transaction.get(reminderRef);
 
     const aiTask = aiTaskSnapshot.data() ?? {};
     const title = String(aiTask.title ?? "未命名追蹤").trim() || "未命名追蹤";
+    const reminder = reminderSnapshot.data() ?? {};
+    const confirmedBy = String(reminder.confirmedBy ?? reminder.actionBy ?? "");
     const reviewStatus = String(aiTask.reviewStatus ?? "pending");
     const status = String(aiTask.status ?? "todo");
+
+    if (reminderSnapshot.exists && reminder.status === "confirmed") {
+      return { status: "already_confirmed" as const, title, confirmedBy };
+    }
 
     if (reviewStatus === "pending") {
       transaction.update(aiTaskRef, {
@@ -583,6 +644,12 @@ async function handleAiFollowupPostback(
   if (result.status === "not_found") {
     await replyLineText(event.replyToken, "找不到這筆客戶追蹤，可能已被刪除。");
     return { skipped: true, reason: "AI followup not found", key };
+  }
+
+  if (result.status === "already_confirmed") {
+    const actor = result.confirmedBy || "其他人";
+    await replyLineText(event.replyToken, `這筆客戶追蹤已由 ${actor} 確認：${result.title}\n後續按鈕不會覆蓋已確認結果。`);
+    return { skipped: true, reason: "AI followup already confirmed", key, senderName, messageText: result.title };
   }
 
   await replyLineText(event.replyToken, `已標記為已回覆：${result.title}`);
@@ -1390,6 +1457,8 @@ async function writeWebhookLog(
       aiTaskDrafts: Number(result.aiTaskDrafts ?? 0),
       adminNotifications: Number(result.adminNotifications ?? 0),
       adminNotificationFailures: Number(result.adminNotificationFailures ?? 0),
+      postbackAction: String(result.action ?? ""),
+      actionBy: String(result.actionBy ?? result.senderName ?? ""),
       assistantReply: String(result.assistantReply ?? ""),
       assistantReplyError: String(result.assistantReplyError ?? ""),
       fileUrlSaved: Boolean(result.fileUrlSaved),
