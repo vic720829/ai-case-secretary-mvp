@@ -54,13 +54,15 @@ async function handleLineWebhookPost(request: Request) {
     return await handleLineWebhookEvents(events as LineWebhookEvent[]);
   } catch (caught) {
     console.error("LINE webhook handler failed", caught);
+    const errorMessage = caught instanceof Error ? caught.message : "Unknown LINE webhook handler error";
 
     return NextResponse.json(
       {
         ok: false,
-        error: "LINE webhook handler failed"
+        error: "LINE webhook handler failed",
+        errorMessage
       },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }
