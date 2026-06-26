@@ -129,7 +129,7 @@ export async function replyLineText(replyToken: string | undefined, text: string
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!replyToken || !accessToken) return;
 
-  await fetch("https://api.line.me/v2/bot/message/reply", {
+  const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -145,6 +145,11 @@ export async function replyLineText(replyToken: string | undefined, text: string
       ]
     })
   });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`LINE reply failed: ${response.status}${body ? ` ${body.slice(0, 300)}` : ""}`);
+  }
 }
 
 export async function downloadLineMessageContent(messageId: string) {

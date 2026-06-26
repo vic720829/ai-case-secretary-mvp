@@ -1303,6 +1303,7 @@ async function writeWebhookLog(
       aiTaskDrafts: Number(result.aiTaskDrafts ?? 0),
       adminNotifications: Number(result.adminNotifications ?? 0),
       adminNotificationFailures: Number(result.adminNotificationFailures ?? 0),
+      assistantReply: String(result.assistantReply ?? ""),
       reason: String(result.reason ?? result.aiSkippedReason ?? ""),
       errorMessage: String(result.errorMessage ?? ""),
       createdAt: FieldValue.serverTimestamp()
@@ -1400,7 +1401,27 @@ function shouldReplyInLineChat(event: LineWebhookEvent, canAssistantReply: boole
 
 function isLineAssistantHelpCommand(text: string) {
   const normalized = text.trim().toLowerCase();
-  return ["說明", "功能", "使用說明", "help", "幫助", "怎麼用"].includes(normalized);
+  if (!normalized) return false;
+
+  const exactCommands = ["說明", "功能", "使用說明", "help", "幫助", "怎麼用", "指令", "使用方式"];
+  if (exactCommands.includes(normalized)) return true;
+
+  return [
+    "你會做什麼",
+    "可以做什麼",
+    "能做什麼",
+    "能聊天嗎",
+    "怎麼使用",
+    "怎麼操作",
+    "怎麼設定",
+    "沒反應",
+    "沒有反應",
+    "看不到",
+    "看不到回覆",
+    "群組列表",
+    "群組管理",
+    "指令列表"
+  ].some((keyword) => normalized.includes(keyword.toLowerCase()));
 }
 
 function buildLineAdminHelpText() {
