@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
+import { canLineGroupUseAssistantReplies, canReplyInLineChat } from "@/lib/lineReplyPolicy";
 import type { AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
 import {
   analyzeMessageForAiTasks,
@@ -80,7 +81,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     const lineGroupDoc = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0] : null;
     const lineGroup = lineGroupDoc ? lineGroupDoc.data() : null;
     const isAdminGroup = lineGroup?.groupType === "admin";
-    const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
+    const canAssistantReply = canLineGroupUseAssistantReplies({
+      groupType: String(lineGroup?.groupType ?? ""),
+      allowAssistantReplies: lineGroup?.allowAssistantReplies
+    });
 
     await syncLineGroupName(lineGroupDoc, event);
 
@@ -139,7 +143,6 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   const lineGroupDoc = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0] : null;
   const lineGroup = lineGroupDoc ? lineGroupDoc.data() : null;
   const isAdminGroup = lineGroup?.groupType === "admin";
-  const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
   const projectId = isAdminGroup ? "" : String(lineGroup?.projectId ?? "");
   const messageType = normalizeMessageType(event.message.type);
   const lineMessageId = event.message.id ?? "";
@@ -259,8 +262,13 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
         })
       : { sent: 0, failed: 0, groups: 0 };
 
-    const didReplyHelp = shouldReplyInLineChat(event, canAssistantReply) && isLineAssistantHelpCommand(event.message.text);
-    const didReplyQuestion = !didReplyHelp && shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text);
+    const canReplyInChat = canReplyInLineChat({
+      groupType: String(lineGroup?.groupType ?? ""),
+      allowAssistantReplies: lineGroup?.allowAssistantReplies,
+      sourceType: event.source?.type
+    });
+    const didReplyHelp = canReplyInChat && isLineAssistantHelpCommand(event.message.text);
+    const didReplyQuestion = !didReplyHelp && canReplyInChat && shouldAnswerLineQuestion(event.message.text);
     let assistantReplyError = "";
 
     if (didReplyHelp) {
@@ -1552,10 +1560,6 @@ function normalizeSenderRole(role: string, fallback: LineSenderRole = "unknown")
 function normalizeMessageType(type: string): "text" | "image" | "audio" {
   if (type === "image" || type === "audio") return type;
   return "text";
-}
-
-function shouldReplyInLineChat(event: LineWebhookEvent, canAssistantReply: boolean) {
-  return canAssistantReply && (event.source?.type === "group" || event.source?.type === "room");
 }
 
 function isLineAssistantHelpCommand(text: string) {
