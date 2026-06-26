@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:line-safety": "node scripts/line-reply-policy.test.mjs"
+    "test:line-safety": "node scripts/line-reply-policy.test.mjs",
+    "test:ai-review-safety": "node scripts/ai-review-policy.test.mjs"
   },
   "dependencies": {
     "firebase": "^11.1.0",

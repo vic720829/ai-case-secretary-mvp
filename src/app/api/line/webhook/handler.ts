@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
+import { canReviewAiDraft } from "@/lib/aiReviewPolicy";
 import { canLineGroupUseAssistantReplies, canReplyInLineChat } from "@/lib/lineReplyPolicy";
 import type { AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
 import {
@@ -692,7 +693,7 @@ async function handleAiTaskReviewPostback(
     const title = String(aiTask.title ?? "未命名草稿").trim() || "未命名草稿";
     const reviewStatus = String(aiTask.reviewStatus ?? "pending");
 
-    if (reviewStatus !== "pending") {
+    if (!canReviewAiDraft(reviewStatus)) {
       return { status: "already_reviewed" as const, title };
     }
 

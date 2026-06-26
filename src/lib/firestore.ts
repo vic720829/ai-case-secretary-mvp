@@ -19,6 +19,7 @@ import {
   type QueryDocumentSnapshot
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { canReviewAiDraft } from "./aiReviewPolicy";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
@@ -954,7 +955,7 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
     }
 
     const reviewStatus = String(aiTaskSnapshot.data().reviewStatus ?? "pending");
-    if (reviewStatus !== "pending") {
+    if (!canReviewAiDraft(reviewStatus)) {
       throw new Error("這筆 AI 草稿已經審核過。");
     }
     const aiTaskData = aiTaskSnapshot.data();
@@ -1008,7 +1009,7 @@ export async function rejectAiTask(id: string, reviewedBy: string) {
     }
 
     const reviewStatus = String(aiTaskSnapshot.data().reviewStatus ?? "pending");
-    if (reviewStatus !== "pending") {
+    if (!canReviewAiDraft(reviewStatus)) {
       throw new Error("這筆 AI 草稿已經審核過。");
     }
 
