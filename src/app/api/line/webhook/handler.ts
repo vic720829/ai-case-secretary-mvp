@@ -210,7 +210,12 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
         })
       : { sent: 0, failed: 0, groups: 0 };
 
-    if (shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text)) {
+    const didReplyHelp = shouldReplyInLineChat(event, canAssistantReply) && isLineAssistantHelpCommand(event.message.text);
+    const didReplyQuestion = !didReplyHelp && shouldReplyInLineChat(event, canAssistantReply) && shouldAnswerLineQuestion(event.message.text);
+
+    if (didReplyHelp) {
+      await replyLineText(event.replyToken, buildLineAdminHelpText());
+    } else if (didReplyQuestion) {
       const answer = await answerQuestionFromFirestore(event.message.text, projectId);
       await replyLineText(event.replyToken, answer);
     }
@@ -228,6 +233,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderName,
       senderRole,
       messageText: event.message.text,
+      assistantReply: didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
       aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
@@ -1390,6 +1396,52 @@ function normalizeMessageType(type: string): "text" | "image" | "audio" {
 
 function shouldReplyInLineChat(event: LineWebhookEvent, canAssistantReply: boolean) {
   return canAssistantReply && (event.source?.type === "group" || event.source?.type === "room");
+}
+
+function isLineAssistantHelpCommand(text: string) {
+  const normalized = text.trim().toLowerCase();
+  return ["說明", "功能", "使用說明", "help", "幫助", "怎麼用"].includes(normalized);
+}
+
+function buildLineAdminHelpText() {
+  const siteUrl = getSiteUrl();
+  const links = [
+    siteUrl ? `提醒中心：${siteUrl}/reminders` : "",
+    siteUrl ? `待辦審核：${siteUrl}/ai-tasks` : "",
+    siteUrl ? `LINE 對話：${siteUrl}/messages` : ""
+  ].filter(Boolean);
+
+  return [
+    "我是 AI案件秘書，這個群組是公司後台群，我只會在後台群回覆與發提醒。",
+    "",
+    "我會幫你注意：",
+    "1. 客戶訊息超過 2 小時未回覆",
+    "2. AI 偵測到的待辦草稿",
+    "3. 今天到期與已逾期待辦",
+    "4. 工程進場提醒",
+    "5. 關鍵節點提醒",
+    "6. 高風險案件、變更、收款、發票事項",
+    "",
+    "看到提醒時可以直接按：",
+    "- 已回覆 / 已處理",
+    "- 明天追蹤 / 稍後提醒",
+    "- 通過建立待辦",
+    "- 拒絕草稿",
+    "- 打開網站查看完整內容",
+    "",
+    "可以直接問我：",
+    "- 今天有什麼事？",
+    "- 明天有什麼事？",
+    "- 有哪些案件有風險？",
+    "- 有哪些款項要收？",
+    "- 有哪些發票還沒開？",
+    "",
+    links.length ? links.join("\n") : "",
+    "",
+    "提醒：客戶群不會出現這些說明與審核按鈕。"
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function saveLineMessageFile(event: LineWebhookEvent, groupId: string, messageType: "image" | "audio") {
