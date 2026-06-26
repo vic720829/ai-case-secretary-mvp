@@ -174,7 +174,8 @@ export async function PUT(request: Request) {
       return NextResponse.json({ ok: false, error: "找不到員工資料。" }, { status: 404 });
     }
 
-    await getAdminAuth().updateUser(id, { password });
+    const adminAuth = await getAdminAuth();
+    await adminAuth.updateUser(id, { password });
     await getAdminDb().collection("users").doc(id).set(
       {
         passwordUpdatedAt: FieldValue.serverTimestamp(),

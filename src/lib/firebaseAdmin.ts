@@ -1,5 +1,4 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
@@ -63,10 +62,11 @@ export function getAdminStorageBucket() {
   return getStorage().bucket(bucketName);
 }
 
-export function getAdminAuth() {
+export async function getAdminAuth() {
   if (!getApps().length) {
     getAdminDb();
   }
 
+  const { getAuth } = await import("firebase-admin/auth");
   return getAuth();
 }
