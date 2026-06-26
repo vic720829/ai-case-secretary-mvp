@@ -59,6 +59,7 @@ type AssistantData = {
 type AssistantIntent =
   | "today"
   | "tomorrow"
+  | "schedule"
   | "risk"
   | "payment"
   | "invoice"
@@ -75,6 +76,7 @@ type AssistantIntentResult = {
 const assistantIntents: AssistantIntent[] = [
   "today",
   "tomorrow",
+  "schedule",
   "risk",
   "payment",
   "invoice",
@@ -111,6 +113,7 @@ const conversationalQuestionKeywords = [
 export function shouldAnswerLineQuestion(text: string) {
   const normalized = normalizeText(text);
 
+  if (isScheduleQuestion(text)) return true;
   if (/[\?？]/.test(text)) return true;
   if (conversationalQuestionKeywords.some((keyword) => normalized.includes(normalizeText(keyword)))) return true;
 
@@ -141,11 +144,18 @@ export function shouldAnswerLineQuestion(text: string) {
 
 export async function answerQuestionFromFirestore(question: string, contextProjectId = "") {
   const data = await loadAssistantData();
-  const understood = await understandAssistantIntent(question, data.projects);
-  const intent = understood.intent;
+  const scheduleQuestion = isScheduleQuestion(question);
+  const understood = scheduleQuestion
+    ? ({ intent: "schedule", projectName: "", confidence: 1 } satisfies AssistantIntentResult)
+    : await understandAssistantIntent(question, data.projects);
+  const intent: AssistantIntent = understood.intent;
   const matchedProject =
     findProjectInQuestion(understood.projectName || question, data.projects, contextProjectId) ??
     findProjectInQuestion(question, data.projects, contextProjectId);
+
+  if (intent === "schedule") {
+    return matchedProject ? summarizeProjectSchedule(data, matchedProject) : summarizeTodaySchedule(data);
+  }
 
   if (intent === "today") {
     return summarizeDateItems(data, data.today, "今天", matchedProject?.id ?? contextProjectId);
@@ -385,6 +395,7 @@ function clampConfidence(value: unknown) {
 function detectIntent(question: string): AssistantIntent {
   const normalized = normalizeText(question);
 
+  if (isScheduleQuestion(question)) return "schedule";
   if (/(明天|明日)/.test(normalized)) return "tomorrow";
   if (/(今天|今日)/.test(normalized)) return "today";
   if (/(收款|款項|付款|尾款|二期款|錢|請款)/.test(normalized)) return "payment";
@@ -501,6 +512,62 @@ function summarizeProjectProgress(data: AssistantData, project: ProjectSummary) 
     `下一個關鍵節點：${nextMilestone ? `${nextMilestone.title}${nextMilestone.dueDate ? `（${formatDate(nextMilestone.dueDate)}）` : ""}` : "尚未設定"}`,
     `目前風險：${riskReasons.length ? riskReasons.join("、") : "未查到明顯風險"}`
   ].join("\n");
+}
+
+function summarizeProjectSchedule(data: AssistantData, project: ProjectSummary) {
+  const stages = data.stages
+    .filter((stage) => stage.projectId === project.id)
+    .sort(compareStages);
+  const todayStages = stages.filter((stage) => stageCoversDate(stage, data.today) && stage.status !== "done");
+  const todayMilestones = data.milestones
+    .filter((milestone) => milestone.projectId === project.id)
+    .filter((milestone) => !milestone.completed)
+    .filter((milestone) => milestone.dueDate === data.today);
+  const nextStage = stages.find((stage) => stage.status !== "done" && stage.startDate && stage.startDate > data.today);
+
+  if (!stages.length) {
+    return `${projectName(project)} 目前還沒有建立工期排程。`;
+  }
+
+  const lines = [
+    `${projectName(project)}｜工期排程`,
+    "",
+    ...stages.slice(0, 20).map((stage, index) => `${index + 1}. ${formatScheduleStage(stage)}`),
+    moreLine(stages.length, 20),
+    "",
+    todayStages.length
+      ? `今天工種：${todayStages.map((stage) => stage.stageName).join("、")}`
+      : "今天沒有安排施工工種。",
+    ...todayStages.map((stage) => `- ${formatScheduleStage(stage)}`),
+    !todayStages.length && nextStage ? `下一個工種：${formatScheduleStage(nextStage)}` : "",
+    todayMilestones.length ? `今天關鍵節點：${todayMilestones.map((milestone) => milestone.title).join("、")}` : ""
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
+function summarizeTodaySchedule(data: AssistantData) {
+  const todayStages = data.stages
+    .filter((stage) => stage.status !== "done")
+    .filter((stage) => stageCoversDate(stage, data.today))
+    .sort((a, b) => {
+      const projectA = data.projects.find((project) => project.id === a.projectId);
+      const projectB = data.projects.find((project) => project.id === b.projectId);
+      return projectName(projectA ?? emptyProject()).localeCompare(projectName(projectB ?? emptyProject()), "zh-TW") || compareStages(a, b);
+    });
+
+  if (!todayStages.length) {
+    return "今天沒有安排施工工種。";
+  }
+
+  return [
+    `今天工期｜${todayStages.length} 個施工安排`,
+    ...todayStages.slice(0, 15).map((stage) => {
+      const project = data.projects.find((item) => item.id === stage.projectId);
+      return `- ${project ? projectName(project) : "未綁定案件"}：${formatScheduleStage(stage)}`;
+    }),
+    moreLine(todayStages.length, 15)
+  ].filter(Boolean).join("\n");
 }
 
 function summarizeForgottenItems(data: AssistantData, projectId = "") {
@@ -661,8 +728,41 @@ function formatStage(stage: StageSummary) {
   return dates ? `${stage.stageName}（${dates}）` : stage.stageName;
 }
 
+function compareStages(a: StageSummary, b: StageSummary) {
+  return a.sortOrder - b.sortOrder || a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate);
+}
+
+function stageCoversDate(stage: StageSummary, date: string) {
+  if (!stage.startDate && !stage.endDate) return false;
+  if (stage.startDate && stage.endDate) return stage.startDate <= date && date <= stage.endDate;
+  if (stage.startDate) return stage.startDate === date;
+  return stage.endDate === date;
+}
+
+function formatScheduleStage(stage: StageSummary) {
+  const dates = [stage.startDate, stage.endDate].filter(Boolean).map(formatDate).join(" - ");
+  const status = stageStatusLabel(stage.status);
+  return dates ? `${stage.stageName}｜${dates}｜${status}` : `${stage.stageName}｜${status}`;
+}
+
+function stageStatusLabel(status: string) {
+  if (status === "doing") return "施工中";
+  if (status === "done") return "已完成";
+  if (status === "delayed") return "逾期";
+  return "未開始";
+}
+
 function projectName(project: ProjectSummary) {
   return project.clientName ? `${project.name} / ${project.clientName}` : project.name;
+}
+
+function emptyProject(): ProjectSummary {
+  return {
+    id: "",
+    name: "",
+    clientName: "",
+    currentStage: ""
+  };
 }
 
 function projectSuffix(projectId: string, projects: ProjectSummary[]) {
@@ -673,6 +773,11 @@ function projectSuffix(projectId: string, projects: ProjectSummary[]) {
 function moreLine(total: number, shown: number) {
   const hidden = total - shown;
   return hidden > 0 ? `另有 ${hidden} 件未列出。` : "";
+}
+
+function isScheduleQuestion(value: string) {
+  const normalized = normalizeText(value);
+  return /(工期表|工期排程|施工排程|施工工期|工程排程|今天工期|今日工期|今天工種|今日工種|做什麼工種|做什麼工程|今天進場|今日進場|進場工種|進場工程)/.test(normalized);
 }
 
 function normalizeText(value: string) {
