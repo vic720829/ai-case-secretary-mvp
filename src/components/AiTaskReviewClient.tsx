@@ -60,8 +60,14 @@ export function AiTaskReviewClient() {
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const pendingTasks = useMemo(() => aiTasks.filter((task) => task.reviewStatus === "pending"), [aiTasks]);
-  const approvedTasks = useMemo(() => aiTasks.filter((task) => task.reviewStatus === "approved"), [aiTasks]);
-  const rejectedTasks = useMemo(() => aiTasks.filter((task) => task.reviewStatus === "rejected"), [aiTasks]);
+  const stalePendingTasks = useMemo(
+    () => pendingTasks.filter((task) => isOlderThanMinutes(task.createdAt, 30)),
+    [pendingTasks]
+  );
+  const maybeAnsweredTasks = useMemo(
+    () => pendingTasks.filter((task) => task.resolutionStatus === "maybe_answered"),
+    [pendingTasks]
+  );
   const reviewedTasks = useMemo(
     () =>
       aiTasks
@@ -148,8 +154,18 @@ export function AiTaskReviewClient() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard title="待審核" value={pendingTasks.length} tone="amber" icon={<Bot className="h-5 w-5" aria-hidden />} />
-        <MetricCard title="已核准" value={approvedTasks.length} tone="teal" icon={<CheckCircle2 className="h-5 w-5" aria-hidden />} />
-        <MetricCard title="已拒絕" value={rejectedTasks.length} tone="slate" icon={<XCircle className="h-5 w-5" aria-hidden />} />
+        <MetricCard
+          title="超過 30 分鐘未審核"
+          value={stalePendingTasks.length}
+          tone="red"
+          icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
+        />
+        <MetricCard
+          title="可能已回覆未確認"
+          value={maybeAnsweredTasks.length}
+          tone="teal"
+          icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
+        />
       </div>
 
       <section className="space-y-3">
@@ -403,11 +419,12 @@ function MetricCard({
   title: string;
   value: number;
   icon: ReactNode;
-  tone: "teal" | "amber" | "slate";
+  tone: "teal" | "amber" | "red" | "slate";
 }) {
   const toneClass = {
     teal: "bg-teal-50 text-teal-700 ring-teal-100",
     amber: "bg-amber-50 text-amber-700 ring-amber-100",
+    red: "bg-red-50 text-red-700 ring-red-100",
     slate: "bg-slate-50 text-slate-700 ring-slate-100"
   }[tone];
 
@@ -496,6 +513,12 @@ function normalizeDraftInput(input: AiTaskDraftUpdateInput): AiTaskDraftUpdateIn
     description: input.description.trim(),
     assignedTo: input.assignedTo.trim()
   };
+}
+
+function isOlderThanMinutes(date: Date | null, minutes: number) {
+  if (!date) return false;
+
+  return Date.now() - date.getTime() >= minutes * 60 * 1000;
 }
 
 function AttachmentPreview({ attachments }: { attachments: AiTask["attachments"] }) {
