@@ -9,7 +9,7 @@ import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui"
 import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { approveAiTask, listAiTasks, listProjects, rejectAiTask, updateAiTaskDraft } from "@/lib/firestore";
+import { approveAiTask, listAiTasksForReview, listProjects, rejectAiTask, updateAiTaskDraft } from "@/lib/firestore";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type {
   AiTask,
@@ -22,6 +22,8 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
+
+const reviewedAiTaskLimit = 80;
 
 export function AiTaskReviewClient() {
   const { user } = useAuth();
@@ -36,7 +38,7 @@ export function AiTaskReviewClient() {
     setError("");
 
     try {
-      const [nextProjects, nextAiTasks] = await Promise.all([listProjects(), listAiTasks()]);
+      const [nextProjects, nextAiTasks] = await Promise.all([listProjects(), listAiTasksForReview(reviewedAiTaskLimit)]);
       setProjects(nextProjects);
       setAiTasks(nextAiTasks);
     } catch (caught) {
@@ -143,6 +145,11 @@ export function AiTaskReviewClient() {
       />
 
       <ErrorMessage message={error} />
+      {!error && aiTasks.length ? (
+        <p className="text-sm text-slate-500">
+          待審核草稿會全部顯示；已核准與已拒絕紀錄只載入最近 {reviewedAiTaskLimit} 筆，避免審核頁變慢。
+        </p>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard title="待審核" value={pendingTasks.length} tone="amber" icon={<Bot className="h-5 w-5" aria-hidden />} />

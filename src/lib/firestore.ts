@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit as queryLimit,
   orderBy,
   query,
   runTransaction,
@@ -58,6 +59,8 @@ const REMINDER_LOGS_COLLECTION = "reminder_logs";
 const WEBHOOK_LOGS_COLLECTION = "webhook_logs";
 const USERS_COLLECTION = "users";
 const AUDIT_LOGS_COLLECTION = "audit_logs";
+const DEFAULT_RECENT_LIST_LIMIT = 150;
+const DEFAULT_REVIEWED_AI_TASK_LIMIT = 80;
 
 function requireDb() {
   if (!db) {
@@ -600,6 +603,15 @@ export async function listTasks() {
   return snapshot.docs.map(taskFromDoc);
 }
 
+export async function listRecentTasks(maxItems = DEFAULT_RECENT_LIST_LIMIT) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, TASKS_COLLECTION), orderBy("createdAt", "desc"), queryLimit(maxItems))
+  );
+
+  return snapshot.docs.map(taskFromDoc);
+}
+
 export async function listTasksByProject(projectId: string) {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -853,6 +865,15 @@ export async function listMessages() {
   return snapshot.docs.map(messageFromDoc);
 }
 
+export async function listRecentMessages(maxItems = DEFAULT_RECENT_LIST_LIMIT) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, MESSAGES_COLLECTION), orderBy("timestamp", "desc"), queryLimit(maxItems))
+  );
+
+  return snapshot.docs.map(messageFromDoc);
+}
+
 export async function listMessagesByProject(projectId: string) {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -871,6 +892,27 @@ export async function listAiTasks() {
   return snapshot.docs
     .map(aiTaskFromDoc)
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export async function listAiTasksForReview(maxReviewedItems = DEFAULT_REVIEWED_AI_TASK_LIMIT) {
+  const database = requireDb();
+  const [pendingSnapshot, recentSnapshot] = await Promise.all([
+    getDocs(query(collection(database, AI_TASKS_COLLECTION), where("reviewStatus", "==", "pending"))),
+    getDocs(
+      query(
+        collection(database, AI_TASKS_COLLECTION),
+        orderBy("createdAt", "desc"),
+        queryLimit(maxReviewedItems)
+      )
+    )
+  ]);
+  const taskById = new Map<string, AiTask>();
+
+  [...pendingSnapshot.docs, ...recentSnapshot.docs].forEach((snapshot) => {
+    taskById.set(snapshot.id, aiTaskFromDoc(snapshot));
+  });
+
+  return [...taskById.values()].sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
 export async function listAiTasksByProject(projectId: string) {

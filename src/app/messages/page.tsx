@@ -6,8 +6,10 @@ import { MessageTable } from "@/components/MessageTable";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "@/components/Ui";
 import { getReadableError } from "@/lib/errors";
-import { listLineGroups, listMessages, listProjects } from "@/lib/firestore";
+import { listLineGroups, listProjects, listRecentMessages } from "@/lib/firestore";
 import type { LineGroup, Message, Project } from "@/lib/types";
+
+const visibleMessageLimit = 150;
 
 export default function MessagesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -25,7 +27,7 @@ export default function MessagesPage() {
       const [nextProjects, nextLineGroups, nextMessages] = await Promise.all([
         listProjects(),
         listLineGroups(),
-        listMessages()
+        listRecentMessages(visibleMessageLimit)
       ]);
       setProjects(nextProjects);
       setLineGroups(nextLineGroups);
@@ -79,6 +81,11 @@ export default function MessagesPage() {
       />
 
       <ErrorMessage message={error} />
+      {!error && messages.length ? (
+        <p className="text-sm text-slate-500">
+          目前顯示最新 {visibleMessageLimit} 筆 LINE 對話；Webhook 收訊與 AI 草稿建立不受影響。
+        </p>
+      ) : null}
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">

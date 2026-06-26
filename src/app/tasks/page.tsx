@@ -6,8 +6,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
 import { getReadableError } from "@/lib/errors";
-import { deleteTask, listProjects, listTasks } from "@/lib/firestore";
+import { deleteTask, listProjects, listRecentTasks } from "@/lib/firestore";
 import type { Project, Task } from "@/lib/types";
+
+const visibleTaskLimit = 150;
 
 export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -19,7 +21,7 @@ export default function TasksPage() {
     setError("");
 
     try {
-      const [nextProjects, nextTasks] = await Promise.all([listProjects(), listTasks()]);
+      const [nextProjects, nextTasks] = await Promise.all([listProjects(), listRecentTasks(visibleTaskLimit)]);
       setProjects(nextProjects);
       setTasks(nextTasks);
     } catch (caught) {
@@ -62,6 +64,11 @@ export default function TasksPage() {
         }
       />
       <ErrorMessage message={error} />
+      {!error && tasks.length ? (
+        <p className="text-sm text-slate-500">
+          目前顯示最新 {visibleTaskLimit} 筆待辦；今日風險與提醒中心仍會完整檢查全部資料。
+        </p>
+      ) : null}
       {error ? (
         <EmptyState
           title="待辦讀取失敗"
