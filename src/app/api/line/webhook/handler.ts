@@ -41,6 +41,11 @@ type LineAttachmentForWrite = {
   createdAt: Timestamp | null;
 };
 
+type SavedLineFile = {
+  fileUrl: string;
+  errorMessage: string;
+};
+
 export async function handleLineWebhookEvents(events: LineWebhookEvent[]) {
   const db = getAdminDb();
   const results = await Promise.all(events.map((event) => handleAndLogLineEvent(db, event)));
@@ -162,7 +167,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     lastSenderName: senderName,
     incrementMessageCount: true
   });
-  const fileUrl = messageType === "text" ? "" : await saveLineMessageFile(event, groupId, messageType);
+  const savedFile =
+    messageType === "text" ? { fileUrl: "", errorMessage: "" } : await saveLineMessageFile(event, groupId, messageType);
+  const fileUrl = savedFile.fileUrl;
   const messageRef = await db.collection("messages").add({
     projectId,
     groupId,
@@ -173,6 +180,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     messageType,
     text: event.message.text ?? "",
     fileUrl,
+    ...(savedFile.errorMessage ? { fileSaveError: savedFile.errorMessage } : {}),
     timestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : FieldValue.serverTimestamp(),
     isProcessed: false,
     createdAt: FieldValue.serverTimestamp()
@@ -282,6 +290,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       messageText: event.message.text,
       assistantReply: didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
       assistantReplyError,
+      fileUrlSaved: Boolean(fileUrl),
+      fileSaveError: savedFile.errorMessage,
       aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
@@ -384,7 +394,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       messageText: nearbyText,
       aiDraftMerged: Boolean(pendingImageDraft),
-      attachmentCount: attachments.length
+      attachmentCount: attachments.length,
+      fileUrlSaved: Boolean(fileUrl),
+      fileSaveError: savedFile.errorMessage
     };
   }
 
@@ -1387,6 +1399,8 @@ async function writeWebhookLog(
       adminNotificationFailures: Number(result.adminNotificationFailures ?? 0),
       assistantReply: String(result.assistantReply ?? ""),
       assistantReplyError: String(result.assistantReplyError ?? ""),
+      fileUrlSaved: Boolean(result.fileUrlSaved),
+      fileSaveError: String(result.fileSaveError ?? ""),
       reason: String(result.reason ?? result.aiSkippedReason ?? ""),
       errorMessage: String(result.errorMessage ?? ""),
       createdAt: FieldValue.serverTimestamp()
@@ -1548,31 +1562,89 @@ function buildLineAdminHelpText() {
     .join("\n");
 }
 
-async function saveLineMessageFile(event: LineWebhookEvent, groupId: string, messageType: "image" | "audio") {
-  if (!event.message?.id) return "";
+async function saveLineMessageFile(
+  event: LineWebhookEvent,
+  groupId: string,
+  messageType: "image" | "audio"
+): Promise<SavedLineFile> {
+  if (!event.message?.id) return { fileUrl: "", errorMessage: "Missing LINE message id" };
 
   try {
     const content = await downloadLineMessageContent(event.message.id);
-    if (!content) return "";
+    if (!content) return { fileUrl: "", errorMessage: "LINE message content download failed" };
 
     const bucket = getAdminStorageBucket();
     const extension = getFileExtension(content.contentType, messageType);
     const token = randomUUID();
     const storagePath = `line-messages/${sanitizePathSegment(groupId || "unknown")}/${event.message.id}.${extension}`;
 
-    await bucket.file(storagePath).save(content.buffer, {
-      metadata: {
-        contentType: content.contentType,
+    const saveToStorage = async () => {
+      await bucket.file(storagePath).save(content.buffer, {
         metadata: {
-          firebaseStorageDownloadTokens: token
+          contentType: content.contentType,
+          metadata: {
+            firebaseStorageDownloadTokens: token
+          }
         }
-      }
-    });
+      });
+    };
 
-    return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
-  } catch {
-    return "";
+    const storageError = await retryLineFileSave(saveToStorage);
+    const storageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(
+      storagePath
+    )}?alt=media&token=${token}`;
+
+    if (!storageError) return { fileUrl: storageUrl, errorMessage: "" };
+
+    if (messageType === "image") {
+      return {
+        fileUrl: buildLineMessageContentProxyUrl(event.message.id),
+        errorMessage: `Firebase Storage save failed, using LINE proxy: ${storageError}`
+      };
+    }
+
+    return { fileUrl: "", errorMessage: `Firebase Storage save failed: ${storageError}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown LINE file save error";
+
+    if (messageType === "image") {
+      return {
+        fileUrl: buildLineMessageContentProxyUrl(event.message.id),
+        errorMessage: `LINE file save fallback used: ${message}`
+      };
+    }
+
+    return { fileUrl: "", errorMessage: message };
   }
+}
+
+async function retryLineFileSave(save: () => Promise<void>) {
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await save();
+      return "";
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Unknown Firebase Storage save error";
+      await delay(300 * attempt);
+    }
+  }
+
+  return lastError;
+}
+
+function buildLineMessageContentProxyUrl(messageId: string) {
+  const path = `/api/line/message-content/${encodeURIComponent(messageId)}`;
+  const siteUrl = getSiteUrl();
+
+  return siteUrl ? `${siteUrl}${path}` : path;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function getFileExtension(contentType: string, messageType: "image" | "audio") {
