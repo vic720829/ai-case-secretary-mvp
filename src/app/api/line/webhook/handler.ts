@@ -227,7 +227,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           createdDraftIds
         }).catch(() => [])
       : [];
-    const adminNotification = suggestions.length
+    const shouldNotifyImageDraft = suggestions.length && !pendingImageDraft;
+    const adminNotification = shouldNotifyImageDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
           senderName,
@@ -287,13 +288,14 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
   if (messageType === "image" && fileUrl) {
     const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const currentTimestamp = event.timestamp ? Timestamp.fromMillis(event.timestamp) : null;
     const nearbyText = shouldCreateAiDrafts
       ? await loadRecentTextForImage(db, {
           groupId,
           projectId,
           senderId: event.source?.userId ?? "",
           currentMessageId: messageRef.id,
-          currentTimestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null
+          currentTimestamp
         })
       : "";
     const attachment = buildLineAttachment({
@@ -303,8 +305,27 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderName,
       senderRole,
       text: nearbyText,
-      createdAt: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null
+      createdAt: currentTimestamp
     });
+    const recentAttachments = shouldCreateAiDrafts
+      ? await loadRecentImageAttachments(db, {
+          groupId,
+          projectId,
+          senderId: event.source?.userId ?? "",
+          currentMessageId: messageRef.id,
+          currentTimestamp,
+          windowMinutes: 5
+        })
+      : [];
+    const attachments = uniqueLineAttachments([...recentAttachments, attachment]);
+    const pendingImageDraft = shouldCreateAiDrafts
+      ? await findPendingImageDraftForAttachments(db, {
+          projectId,
+          groupId,
+          senderId: event.source?.userId ?? "",
+          attachmentMessageIds: attachments.map((item) => item.messageId)
+        })
+      : null;
     const baseSuggestions =
       shouldCreateAiDrafts && nearbyText
         ? await analyzeMessageForAiTasks(nearbyText, senderRole, { recentMessages: [] })
@@ -312,7 +333,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     const suggestions = shouldCreateAiDrafts
       ? baseSuggestions.length
         ? baseSuggestions
-        : [buildImageReviewSuggestion(nearbyText)]
+        : [buildImageReviewSuggestion(nearbyText, attachments.length)]
       : [];
     const createdDraftIds = await createAiTaskDrafts(db, {
       projectId,
@@ -322,9 +343,11 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderName,
       senderRole,
       suggestions,
-      attachments: [attachment]
+      attachments,
+      reusableDraftId: pendingImageDraft?.id ?? ""
     });
-    const adminNotification = suggestions.length
+    const shouldNotifyImageDraft = suggestions.length > 0 && !pendingImageDraft;
+    const adminNotification = shouldNotifyImageDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
           senderName,
@@ -333,7 +356,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           suggestions,
           createdDraftIds,
           relationHints: [],
-          attachmentCount: 1
+          attachmentCount: attachments.length
         })
       : { sent: 0, failed: 0, groups: 0 };
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
@@ -360,7 +383,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderName,
       senderRole,
       messageText: nearbyText,
-      attachmentCount: 1
+      aiDraftMerged: Boolean(pendingImageDraft),
+      attachmentCount: attachments.length
     };
   }
 
@@ -850,7 +874,7 @@ async function findPendingImageDraftForAttachments(
 
   const snapshot = await db.collection("ai_tasks").where("projectId", "==", input.projectId).get();
   const attachmentIds = new Set(input.attachmentMessageIds);
-  const cutoff = Date.now() - 30 * 60 * 1000;
+  const cutoff = Date.now() - 5 * 60 * 1000;
 
   return (
     snapshot.docs
@@ -858,7 +882,6 @@ async function findPendingImageDraftForAttachments(
       .filter((item) => item.data.sourceGroupId === input.groupId)
       .filter((item) => !input.senderId || item.data.sourceSenderId === input.senderId)
       .filter((item) => item.data.reviewStatus === "pending")
-      .filter((item) => String(item.data.title ?? "").includes("圖片待確認"))
       .filter((item) => timestampToMillis(item.data.createdAt) >= cutoff)
       .find((item) => {
         const rawIds = Array.isArray(item.data.attachmentMessageIds) ? item.data.attachmentMessageIds : [];
@@ -875,10 +898,11 @@ async function loadRecentImageAttachments(
     senderId: string;
     currentMessageId: string;
     currentTimestamp: Timestamp | null;
+    windowMinutes?: number;
   }
 ) {
   const currentMillis = input.currentTimestamp?.toMillis() ?? Date.now();
-  const cutoff = currentMillis - 10 * 60 * 1000;
+  const cutoff = currentMillis - (input.windowMinutes ?? 10) * 60 * 1000;
   const snapshot = await db.collection("messages").where("groupId", "==", input.groupId).get();
 
   return snapshot.docs
@@ -950,14 +974,25 @@ function buildLineAttachment(input: LineAttachmentForWrite): LineAttachmentForWr
   };
 }
 
-function buildImageReviewSuggestion(text: string): AiTaskSuggestion {
+function uniqueLineAttachments(attachments: LineAttachmentForWrite[]) {
+  const seen = new Set<string>();
+
+  return attachments.filter((attachment) => {
+    if (!attachment.messageId || seen.has(attachment.messageId)) return false;
+    seen.add(attachment.messageId);
+    return true;
+  });
+}
+
+function buildImageReviewSuggestion(text: string, attachmentCount = 1): AiTaskSuggestion {
   const trimmedText = text.trim();
+  const imageLabel = attachmentCount > 1 ? `圖片待確認（共 ${attachmentCount} 張）` : "圖片待確認";
 
   return {
-    title: trimmedText ? `圖片待確認：${shortText(trimmedText, 22)}` : "圖片待確認",
+    title: trimmedText ? `${imageLabel}: ${shortText(trimmedText, 22)}` : imageLabel,
     description: trimmedText
-      ? `客戶傳送圖片，並提供相關文字：\n${trimmedText}\n\n請確認是否需要建立修補、變更或追蹤待辦。`
-      : "客戶傳送圖片，但目前沒有前後文字說明。請人工確認圖片用途，判斷是否需要建立修補、變更或追蹤待辦。",
+      ? `客戶傳送 ${attachmentCount} 張圖片，並有相關文字說明：\n${trimmedText}\n\n請確認是否為缺失、修補、設計修改或需要追蹤的事項。`
+      : `客戶傳送 ${attachmentCount} 張圖片，目前沒有前後文字說明。請人工確認圖片用途，判斷是否需要建立修補、變更或追蹤待辦。`,
     taskType: "followup",
     dueDate: "",
     assignedTo: ""
