@@ -11,6 +11,7 @@ import {
 } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
+import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import {
   downloadLineMessageContent,
   getEventGroupId,
@@ -66,6 +67,44 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   }
 
   if (event.type !== "message" || !event.message) {
+    const groupId = getEventGroupId(event);
+    const lineGroupSnapshot = groupId
+      ? await db.collection("line_groups").where("groupId", "==", groupId).limit(1).get()
+      : null;
+    const lineGroupDoc = lineGroupSnapshot && !lineGroupSnapshot.empty ? lineGroupSnapshot.docs[0] : null;
+    const lineGroup = lineGroupDoc ? lineGroupDoc.data() : null;
+    const isAdminGroup = lineGroup?.groupType === "admin";
+    const canAssistantReply = isAdminGroup && lineGroup?.allowAssistantReplies !== false;
+
+    await syncLineGroupName(lineGroupDoc, event);
+
+    if (event.type === "join" && canAssistantReply) {
+      await syncLinePendingGroup(db, lineGroupDoc, event);
+      const replyResult = await replyLineText(event.replyToken, buildLineAdminWelcomeText());
+
+      return {
+        ok: true,
+        reason: "Admin LINE group welcome sent",
+        groupId,
+        groupName: String(lineGroup?.groupName ?? ""),
+        assistantReply: "admin_welcome",
+        assistantReplyError: replyResult.ok ? "" : replyResult.errorMessage
+      };
+    }
+
+    if (lineGroupDoc) {
+      await syncLinePendingGroup(db, lineGroupDoc, event);
+
+      return {
+        ok: true,
+        reason: isAdminGroup ? "Known admin LINE group event" : "Known project LINE group event",
+        groupId,
+        groupName: String(lineGroup?.groupName ?? ""),
+        assistantReply: "",
+        assistantReplyError: ""
+      };
+    }
+
     const pendingGroup = await syncLinePendingGroup(db, null, event);
     const adminNotification = pendingGroup
       ? await notifyAdminGroupsAboutPendingLineGroup(db, {

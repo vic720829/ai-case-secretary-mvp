@@ -20,6 +20,7 @@ import {
 } from "@/lib/firestore";
 import type { LineGroup, LineGroupInput, LinePendingGroup, Message, Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useAuth } from "./AuthProvider";
 
 type UnboundGroup = {
   groupId: string;
@@ -31,6 +32,7 @@ type UnboundGroup = {
 };
 
 export function LineGroupsClient() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [lineGroups, setLineGroups] = useState<LineGroup[]>([]);
   const [pendingGroups, setPendingGroups] = useState<LinePendingGroup[]>([]);
@@ -138,6 +140,7 @@ export function LineGroupsClient() {
   }
 
   async function handleCreateAdminGroup(value: LineGroupInput) {
+    setActionError("");
     assertGroupIdIsNew(value.groupId);
     await createLineGroup({
       ...value,
@@ -145,6 +148,15 @@ export function LineGroupsClient() {
       groupType: "admin",
       allowAssistantReplies: true
     });
+    try {
+      await sendAdminWelcomeMessage(value.groupId.trim(), user);
+    } catch (caught) {
+      setActionError(
+        caught instanceof Error
+          ? `已建立公司後台群，但自動說明發送失敗：${caught.message}`
+          : "已建立公司後台群，但自動說明發送失敗。"
+      );
+    }
     setSelectedAdminGroupId("");
     setSelectedAdminGroupName("");
     await loadData();
@@ -505,3 +517,25 @@ function UnboundGroupsSection({
 
 const inputClassName =
   "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
+
+async function sendAdminWelcomeMessage(
+  groupId: string,
+  user: { getIdToken: () => Promise<string> } | null
+) {
+  if (!user) throw new Error("請先登入後再試。");
+
+  const token = await user.getIdToken();
+  const response = await fetch("/api/line/admin-welcome", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ groupId })
+  });
+  const result = (await response.json()) as { ok?: boolean; error?: string };
+
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || "發送公司後台群說明失敗。");
+  }
+}
