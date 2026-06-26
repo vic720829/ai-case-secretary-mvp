@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebaseAdmin";
+import { hasComplaintOrRepairRisk } from "@/lib/riskRules";
 
 type ProjectSummary = {
   id: string;
@@ -12,9 +13,13 @@ type TaskSummary = {
   id: string;
   projectId: string;
   title: string;
+  description: string;
+  assignee: string;
   status: string;
   dueDate: string;
+  source: string;
   riskLevel: string;
+  attachmentCount: number;
 };
 
 type MilestoneSummary = {
@@ -40,10 +45,13 @@ type AiTaskSummary = {
   id: string;
   projectId: string;
   title: string;
+  description: string;
   taskType: string;
   status: string;
+  assignedTo: string;
   dueDate: string;
   reviewStatus: string;
+  attachmentCount: number;
 };
 
 type AssistantData = {
@@ -91,6 +99,14 @@ const conversationalQuestionKeywords = [
   "風險",
   "逾期",
   "高風險",
+  "缺失",
+  "瑕疵",
+  "修補",
+  "修繕",
+  "客訴",
+  "品質不好",
+  "設計修改",
+  "變更",
   "收款",
   "款項",
   "錢",
@@ -144,9 +160,12 @@ export function shouldAnswerLineQuestion(text: string) {
 
 export async function answerQuestionFromFirestore(question: string, contextProjectId = "") {
   const data = await loadAssistantData();
+  const complaintQuestion = isComplaintOrRepairQuestion(question);
   const scheduleQuestion = isScheduleQuestion(question);
   const understood = scheduleQuestion
     ? ({ intent: "schedule", projectName: "", confidence: 1 } satisfies AssistantIntentResult)
+    : complaintQuestion
+      ? ({ intent: "risk", projectName: "", confidence: 1 } satisfies AssistantIntentResult)
     : await understandAssistantIntent(question, data.projects);
   const intent: AssistantIntent = understood.intent;
   const matchedProject =
@@ -155,6 +174,10 @@ export async function answerQuestionFromFirestore(question: string, contextProje
 
   if (intent === "schedule") {
     return matchedProject ? summarizeProjectSchedule(data, matchedProject) : summarizeTodaySchedule(data);
+  }
+
+  if (complaintQuestion) {
+    return summarizeComplaintOrRepairItems(data, question, matchedProject?.id ?? contextProjectId);
   }
 
   if (intent === "today") {
@@ -318,9 +341,13 @@ async function loadAssistantData(): Promise<AssistantData> {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
         title: String(data.title ?? "未命名待辦"),
+        description: String(data.description ?? ""),
+        assignee: String(data.assignee ?? ""),
         status: String(data.status ?? "todo"),
         dueDate: String(data.dueDate ?? ""),
-        riskLevel: String(data.riskLevel ?? "low")
+        source: String(data.source ?? "manual"),
+        riskLevel: String(data.riskLevel ?? "low"),
+        attachmentCount: Number(data.attachmentCount ?? 0)
       };
     }),
     milestones: milestoneSnapshot.docs.map((doc) => {
@@ -352,10 +379,13 @@ async function loadAssistantData(): Promise<AssistantData> {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
         title: String(data.title ?? "未命名 AI 待辦"),
+        description: String(data.description ?? ""),
         taskType: String(data.taskType ?? "followup"),
         status: String(data.status ?? "todo"),
+        assignedTo: String(data.assignedTo ?? ""),
         dueDate: timestampToTaipeiDate(data.dueDate),
-        reviewStatus: String(data.reviewStatus ?? "pending")
+        reviewStatus: String(data.reviewStatus ?? "pending"),
+        attachmentCount: Number(data.attachmentCount ?? 0)
       };
     })
   };
@@ -467,6 +497,49 @@ function summarizeRiskProjects(data: AssistantData, projectId = "") {
     ...riskRows.slice(0, 8).map((row) => `- ${projectName(row.project)}：${row.reasons.join("、")}`),
     moreLine(riskRows.length, 8)
   ].filter(Boolean).join("\n");
+}
+
+function summarizeComplaintOrRepairItems(data: AssistantData, question: string, projectId = "") {
+  const includeDesignChanges = isDesignChangeQuestion(question);
+  const formalTasks = data.tasks
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => matchesComplaintOrRepairWork(task.title, task.description, includeDesignChanges))
+    .sort(compareWorkItemsByDate);
+  const pendingDrafts = data.aiTasks
+    .filter((task) => task.reviewStatus === "pending")
+    .filter((task) => isActiveStatus(task.status))
+    .filter((task) => !projectId || task.projectId === projectId)
+    .filter((task) => matchesComplaintOrRepairWork(task.title, task.description, includeDesignChanges, task.taskType))
+    .sort(compareWorkItemsByDate);
+  const total = formalTasks.length + pendingDrafts.length;
+
+  if (!total) {
+    return projectId
+      ? "這個案件目前沒有查到缺失、修補、客訴或設計修改待處理事項。"
+      : "目前沒有查到缺失、修補、客訴或設計修改待處理事項。";
+  }
+
+  const lines = [`目前有 ${total} 件缺失 / 修補 / 客訴相關事項：`];
+
+  if (formalTasks.length) {
+    lines.push("", `正式待辦 ${formalTasks.length} 件`);
+    formalTasks.slice(0, 8).forEach((task, index) => {
+      lines.push(...formatFormalTaskDetail(index + 1, task, data.projects));
+    });
+  }
+
+  if (pendingDrafts.length) {
+    lines.push("", `待審草稿 ${pendingDrafts.length} 件`);
+    pendingDrafts.slice(0, 6).forEach((task, index) => {
+      lines.push(...formatPendingDraftDetail(index + 1, task, data.projects));
+    });
+  }
+
+  const hidden = Math.max(0, formalTasks.length - 8) + Math.max(0, pendingDrafts.length - 6);
+  if (hidden > 0) lines.push(`另有 ${hidden} 件未列出，請到待辦列表或待辦審核查看。`);
+
+  return lines.filter(Boolean).join("\n");
 }
 
 function summarizeAiTaskType(data: AssistantData, taskType: string, label: string, projectId = "") {
@@ -775,9 +848,117 @@ function moreLine(total: number, shown: number) {
   return hidden > 0 ? `另有 ${hidden} 件未列出。` : "";
 }
 
+function formatFormalTaskDetail(index: number, task: TaskSummary, projects: ProjectSummary[]) {
+  const lines = [
+    `${index}. ${projectLabel(task.projectId, projects)}`,
+    `   待辦：${task.title}`,
+    task.description ? `   內容：${shortText(cleanAssistantDescription(task.description), 70)}` : "",
+    `   狀態：${taskStatusLabel(task.status)}`,
+    `   負責人：${task.assignee || "未指派"}`,
+    `   截止日：${task.dueDate ? formatDate(task.dueDate) : "未設定"}`,
+    `   來源：${taskSourceLabel(task.source)}`,
+    task.attachmentCount > 0 ? `   附件：${task.attachmentCount} 張照片` : ""
+  ];
+
+  return lines.filter(Boolean);
+}
+
+function formatPendingDraftDetail(index: number, task: AiTaskSummary, projects: ProjectSummary[]) {
+  const lines = [
+    `${index}. ${projectLabel(task.projectId, projects)}`,
+    `   草稿：${task.title}`,
+    task.description ? `   內容：${shortText(cleanAssistantDescription(task.description), 70)}` : "",
+    `   類型：${aiTaskTypeLabel(task.taskType)}`,
+    `   狀態：${reviewStatusLabel(task.reviewStatus)}`,
+    `   負責人：${task.assignedTo || "未指派"}`,
+    `   截止日：${task.dueDate ? formatDate(task.dueDate) : "未設定"}`,
+    task.attachmentCount > 0 ? `   附件：${task.attachmentCount} 張照片` : ""
+  ];
+
+  return lines.filter(Boolean);
+}
+
+function matchesComplaintOrRepairWork(
+  title: string,
+  description: string,
+  includeDesignChanges: boolean,
+  taskType = ""
+) {
+  const searchableText = `${title}\n${cleanAssistantDescription(description)}`;
+
+  if (hasComplaintOrRepairRisk(searchableText)) return true;
+  if (!includeDesignChanges) return false;
+
+  return taskType === "change" || /(設計修改|設計變更|修改|變更|改色|改顏色|改尺寸|新增|取消|不做)/.test(searchableText);
+}
+
+function cleanAssistantDescription(value: string) {
+  return value
+    .replace(/請確認是否為缺失、修補、設計修改或需要追蹤的事項。/g, "")
+    .replace(/請人工確認圖片用途，判斷是否需要建立修補、變更或追蹤待辦。/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compareWorkItemsByDate(a: { dueDate: string; title: string }, b: { dueDate: string; title: string }) {
+  return (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99") || a.title.localeCompare(b.title, "zh-TW");
+}
+
+function projectLabel(projectId: string, projects: ProjectSummary[]) {
+  const project = projects.find((item) => item.id === projectId);
+  return project ? projectName(project) : "未綁定案件";
+}
+
+function taskStatusLabel(status: string) {
+  if (status === "doing") return "進行中";
+  if (status === "done") return "完成";
+  return "待辦";
+}
+
+function taskSourceLabel(source: string) {
+  if (source === "line") return "LINE";
+  if (source === "ai") return "AI";
+  if (source === "voice") return "語音";
+  return "手動";
+}
+
+function aiTaskTypeLabel(type: string) {
+  if (type === "promise") return "承諾";
+  if (type === "change") return "變更";
+  if (type === "payment") return "收款";
+  if (type === "invoice") return "發票";
+  return "追蹤";
+}
+
+function reviewStatusLabel(status: string) {
+  if (status === "approved") return "已核准";
+  if (status === "rejected") return "已拒絕";
+  return "待審核";
+}
+
+function shortText(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
+}
+
 function isScheduleQuestion(value: string) {
   const normalized = normalizeText(value);
   return /(工期表|工期排程|施工排程|施工工期|工程排程|今天工期|今日工期|今天工種|今日工種|做什麼工種|做什麼工程|今天進場|今日進場|進場工種|進場工程)/.test(normalized);
+}
+
+function isComplaintOrRepairQuestion(value: string) {
+  const normalized = normalizeText(value);
+  return (
+    hasComplaintOrRepairRisk(value) ||
+    /(缺失|瑕疵|缺點|修補|修繕|補漆|補土|補強|漏水|滲水|裂縫|刮傷|破損|脫落|品質|客訴|抱怨|不滿意|設計修改|設計變更)/.test(
+      normalized
+    )
+  );
+}
+
+function isDesignChangeQuestion(value: string) {
+  const normalized = normalizeText(value);
+  return /(設計修改|設計變更|修改|變更|改色|改顏色|改尺寸|新增|取消|不做)/.test(normalized);
 }
 
 function normalizeText(value: string) {
