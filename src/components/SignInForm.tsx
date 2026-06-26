@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 
 export function SignInForm() {
-  const { signIn } = useAuth();
+  const { authError, signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -60,9 +60,9 @@ export function SignInForm() {
             />
           </label>
 
-          {error ? (
+          {error || authError ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
+              {error || authError}
             </div>
           ) : null}
 

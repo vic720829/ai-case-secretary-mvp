@@ -4,6 +4,7 @@ import { PencilLine, PlusCircle, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
+import { useAuth } from "@/components/AuthProvider";
 import { formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { listAuditLogs } from "@/lib/firestore";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 type ActionFilter = "all" | AuditAction;
 
 export function AuditLogsClient() {
+  const { profile } = useAuth();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -20,6 +22,11 @@ export function AuditLogsClient() {
 
   useEffect(() => {
     async function loadLogs() {
+      if (profile?.role !== "owner") {
+        setLoading(false);
+        return;
+      }
+
       setError("");
 
       try {
@@ -32,7 +39,7 @@ export function AuditLogsClient() {
     }
 
     void loadLogs();
-  }, []);
+  }, [profile?.role]);
 
   const filteredLogs = useMemo(
     () => logs.filter((log) => actionFilter === "all" || log.action === actionFilter),
@@ -44,6 +51,10 @@ export function AuditLogsClient() {
 
   if (loading) {
     return <LoadingState label="正在讀取操作紀錄" />;
+  }
+
+  if (profile?.role !== "owner") {
+    return <EmptyState title="沒有權限" description="只有擁有者可以查看操作紀錄。" />;
   }
 
   return (

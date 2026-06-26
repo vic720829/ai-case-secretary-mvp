@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit3, Save, ShieldCheck, UserPlus, UsersRound, X } from "lucide-react";
+import { Edit3, KeyRound, Save, ShieldCheck, UserPlus, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
@@ -30,6 +30,9 @@ export function UsersClient() {
   const [draft, setDraft] = useState<NewUserInput>(emptyUser);
   const [editingId, setEditingId] = useState("");
   const [editValue, setEditValue] = useState<UserProfileInput | null>(null);
+  const [resettingId, setResettingId] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -60,6 +63,7 @@ export function UsersClient() {
     event.preventDefault();
     setSubmitting(true);
     setError("");
+    setSuccessMessage("");
 
     try {
       if (!user) throw new Error("請先登入。");
@@ -81,6 +85,7 @@ export function UsersClient() {
       }
 
       setDraft(emptyUser);
+      setSuccessMessage("員工帳號已建立。");
       await loadUsers();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : getReadableError(caught));
@@ -93,6 +98,7 @@ export function UsersClient() {
     if (!editValue) return;
     setSubmitting(true);
     setError("");
+    setSuccessMessage("");
 
     try {
       const value = normalizeUserProfile(editValue);
@@ -129,6 +135,45 @@ export function UsersClient() {
 
       setEditingId("");
       setEditValue(null);
+      setSuccessMessage("員工資料已更新。");
+      await loadUsers();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : getReadableError(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleResetPassword(profile: UserProfile) {
+    setSubmitting(true);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      if (!user) throw new Error("請先登入。");
+      if (resetPassword.length < 6) throw new Error("新臨時密碼至少需要 6 碼。");
+
+      const token = await user.getIdToken();
+      const response = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id: profile.id,
+          password: resetPassword
+        })
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string };
+
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.error || "重設密碼失敗。");
+      }
+
+      setResettingId("");
+      setResetPassword("");
+      setSuccessMessage(`已重設 ${profile.displayName || profile.email} 的密碼。`);
       await loadUsers();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : getReadableError(caught));
@@ -139,6 +184,8 @@ export function UsersClient() {
 
   function beginEdit(profile: UserProfile) {
     setEditingId(profile.id);
+    setResettingId("");
+    setResetPassword("");
     setEditValue({
       email: profile.email,
       displayName: profile.displayName,
@@ -159,6 +206,11 @@ export function UsersClient() {
       />
 
       <ErrorMessage message={error} />
+      {successMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="員工總數" value={users.length} tone="slate" />
@@ -248,6 +300,7 @@ export function UsersClient() {
               <tbody className="divide-y divide-stone-100 bg-white">
                 {users.map((profile) => {
                   const isEditing = editingId === profile.id && editValue;
+                  const isResettingPassword = resettingId === profile.id;
                   const value = isEditing ? editValue : profile;
 
                   return (
@@ -325,10 +378,62 @@ export function UsersClient() {
                           </div>
                         ) : (
                           <div className="flex justify-end">
-                            <Button type="button" variant="secondary" onClick={() => beginEdit(profile)}>
-                              <Edit3 className="h-4 w-4" aria-hidden />
-                              編輯
-                            </Button>
+                            {isResettingPassword ? (
+                              <div className="w-72 max-w-full space-y-2 text-left">
+                                <input
+                                  className={inputClassName}
+                                  type="password"
+                                  minLength={6}
+                                  autoComplete="new-password"
+                                  placeholder="輸入新臨時密碼"
+                                  value={resetPassword}
+                                  onChange={(event) => setResetPassword(event.target.value)}
+                                />
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    disabled={submitting}
+                                    onClick={() => void handleResetPassword(profile)}
+                                  >
+                                    <Save className="h-4 w-4" aria-hidden />
+                                    儲存
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      setResettingId("");
+                                      setResetPassword("");
+                                    }}
+                                  >
+                                    <X className="h-4 w-4" aria-hidden />
+                                    取消
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    setEditingId("");
+                                    setEditValue(null);
+                                    setResettingId(profile.id);
+                                    setResetPassword("");
+                                    setError("");
+                                    setSuccessMessage("");
+                                  }}
+                                >
+                                  <KeyRound className="h-4 w-4" aria-hidden />
+                                  重設密碼
+                                </Button>
+                                <Button type="button" variant="secondary" onClick={() => beginEdit(profile)}>
+                                  <Edit3 className="h-4 w-4" aria-hidden />
+                                  編輯
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>

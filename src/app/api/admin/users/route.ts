@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
 import type { UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -19,6 +19,11 @@ type UpdateUserBody = {
   displayName?: string;
   role?: string;
   active?: boolean;
+};
+
+type ResetPasswordBody = {
+  id?: string;
+  password?: string;
 };
 
 type FirebaseLookupResponse = {
@@ -132,6 +137,48 @@ export async function PATCH(request: Request) {
         displayName,
         role,
         active,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: caller.uid
+      },
+      { merge: true }
+    );
+
+    return NextResponse.json({ ok: true, id });
+  } catch (caught) {
+    return NextResponse.json({ ok: false, error: getAdminApiError(caught) }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const caller = await verifyAdminCaller(request);
+    if (!caller.ok) {
+      return NextResponse.json({ ok: false, error: caller.error }, { status: caller.status });
+    }
+
+    const body = (await request.json()) as ResetPasswordBody;
+    const id = String(body.id ?? "").trim();
+    const password = String(body.password ?? "");
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "找不到要重設密碼的員工。" }, { status: 400 });
+    }
+
+    if (!password || password.length < 6) {
+      return NextResponse.json({ ok: false, error: "新密碼至少需要 6 碼。" }, { status: 400 });
+    }
+
+    const userSnapshot = await getAdminDb().collection("users").doc(id).get();
+
+    if (!userSnapshot.exists) {
+      return NextResponse.json({ ok: false, error: "找不到員工資料。" }, { status: 404 });
+    }
+
+    await getAdminAuth().updateUser(id, { password });
+    await getAdminDb().collection("users").doc(id).set(
+      {
+        passwordUpdatedAt: FieldValue.serverTimestamp(),
+        passwordUpdatedBy: caller.uid,
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: caller.uid
       },

@@ -6,11 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
-import { formatDate, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
+import { formatDate, formatDateTime, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
+import { listAiTasks, listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
-import type { Milestone, Project, ProjectStage, Task } from "@/lib/types";
+import type { AiTask, Milestone, Project, ProjectStage, Task } from "@/lib/types";
 
 type HighRiskProject = {
   project: Project;
@@ -22,6 +22,7 @@ type HighRiskProject = {
 export default function RiskCenterPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,14 +33,16 @@ export default function RiskCenterPage() {
       setError("");
 
       try {
-        const [nextProjects, nextTasks, nextStages, nextMilestones] = await Promise.all([
+        const [nextProjects, nextTasks, nextAiTasks, nextStages, nextMilestones] = await Promise.all([
           listProjects(),
           listTasks(),
+          listAiTasks(),
           listProjectStages(),
           listMilestones()
         ]);
         setProjects(nextProjects);
         setTasks(nextTasks);
+        setAiTasks(nextAiTasks);
         setStages(nextStages);
         setMilestones(nextMilestones);
       } catch (caught) {
@@ -65,14 +68,25 @@ export default function RiskCenterPage() {
     () => activeTasks.filter((task) => isTaskDueToday(task.dueDate, task.status)),
     [activeTasks]
   );
-  const aiSourceTasks = useMemo(() => activeTasks.filter((task) => task.source === "ai"), [activeTasks]);
-  const highRiskAiTasks = useMemo(
-    () => aiSourceTasks.filter((task) => task.riskLevel === "high"),
-    [aiSourceTasks]
+  const pendingAiDrafts = useMemo(() => aiTasks.filter((task) => task.reviewStatus === "pending"), [aiTasks]);
+  const staleAiDrafts = useMemo(
+    () => pendingAiDrafts.filter((task) => isOlderThanMinutes(task.createdAt, 30)),
+    [pendingAiDrafts]
   );
-  const overdueAiTasks = useMemo(
-    () => aiSourceTasks.filter((task) => isTaskOverdue(task.dueDate, task.status)),
-    [aiSourceTasks]
+  const maybeAnsweredAiDrafts = useMemo(
+    () => pendingAiDrafts.filter((task) => task.resolutionStatus === "maybe_answered"),
+    [pendingAiDrafts]
+  );
+  const highRiskPendingAiDrafts = useMemo(
+    () => pendingAiDrafts.filter(isHighRiskAiDraft),
+    [pendingAiDrafts]
+  );
+  const aiPendingRisks = useMemo(
+    () =>
+      uniqueAiTasks([...staleAiDrafts, ...highRiskPendingAiDrafts, ...maybeAnsweredAiDrafts]).sort(
+        compareAiDraftRisk
+      ),
+    [highRiskPendingAiDrafts, maybeAnsweredAiDrafts, staleAiDrafts]
   );
   const milestoneWarnings = useMemo(
     () =>
@@ -133,30 +147,35 @@ export default function RiskCenterPage() {
             title="高風險案件"
             value={highRiskProjects.length}
             tone="red"
+            href="#high-risk-projects"
             icon={<BriefcaseBusiness className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
             title="高風險待辦"
             value={highRiskTasks.length}
             tone="red"
+            href="#high-risk-tasks"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
             title="已逾期待辦"
             value={overdueTasks.length}
             tone="amber"
+            href="#overdue-tasks"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
             title="今天到期待辦"
             value={dueTodayTasks.length}
             tone="teal"
+            href="#due-today-tasks"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
             title="關鍵點預警"
             value={milestoneWarnings.length}
             tone="amber"
+            href="#milestone-warnings"
             icon={<Flag className="h-5 w-5" aria-hidden />}
           />
         </div>
@@ -165,21 +184,24 @@ export default function RiskCenterPage() {
       {!error ? (
         <div className="grid gap-4 md:grid-cols-3">
           <RiskStatCard
-            title="AI 來源待辦"
-            value={aiSourceTasks.length}
-            tone="teal"
+            title="待審草稿"
+            value={pendingAiDrafts.length}
+            tone="amber"
+            href="/ai-tasks"
             icon={<Bot className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 來源高風險待辦"
-            value={highRiskAiTasks.length}
+            title="超過 30 分鐘未審核"
+            value={staleAiDrafts.length}
             tone="red"
+            href="#ai-review-risks"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="AI 來源逾期待辦"
-            value={overdueAiTasks.length}
-            tone="amber"
+            title="可能已回覆未確認"
+            value={maybeAnsweredAiDrafts.length}
+            tone="teal"
+            href="#ai-review-risks"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
         </div>
@@ -189,14 +211,142 @@ export default function RiskCenterPage() {
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
           <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
-          <RiskSection title="AI 來源待辦" tasks={aiSourceTasks} projects={projects} empty="目前沒有 AI 建立的正式待辦。" />
-          <RiskSection title="AI 來源高風險待辦" tasks={highRiskAiTasks} projects={projects} empty="目前沒有 AI 來源高風險待辦。" />
-          <RiskSection title="AI 來源逾期待辦" tasks={overdueAiTasks} projects={projects} empty="目前沒有 AI 來源逾期待辦。" />
-          <RiskSection title="高風險待辦" tasks={highRiskTasks} projects={projects} empty="目前沒有高風險待辦。" />
-          <RiskSection title="已逾期待辦" tasks={overdueTasks} projects={projects} empty="目前沒有逾期待辦。" />
-          <RiskSection title="今天到期待辦" tasks={dueTodayTasks} projects={projects} empty="今天沒有到期待辦。" />
+          <AiPendingRiskSection aiTasks={aiPendingRisks} projects={projects} />
+          <RiskSection
+            id="high-risk-tasks"
+            title="高風險待辦"
+            description="未完成且風險等級為高"
+            tasks={highRiskTasks}
+            projects={projects}
+            empty="目前沒有高風險待辦。"
+          />
+          <RiskSection
+            id="overdue-tasks"
+            title="已逾期待辦"
+            description="未完成且截止日已過"
+            tasks={overdueTasks}
+            projects={projects}
+            empty="目前沒有逾期待辦。"
+          />
+          <RiskSection
+            id="due-today-tasks"
+            title="今天到期待辦"
+            description="未完成且截止日是今天"
+            tasks={dueTodayTasks}
+            projects={projects}
+            empty="今天沒有到期待辦。"
+          />
         </>
       ) : null}
+    </div>
+  );
+}
+
+function AiPendingRiskSection({
+  aiTasks,
+  projects
+}: {
+  aiTasks: AiTask[];
+  projects: Project[];
+}) {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  return (
+    <section id="ai-review-risks" className="scroll-mt-24 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle
+          title="待審與未確認事項"
+          description="超過 30 分鐘未審核、可能已回覆未確認或高風險待審"
+        />
+        <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/ai-tasks">
+          前往審核
+        </Link>
+      </div>
+
+      {aiTasks.length ? (
+        <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-stone-200 text-sm">
+              <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">AI 草稿</th>
+                  <th className="px-4 py-3">案件</th>
+                  <th className="px-4 py-3">風險原因</th>
+                  <th className="px-4 py-3">建立時間</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 bg-white">
+                {aiTasks.map((task) => {
+                  const project = projectById.get(task.projectId);
+                  const labels = getAiDraftRiskLabels(task);
+
+                  return (
+                    <tr key={task.id} className="hover:bg-stone-50">
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-slate-950">{task.title}</div>
+                        {task.description ? (
+                          <div className="mt-1 line-clamp-2 max-w-md text-xs leading-5 text-slate-500">
+                            {task.description}
+                          </div>
+                        ) : null}
+                        <div className="mt-2 text-xs text-slate-500">
+                          {task.sourceSenderName || "未知來源"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-600">
+                        {project ? (
+                          <Link className="hover:text-teal-700" href={`/projects/${project.id}`}>
+                            {project.name}
+                          </Link>
+                        ) : (
+                          "未綁定"
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {labels.map((label) => (
+                            <span
+                              key={label}
+                              className="inline-flex min-h-6 items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">
+                        {formatDateTime(task.createdAt)}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Link
+                          className="inline-flex min-h-9 items-center rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100"
+                          href="/ai-tasks"
+                        >
+                          去審核
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <EmptyState
+          title="目前沒有待審與未確認事項"
+        />
+      )}
+    </section>
+  );
+}
+
+function SectionTitle({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+      <p className="text-sm leading-6 text-slate-500">{description}</p>
     </div>
   );
 }
@@ -205,12 +355,14 @@ function RiskStatCard({
   title,
   value,
   icon,
-  tone
+  tone,
+  href
 }: {
   title: string;
   value: number;
   icon: React.ReactNode;
   tone: "red" | "amber" | "teal";
+  href?: string;
 }) {
   const toneClass = {
     red: "bg-red-50 text-red-700 ring-red-100",
@@ -218,26 +370,46 @@ function RiskStatCard({
     teal: "bg-teal-50 text-teal-700 ring-teal-100"
   }[tone];
 
-  return (
-    <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{title}</p>
           <div className="mt-3 text-3xl font-semibold text-slate-950">{value}</div>
+          {href ? <div className="mt-2 text-xs font-medium text-teal-700">查看項目</div> : null}
         </div>
-        <div className={`flex h-11 w-11 items-center justify-center rounded-md ring-1 ring-inset ${toneClass}`}>
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-md ring-1 ring-inset transition group-hover:scale-105 ${toneClass}`}
+        >
           {icon}
         </div>
       </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        className="group block rounded-lg border border-stone-200 bg-white p-5 shadow-panel transition hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+        href={href}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+      {content}
     </section>
   );
 }
 
 function HighRiskProjectSection({ projects }: { projects: HighRiskProject[] }) {
   return (
-    <section className="space-y-3">
+    <section id="high-risk-projects" className="scroll-mt-24 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-950">高風險案件</h2>
+        <SectionTitle title="高風險案件" description="有逾期工期、逾期關鍵點或高風險關鍵點" />
         <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/projects">
           查看全部案件
         </Link>
@@ -284,7 +456,7 @@ function HighRiskProjectSection({ projects }: { projects: HighRiskProject[] }) {
           </div>
         </div>
       ) : (
-        <EmptyState title="目前沒有高風險案件" description="逾期里程碑、逾期未完成工期節點與高風險標記會出現在這裡。" />
+        <EmptyState title="目前沒有高風險案件" />
       )}
     </section>
   );
@@ -300,9 +472,9 @@ function MilestoneWarningSection({
   const projectById = new Map(projects.map((project) => [project.id, project]));
 
   return (
-    <section className="space-y-3">
+    <section id="milestone-warnings" className="scroll-mt-24 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-950">關鍵點預警</h2>
+        <SectionTitle title="關鍵點預警" description="到期日扣掉提前提醒天數等於今天" />
         <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/milestones">
           查看全部關鍵點
         </Link>
@@ -361,7 +533,6 @@ function MilestoneWarningSection({
       ) : (
         <EmptyState
           title="今天沒有關鍵點預警"
-          description="關鍵節點的到期日扣掉提前提醒天數等於今天時，會出現在這裡。"
         />
       )}
     </section>
@@ -369,20 +540,24 @@ function MilestoneWarningSection({
 }
 
 function RiskSection({
+  id,
   title,
+  description,
   tasks,
   projects,
   empty
 }: {
+  id: string;
   title: string;
+  description: string;
   tasks: Task[];
   projects: Project[];
   empty: string;
 }) {
   return (
-    <section className="space-y-3">
+    <section id={id} className="scroll-mt-24 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+        <SectionTitle title={title} description={description} />
         <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/tasks">
           查看全部待辦
         </Link>
@@ -390,10 +565,60 @@ function RiskSection({
       {tasks.length ? (
         <TaskTable tasks={tasks} projects={projects} />
       ) : (
-        <EmptyState title="沒有需要處理的項目" description={empty} />
+        <EmptyState title={empty} />
       )}
     </section>
   );
+}
+
+function isOlderThanMinutes(date: Date | null, minutes: number) {
+  if (!date) return false;
+
+  return Date.now() - date.getTime() >= minutes * 60 * 1000;
+}
+
+function isHighRiskAiDraft(task: AiTask) {
+  return ["change", "payment", "invoice"].includes(task.taskType);
+}
+
+function uniqueAiTasks(tasks: AiTask[]) {
+  return Array.from(new Map(tasks.map((task) => [task.id, task])).values());
+}
+
+function compareAiDraftRisk(a: AiTask, b: AiTask) {
+  const scoreDiff = getAiDraftRiskScore(b) - getAiDraftRiskScore(a);
+  if (scoreDiff !== 0) return scoreDiff;
+
+  return (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0);
+}
+
+function getAiDraftRiskScore(task: AiTask) {
+  if (isOlderThanMinutes(task.createdAt, 180)) return 100;
+  if (isOlderThanMinutes(task.createdAt, 30)) return 80;
+  if (isHighRiskAiDraft(task)) return 60;
+  if (task.resolutionStatus === "maybe_answered") return 40;
+
+  return 0;
+}
+
+function getAiDraftRiskLabels(task: AiTask) {
+  const labels: string[] = [];
+
+  if (isOlderThanMinutes(task.createdAt, 180)) {
+    labels.push("超過 3 小時未審核");
+  } else if (isOlderThanMinutes(task.createdAt, 30)) {
+    labels.push("超過 30 分鐘未審核");
+  }
+
+  if (isHighRiskAiDraft(task)) {
+    labels.push("高風險待審");
+  }
+
+  if (task.resolutionStatus === "maybe_answered") {
+    labels.push("可能已回覆未確認");
+  }
+
+  return labels.length ? labels : ["待審核"];
 }
 
 function getMilestoneReminderDate(dueDate: string, daysBefore: number) {

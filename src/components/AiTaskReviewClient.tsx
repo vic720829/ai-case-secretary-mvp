@@ -140,13 +140,13 @@ export function AiTaskReviewClient() {
   }
 
   if (loading) {
-    return <LoadingState label="讀取 AI 待辦草稿" />;
+    return <LoadingState label="讀取待辦草稿" />;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="AI 待辦審核"
+        title="待辦審核"
         description="從案件 LINE 群組辨識出的承諾、變更、追蹤、收款與發票事項。"
       />
 

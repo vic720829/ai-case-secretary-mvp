@@ -38,6 +38,10 @@ service cloud.firestore {
       return hasAnyRole(["owner", "admin"]);
     }
 
+    function isOwner() {
+      return hasAnyRole(["owner"]);
+    }
+
     function canManageSystemSettings() {
       return hasAnyRole(["owner", "admin"]);
     }
@@ -99,12 +103,12 @@ service cloud.firestore {
     }
 
     match /webhook_logs/{webhookLogId} {
-      allow read: if canReadOps();
+      allow read: if isOwner();
       allow create, update, delete: if canManageSystemSettings();
     }
 
     match /audit_logs/{auditLogId} {
-      allow read: if canManageSystemSettings();
+      allow read: if isOwner();
       allow create: if canWriteOps();
       allow update, delete: if false;
     }

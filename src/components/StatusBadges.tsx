@@ -33,10 +33,10 @@ export function RiskBadge({ risk }: { risk: RiskLevel }) {
 
 export function SourceBadge({ source }: { source: TaskSource }) {
   const map: Record<TaskSource, string> = {
-    manual: "手動",
-    line: "LINE",
-    ai: "AI",
-    voice: "語音"
+    manual: "手動建立",
+    line: "LINE 來源",
+    ai: "AI 建立",
+    voice: "語音建立"
   };
 
   return <Badge className="bg-stone-100 text-stone-700 ring-stone-200">{map[source]}</Badge>;
