@@ -10,6 +10,7 @@ import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { approveAiTask, listAiTasks, listProjects, rejectAiTask, updateAiTaskDraft } from "@/lib/firestore";
+import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
@@ -17,19 +18,10 @@ import type {
   AiTaskType,
   LineSenderRole,
   Project,
-  RiskLevel,
   TaskInput
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
-
-const riskByAiTaskType: Record<AiTaskType, RiskLevel> = {
-  promise: "medium",
-  change: "high",
-  followup: "medium",
-  payment: "high",
-  invoice: "high"
-};
 
 export function AiTaskReviewClient() {
   const { user } = useAuth();
@@ -566,7 +558,7 @@ function toTaskInput(input: AiTaskDraftUpdateInput, task: AiTask): TaskInput {
     dueDate: input.dueDate,
     status: input.status,
     source: "ai",
-    riskLevel: riskByAiTaskType[input.taskType],
+    riskLevel: getAiTaskRiskLevel(input.taskType, input.title),
     attachments,
     attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
     attachmentCount: attachments.length

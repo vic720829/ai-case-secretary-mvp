@@ -12,6 +12,7 @@ import {
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
+import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import {
   downloadLineMessageContent,
   getEventGroupId,
@@ -1190,7 +1191,7 @@ function buildTaskFromAiDraft(aiTask: FirebaseFirestore.DocumentData) {
     dueDate: timestampToTaipeiInputDate(aiTask.dueDate),
     status: normalizeTaskStatus(String(aiTask.status ?? "")),
     source: "ai" as const,
-    riskLevel: riskByAiTaskType[taskType],
+    riskLevel: getAiTaskRiskLevel(taskType, String(aiTask.title ?? "")),
     attachments,
     attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
     attachmentCount: attachments.length
@@ -1220,14 +1221,6 @@ function readLineAttachments(value: unknown): LineAttachmentForWrite[] {
     })
     .filter((attachment): attachment is LineAttachmentForWrite => Boolean(attachment));
 }
-
-const riskByAiTaskType: Record<AiTaskType, "low" | "medium" | "high"> = {
-  promise: "medium",
-  change: "high",
-  followup: "medium",
-  payment: "high",
-  invoice: "high"
-};
 
 function normalizeAiTaskType(value: string): AiTaskType {
   if (value === "promise" || value === "change" || value === "followup" || value === "payment" || value === "invoice") {

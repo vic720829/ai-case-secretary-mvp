@@ -10,6 +10,7 @@ import { formatDate, formatDateTime, isTaskDueToday, isTaskOverdue, todayInputVa
 import { getReadableError } from "@/lib/errors";
 import { listAiTasks, listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
+import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type { AiTask, Milestone, Project, ProjectStage, Task } from "@/lib/types";
 
 type HighRiskProject = {
@@ -578,7 +579,7 @@ function isOlderThanMinutes(date: Date | null, minutes: number) {
 }
 
 function isHighRiskAiDraft(task: AiTask) {
-  return ["change", "payment", "invoice"].includes(task.taskType);
+  return getAiTaskRiskLevel(task.taskType, task.title) === "high";
 }
 
 function uniqueAiTasks(tasks: AiTask[]) {
