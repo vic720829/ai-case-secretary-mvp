@@ -69,6 +69,13 @@ export default function RiskCenterPage() {
     () => activeTasks.filter((task) => isTaskDueToday(task.dueDate, task.status)),
     [activeTasks]
   );
+  const upcomingTasks = useMemo(
+    () =>
+      activeTasks
+        .filter((task) => isTaskDueSoon(task.dueDate, 3))
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "zh-TW")),
+    [activeTasks]
+  );
   const pendingAiDrafts = useMemo(() => aiTasks.filter((task) => task.reviewStatus === "pending"), [aiTasks]);
   const staleAiDrafts = useMemo(
     () => pendingAiDrafts.filter((task) => isOlderThanMinutes(task.createdAt, 30)),
@@ -143,7 +150,7 @@ export default function RiskCenterPage() {
       ) : null}
 
       {!error ? (
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <RiskStatCard
             title="高風險案件"
             value={highRiskProjects.length}
@@ -170,6 +177,13 @@ export default function RiskCenterPage() {
             value={dueTodayTasks.length}
             tone="teal"
             href="#due-today-tasks"
+            icon={<CalendarClock className="h-5 w-5" aria-hidden />}
+          />
+          <RiskStatCard
+            title="近期待辦"
+            value={upcomingTasks.length}
+            tone="teal"
+            href="#upcoming-tasks"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -236,6 +250,14 @@ export default function RiskCenterPage() {
             tasks={dueTodayTasks}
             projects={projects}
             empty="今天沒有到期待辦。"
+          />
+          <RiskSection
+            id="upcoming-tasks"
+            title="近期待辦"
+            description="未完成且截止日在未來 3 天內"
+            tasks={upcomingTasks}
+            projects={projects}
+            empty="未來 3 天內沒有待辦。"
           />
         </>
       ) : null}
@@ -576,6 +598,27 @@ function isOlderThanMinutes(date: Date | null, minutes: number) {
   if (!date) return false;
 
   return Date.now() - date.getTime() >= minutes * 60 * 1000;
+}
+
+function isTaskDueSoon(dueDate: string, daysAhead: number) {
+  if (!dueDate) return false;
+
+  const today = todayInputValue();
+  if (dueDate <= today) return false;
+
+  return dueDate <= addDays(today, daysAhead);
+}
+
+function addDays(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const target = new Date(year, (month || 1) - 1, day || 1);
+  target.setDate(target.getDate() + days);
+
+  const targetYear = target.getFullYear();
+  const targetMonth = String(target.getMonth() + 1).padStart(2, "0");
+  const targetDay = String(target.getDate()).padStart(2, "0");
+
+  return `${targetYear}-${targetMonth}-${targetDay}`;
 }
 
 function isHighRiskAiDraft(task: AiTask) {
