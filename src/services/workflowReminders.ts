@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey } from "../lib/reminders";
+import type { LineSenderRole } from "../lib/types";
 import { buildAiDraftReviewTemplateMessage } from "./aiDraftReviewLineMessages";
 import { pushLineMessages, type LinePushMessage } from "./line";
 
@@ -17,6 +18,7 @@ type ProjectSummary = {
 type AiTaskRow = {
   id: string;
   projectId: string;
+  sourceMessageId: string;
   title: string;
   taskType: string;
   status: string;
@@ -24,6 +26,17 @@ type AiTaskRow = {
   sourceSenderRole: string;
   dueDate: string;
   createdAt: Date | null;
+};
+
+type MessageRow = {
+  id: string;
+  projectId: string;
+  groupId: string;
+  senderName: string;
+  senderRole: LineSenderRole;
+  messageType: string;
+  text: string;
+  timestamp: Date | null;
 };
 
 type TaskRow = {
@@ -56,6 +69,7 @@ type WorkflowData = {
   tomorrow: string;
   projects: Map<string, ProjectSummary>;
   aiTasks: AiTaskRow[];
+  messages: MessageRow[];
   tasks: TaskRow[];
   stages: StageRow[];
   milestones: MilestoneRow[];
@@ -93,6 +107,8 @@ export async function sendEveningCloseoutReminder() {
 
 async function buildAfternoonFollowupMessages(data: WorkflowData): Promise<LinePushMessage[]> {
   const pendingDrafts = data.aiTasks.filter((task) => task.reviewStatus === "pending" && getAgeMinutes(task.createdAt) >= 30);
+  const aiBackedMessageIds = new Set(data.aiTasks.map((task) => task.sourceMessageId).filter(Boolean));
+  const customerMessages = findUnansweredCustomerMessages(data.messages, aiBackedMessageIds);
   const customerQuestions = data.aiTasks.filter(
     (task) =>
       task.reviewStatus === "pending" &&
@@ -114,12 +130,14 @@ async function buildAfternoonFollowupMessages(data: WorkflowData): Promise<LineP
       task.dueDate === data.today
   );
 
+  await upsertCustomerMessageReminderLogs(customerMessages, data.today);
   await upsertCustomerFollowupReminderLogs(customerQuestions, data.today);
 
   const text = [
     "AI案件秘書｜14:00 未回覆檢查",
     `日期：${data.today.replaceAll("-", "/")}`,
     "",
+    formatMessageSection("LINE 客戶訊息超過 2 小時未回覆", customerMessages, data.projects),
     formatAiTaskSection("客戶問題超過 2 小時未回覆", customerQuestions, data.projects),
     formatAiTaskSection("AI 草稿超過 30 分鐘未審核", pendingDrafts, data.projects),
     formatAiTaskSection("客戶待確認事項", clientFollowups, data.projects),
@@ -130,8 +148,10 @@ async function buildAfternoonFollowupMessages(data: WorkflowData): Promise<LineP
     .filter(Boolean)
     .join("\n");
 
-  const actionItems = uniqueById([...customerQuestions, ...pendingDrafts]).slice(0, 4);
-  const actionMessages = actionItems.flatMap((task) => {
+  const aiActionItems = uniqueById([...customerQuestions, ...pendingDrafts]).slice(0, Math.max(0, 4 - customerMessages.length));
+  const actionMessages = [
+    ...customerMessages.slice(0, 4).flatMap((message) => buildCustomerMessageActionMessage(message, data.projects)),
+    ...aiActionItems.flatMap((task) => {
     if (customerQuestions.some((item) => item.id === task.id)) return buildCustomerFollowupActionMessage(task, data.projects);
 
     return buildAiDraftReviewTemplateMessage(projectName(data.projects.get(task.projectId)), getReviewUrl(), {
@@ -140,11 +160,82 @@ async function buildAfternoonFollowupMessages(data: WorkflowData): Promise<LineP
       taskType: task.taskType,
       dueDate: task.dueDate
     });
-  });
+    })
+  ];
 
   const messages: LinePushMessage[] = [{ type: "text" as const, text }, ...actionMessages];
 
   return messages.slice(0, 5);
+}
+
+function findUnansweredCustomerMessages(messages: MessageRow[], aiBackedMessageIds: Set<string>) {
+  return messages
+    .filter((message) => isCustomerMessageCandidate(message, aiBackedMessageIds))
+    .filter((message) => !hasInternalReplyAfter(messages, message))
+    .sort((a, b) => (a.timestamp?.getTime() ?? 0) - (b.timestamp?.getTime() ?? 0))
+    .slice(0, 12);
+}
+
+function isCustomerMessageCandidate(message: MessageRow, aiBackedMessageIds: Set<string>) {
+  if (aiBackedMessageIds.has(message.id)) return false;
+  if (!message.projectId || !message.groupId) return false;
+  if (message.messageType !== "text") return false;
+  if (!isCustomerLikeRole(message.senderRole)) return false;
+  if (getAgeMinutes(message.timestamp) < 120) return false;
+  return isLikelyNeedsReply(message.text);
+}
+
+function hasInternalReplyAfter(messages: MessageRow[], message: MessageRow) {
+  const messageTime = message.timestamp?.getTime() ?? 0;
+  if (!messageTime) return false;
+
+  return messages.some((candidate) => {
+    if (candidate.groupId !== message.groupId) return false;
+    if (candidate.projectId !== message.projectId) return false;
+    if (candidate.senderRole !== "internal") return false;
+    const candidateTime = candidate.timestamp?.getTime() ?? 0;
+    return candidateTime > messageTime;
+  });
+}
+
+function isLikelyNeedsReply(text: string) {
+  const value = text.trim();
+  if (!value) return false;
+
+  const keywords = [
+    "?",
+    "？",
+    "嗎",
+    "呢",
+    "請問",
+    "怎麼",
+    "如何",
+    "是否",
+    "可以",
+    "能不能",
+    "要不要",
+    "有沒有",
+    "什麼",
+    "哪裡",
+    "何時",
+    "幾點",
+    "工期",
+    "報價",
+    "請款",
+    "發票",
+    "統編",
+    "修改",
+    "變更",
+    "改",
+    "修補",
+    "缺失",
+    "很爛",
+    "品質不好",
+    "不好",
+    "漏水"
+  ];
+
+  return keywords.some((keyword) => value.includes(keyword));
 }
 
 function buildEveningCloseoutMessages(data: WorkflowData): LinePushMessage[] {
@@ -233,6 +324,48 @@ function buildCustomerFollowupActionMessage(task: AiTaskRow, projects: Map<strin
   ];
 }
 
+function buildCustomerMessageActionMessage(message: MessageRow, projects: Map<string, ProjectSummary>): LinePushMessage[] {
+  const siteUrl = getSiteUrl();
+  const project = projects.get(message.projectId);
+  const key = createReminderKey("message", message.id, "customer_message_unanswered");
+  const encodedKey = encodeURIComponent(key);
+  const actions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
+    {
+      type: "postback",
+      label: "已回覆",
+      data: `action=confirm_reminder&key=${encodedKey}`,
+      displayText: `已回覆：${shortText(message.text, 40)}`
+    },
+    {
+      type: "postback",
+      label: "明天追蹤",
+      data: `action=snooze_reminder&key=${encodedKey}&days=1`,
+      displayText: `明天追蹤：${shortText(message.text, 40)}`
+    }
+  ];
+
+  if (siteUrl) {
+    actions.push({
+      type: "uri",
+      label: "打開訊息",
+      uri: message.projectId ? `${siteUrl}/projects/${encodeURIComponent(message.projectId)}/messages` : `${siteUrl}/messages`
+    });
+  }
+
+  return [
+    {
+      type: "template",
+      altText: `客戶訊息未回覆：${shortText(message.text, 80)}`,
+      template: {
+        type: "buttons",
+        title: "客戶訊息未回覆",
+        text: `[${projectName(project)}] ${shortText(message.text, 120)}`.slice(0, 160),
+        actions: actions.slice(0, 4)
+      }
+    }
+  ];
+}
+
 function toUriActionMessage(title: string, firstLabel: string, firstUrl: string, secondLabel: string, secondUrl: string): LinePushMessage {
   const actions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [];
 
@@ -280,6 +413,35 @@ async function upsertCustomerFollowupReminderLogs(items: AiTaskRow[], today: str
   );
 }
 
+async function upsertCustomerMessageReminderLogs(items: MessageRow[], today: string) {
+  const db = getAdminDb();
+
+  await Promise.all(
+    items.map((item) => {
+      const key = createReminderKey("message", item.id, "customer_message_unanswered");
+      return db.collection("reminder_logs").doc(key).set(
+        {
+          key,
+          sourceType: "message",
+          sourceId: item.id,
+          reminderType: "customer_message_unanswered",
+          projectId: item.projectId,
+          title: shortText(item.text, 80),
+          sourceLabel: "LINE 客戶訊息超過 2 小時未回覆",
+          dueDate: today,
+          status: "pending",
+          priority: "high",
+          firstTriggeredOn: today,
+          lastRemindedOn: today,
+          updatedAt: FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+    })
+  );
+}
+
 async function listAdminGroups(): Promise<AdminGroup[]> {
   const db = getAdminDb();
   const snapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
@@ -295,12 +457,13 @@ async function loadWorkflowData(): Promise<WorkflowData> {
   const db = getAdminDb();
   const today = taipeiDateString();
   const tomorrow = datePlusDays(today, 1);
-  const [projectSnapshot, taskSnapshot, stageSnapshot, milestoneSnapshot, aiTaskSnapshot] = await Promise.all([
+  const [projectSnapshot, taskSnapshot, stageSnapshot, milestoneSnapshot, aiTaskSnapshot, messageSnapshot] = await Promise.all([
     db.collection("projects").get(),
     db.collection("tasks").get(),
     db.collection("projectStages").get(),
     db.collection("milestones").get(),
-    db.collection("ai_tasks").get()
+    db.collection("ai_tasks").get(),
+    db.collection("messages").get()
   ]);
   const projects = new Map<string, ProjectSummary>();
 
@@ -317,6 +480,19 @@ async function loadWorkflowData(): Promise<WorkflowData> {
     today,
     tomorrow,
     projects,
+    messages: messageSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        projectId: String(data.projectId ?? ""),
+        groupId: String(data.groupId ?? ""),
+        senderName: String(data.senderName ?? ""),
+        senderRole: normalizeSenderRole(String(data.senderRole ?? "unknown")),
+        messageType: String(data.messageType ?? "text"),
+        text: String(data.text ?? ""),
+        timestamp: timestampToDate(data.timestamp) ?? timestampToDate(data.createdAt)
+      };
+    }),
     tasks: taskSnapshot.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -353,6 +529,7 @@ async function loadWorkflowData(): Promise<WorkflowData> {
       return {
         id: doc.id,
         projectId: String(data.projectId ?? ""),
+        sourceMessageId: String(data.sourceMessageId ?? ""),
         title: String(data.title ?? "未命名 AI 待辦"),
         taskType: String(data.taskType ?? "followup"),
         status: String(data.status ?? "todo"),
@@ -383,6 +560,18 @@ function formatAiTaskSection(title: string, items: AiTaskRow[], projects: Map<st
   return [
     `${title}：${items.length} 件`,
     ...items.slice(0, 8).map((item) => `- [${projectName(projects.get(item.projectId))}] ${item.title}`),
+    moreLine(items.length, 8)
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatMessageSection(title: string, items: MessageRow[], projects: Map<string, ProjectSummary>) {
+  if (!items.length) return `${title}：0 件`;
+
+  return [
+    `${title}：${items.length} 件`,
+    ...items.slice(0, 8).map((item) => `- [${projectName(projects.get(item.projectId))}] ${shortText(item.text, 42)}`),
     moreLine(items.length, 8)
   ]
     .filter(Boolean)
@@ -425,6 +614,11 @@ function uniqueById(items: AiTaskRow[]) {
 
 function isCustomerLikeRole(role: string) {
   return role === "client" || role === "unknown";
+}
+
+function normalizeSenderRole(role: string): LineSenderRole {
+  if (role === "internal" || role === "client" || role === "vendor") return role;
+  return "unknown";
 }
 
 function getAgeMinutes(createdAt: Date | null) {
@@ -479,6 +673,11 @@ function projectName(project?: ProjectSummary) {
 
 function moreLine(total: number, shown: number) {
   return total > shown ? `- 另有 ${total - shown} 件` : "";
+}
+
+function shortText(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
 }
 
 function getReviewUrl() {

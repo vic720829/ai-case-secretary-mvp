@@ -8,13 +8,14 @@ export type LineSenderRole = LineMemberRole | "unknown";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type AiTaskResolutionStatus = "open" | "maybe_answered" | "confirmed_resolved";
-export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task";
+export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task" | "message";
 export type ReminderPriority = "normal" | "high";
 export type ReminderType =
   | "stage_before_start"
   | "milestone_before_due"
   | "ai_task_pending_review"
   | "customer_followup_unanswered"
+  | "customer_message_unanswered"
   | "due_today"
   | "overdue"
   | "high_risk";

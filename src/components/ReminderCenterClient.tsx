@@ -311,6 +311,7 @@ function PriorityBadge() {
 
 function getReminderHref(reminder: ReminderLog) {
   if (reminder.sourceType === "ai_task" && reminder.reminderType === "ai_task_pending_review") return "/ai-tasks";
+  if (reminder.sourceType === "message") return reminder.projectId ? `/projects/${reminder.projectId}/messages` : "/messages";
   if (reminder.sourceType === "task") return `/tasks/${reminder.sourceId}`;
   if (reminder.projectId) return `/projects/${reminder.projectId}/progress`;
   return "/risk-center";

@@ -217,6 +217,7 @@ async function buildDailyReminderContent() {
   const dailyPendingItems = pendingItems.filter((item) => shouldIncludeInDailyReminder(item, today));
 
   const sections = [
+    formatSection("客戶訊息未回覆", dailyPendingItems.filter((item) => item.reminderType === "customer_message_unanswered"), projects),
     formatSection("AI 草稿待審核", dailyPendingItems.filter((item) => item.reminderType === "ai_task_pending_review"), projects),
     formatSection("進場提醒", dailyPendingItems.filter((item) => item.reminderType === "stage_before_start"), projects),
     formatSection("關鍵節點提醒", dailyPendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
