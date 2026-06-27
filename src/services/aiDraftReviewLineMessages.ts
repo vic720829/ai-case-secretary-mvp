@@ -29,7 +29,8 @@ export function buildAiDraftReviewTemplateMessage(
 ): LinePushMessage[] {
   if (!item.id) return [];
 
-  const editUrl = reviewUrl ? `${reviewUrl}?draftId=${encodeURIComponent(item.id)}` : "";
+  const safeReviewUrl = normalizeHttpUrl(reviewUrl);
+  const editUrl = safeReviewUrl ? appendQueryParam(safeReviewUrl, "draftId", item.id) : "";
   const dueDate = item.dueDate ? `截止：${item.dueDate.replaceAll("-", "/")}` : "截止：未設定";
   const typeLabel = item.taskType ? String(item.taskType) : "待判斷";
   const actions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
@@ -67,4 +68,26 @@ export function buildAiDraftReviewTemplateMessage(
       }
     }
   ];
+}
+
+function normalizeHttpUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith("/")) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function appendQueryParam(url: string, key: string, value: string) {
+  const nextUrl = new URL(url);
+  nextUrl.searchParams.set(key, value);
+  return nextUrl.toString();
 }
