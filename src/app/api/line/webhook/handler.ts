@@ -240,8 +240,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           createdDraftIds
         }).catch(() => [])
       : [];
-    const shouldNotifyImageDraft = suggestions.length && !pendingImageDraft;
-    const adminNotification = shouldNotifyImageDraft
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(createdDraftIds, pendingImageDraft?.data);
+    const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
           senderName,
@@ -253,6 +253,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           attachmentCount: nearbyAttachments.length
         })
       : { sent: 0, failed: 0, groups: 0 };
+    if (adminNotification.sent > 0) {
+      await markAiDraftsAdminNotified(db, createdDraftIds);
+    }
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
@@ -366,8 +369,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       attachments,
       reusableDraftId: pendingImageDraft?.id ?? ""
     });
-    const shouldNotifyImageDraft = suggestions.length > 0 && !pendingImageDraft;
-    const adminNotification = shouldNotifyImageDraft
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(createdDraftIds, pendingImageDraft?.data);
+    const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
           senderName,
@@ -379,6 +382,9 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           attachmentCount: attachments.length
         })
       : { sent: 0, failed: 0, groups: 0 };
+    if (adminNotification.sent > 0) {
+      await markAiDraftsAdminNotified(db, createdDraftIds);
+    }
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
@@ -1038,6 +1044,30 @@ async function createAiTaskDrafts(
   }
 
   return createdDraftIds;
+}
+
+function shouldNotifyAiDrafts(createdDraftIds: string[], reusableDraftData?: FirebaseFirestore.DocumentData) {
+  if (!createdDraftIds.length) return false;
+  if (!reusableDraftData) return true;
+
+  return !reusableDraftData.adminNotifiedAt;
+}
+
+async function markAiDraftsAdminNotified(db: FirebaseFirestore.Firestore, draftIds: string[]) {
+  const uniqueDraftIds = [...new Set(draftIds.filter(Boolean))];
+  if (!uniqueDraftIds.length) return;
+
+  await Promise.all(
+    uniqueDraftIds.map((draftId) =>
+      db.collection("ai_tasks").doc(draftId).set(
+        {
+          adminNotifiedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      )
+    )
+  );
 }
 
 async function findPendingImageDraftForAttachments(
