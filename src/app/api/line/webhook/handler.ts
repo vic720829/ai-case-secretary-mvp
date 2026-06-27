@@ -4,7 +4,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import { canReviewAiDraft } from "@/lib/aiReviewPolicy";
 import { canLineGroupUseAssistantReplies, canReplyInLineChat } from "@/lib/lineReplyPolicy";
-import type { AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
+import type { AiFeedbackAction, AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
 import {
   analyzeMessageForAiTasks,
   dateStringToTimestamp,
@@ -515,18 +515,74 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
   }
 
   if (result.status === "confirmed") {
+    await safeRecordAiFeedbackEvent(db, {
+      action: "confirm_reminder",
+      targetType: "reminder",
+      targetId: key,
+      targetTitle: result.title,
+      actorName: senderName,
+      note: "LINE 後台確認提醒"
+    });
     await replyLineText(event.replyToken, `已確認：${result.title}\n其他後台群再按按鈕不會覆蓋這次結果。`);
     return { ok: true, action, key, actionBy: senderName, messageText: result.title };
   }
 
   if (result.status === "snoozed") {
+    await safeRecordAiFeedbackEvent(db, {
+      action: "snooze_reminder",
+      targetType: "reminder",
+      targetId: key,
+      targetTitle: result.title,
+      actorName: senderName,
+      note: `LINE 後台延後提醒到 ${result.snoozedUntil}`
+    });
     await replyLineText(event.replyToken, `已延後提醒：${result.title}\n下次提醒日：${result.snoozedUntil.replaceAll("-", "/")}`);
     return { ok: true, action, key, actionBy: senderName, snoozedUntil: result.snoozedUntil, messageText: result.title };
   }
 
+  await safeRecordAiFeedbackEvent(db, {
+    action: "keep_reminder",
+    targetType: "reminder",
+    targetId: key,
+    targetTitle: result.title,
+    actorName: senderName,
+    note: "LINE 後台保留待處理"
+  });
   await replyLineText(event.replyToken, `已保留待處理：${result.title}`);
 
   return { ok: true, action, key, actionBy: senderName, messageText: result.title };
+}
+
+async function safeRecordAiFeedbackEvent(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    action: AiFeedbackAction;
+    targetType: "ai_task" | "reminder" | "task";
+    targetId: string;
+    targetTitle: string;
+    projectId?: string;
+    actorName: string;
+    note: string;
+  }
+) {
+  try {
+    await db.collection("ai_feedback_events").add({
+      source: "line",
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      targetTitle: input.targetTitle,
+      projectId: input.projectId ?? "",
+      actorId: input.actorName,
+      actorName: input.actorName,
+      actorRole: "line_admin",
+      changes: [],
+      note: input.note,
+      createdAt: FieldValue.serverTimestamp()
+    });
+  } catch {
+    // Learning logs must not block LINE postback actions.
+  }
 }
 
 async function handleAiFollowupPostback(
@@ -582,6 +638,14 @@ async function handleAiFollowupPostback(
       return { skipped: true, reason: "AI followup already confirmed", key, senderName, messageText: result.title };
     }
 
+    await safeRecordAiFeedbackEvent(db, {
+      action: "snooze_ai_followup",
+      targetType: "ai_task",
+      targetId: key,
+      targetTitle: result.title,
+      actorName: senderName,
+      note: `LINE 後台設定明天追蹤，下一次 ${snoozedUntil}`
+    });
     await replyLineText(event.replyToken, `已設定明天追蹤。\n下次提醒日：${snoozedUntil.replaceAll("-", "/")}`);
 
     return { ok: true, action, key, senderName, messageText: "明天追蹤客戶回覆" };
@@ -661,6 +725,14 @@ async function handleAiFollowupPostback(
     return { skipped: true, reason: "AI followup already confirmed", key, senderName, messageText: result.title };
   }
 
+  await safeRecordAiFeedbackEvent(db, {
+    action: "resolve_ai_followup",
+    targetType: "ai_task",
+    targetId: key,
+    targetTitle: result.title,
+    actorName: senderName,
+    note: "LINE 後台標記客戶追蹤已回覆"
+  });
   await replyLineText(event.replyToken, `已標記為已回覆：${result.title}`);
 
   return { ok: true, action, key, senderName, messageText: `已回覆：${result.title}` };
@@ -717,7 +789,7 @@ async function handleAiTaskReviewPostback(
         { merge: true }
       );
 
-      return { status: "rejected" as const, title };
+      return { status: "rejected" as const, title, projectId: String(aiTask.projectId ?? "") };
     }
 
     const taskInput = buildTaskFromAiDraft(aiTask);
@@ -773,6 +845,15 @@ async function handleAiTaskReviewPostback(
   }
 
   if (result.status === "rejected") {
+    await safeRecordAiFeedbackEvent(db, {
+      action: "reject_ai_task",
+      targetType: "ai_task",
+      targetId: key,
+      targetTitle: result.title,
+      projectId: result.projectId,
+      actorName: senderName,
+      note: "LINE 後台拒絕 AI 草稿"
+    });
     await replyLineText(event.replyToken, `已拒絕 AI 草稿：${result.title}`);
 
     return { ok: true, action, key, senderName, messageText: `拒絕 AI 草稿：${result.title}` };
@@ -792,6 +873,15 @@ async function handleAiTaskReviewPostback(
     return { skipped: true, reason: "AI task draft requires website editing", key };
   }
 
+  await safeRecordAiFeedbackEvent(db, {
+    action: "approve_ai_task",
+    targetType: "ai_task",
+    targetId: key,
+    targetTitle: result.title,
+    projectId: result.projectId,
+    actorName: senderName,
+    note: `LINE 後台通過 AI 草稿並建立待辦 ${result.approvedTaskId}`
+  });
   await replyLineText(event.replyToken, `已通過並建立待辦：${result.title}`);
 
   return {

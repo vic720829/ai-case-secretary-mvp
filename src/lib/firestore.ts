@@ -23,8 +23,12 @@ import { canReviewAiDraft } from "./aiReviewPolicy";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
+  AiFeedbackEvent,
+  AiFeedbackEventInput,
   AuditActor,
   AuditLog,
+  LearnedRule,
+  LearnedRuleInput,
   Milestone,
   MilestoneInput,
   LineGroup,
@@ -60,6 +64,8 @@ const REMINDER_LOGS_COLLECTION = "reminder_logs";
 const WEBHOOK_LOGS_COLLECTION = "webhook_logs";
 const USERS_COLLECTION = "users";
 const AUDIT_LOGS_COLLECTION = "audit_logs";
+const AI_FEEDBACK_EVENTS_COLLECTION = "ai_feedback_events";
+const LEARNED_RULES_COLLECTION = "learned_rules";
 const DEFAULT_RECENT_LIST_LIMIT = 150;
 const DEFAULT_REVIEWED_AI_TASK_LIMIT = 80;
 
@@ -160,6 +166,65 @@ function auditLogFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AuditLo
       after: String(change.after ?? "")
     })),
     createdAt: readTimestamp(data.createdAt)
+  };
+}
+
+function aiFeedbackEventFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiFeedbackEvent {
+  const data = snapshot.data();
+  const rawChanges = Array.isArray(data.changes) ? data.changes : [];
+
+  return {
+    id: snapshot.id,
+    source: data.source === "line" ? "line" : "website",
+    action: data.action ?? "update_ai_task_draft",
+    targetType:
+      data.targetType === "reminder" || data.targetType === "task" || data.targetType === "ai_task"
+        ? data.targetType
+        : "ai_task",
+    targetId: data.targetId ?? "",
+    targetTitle: data.targetTitle ?? "",
+    projectId: data.projectId ?? "",
+    actorId: data.actorId ?? "",
+    actorName: data.actorName ?? "",
+    actorRole: data.actorRole ?? "",
+    changes: rawChanges.map((change) => ({
+      field: String(change.field ?? ""),
+      before: String(change.before ?? ""),
+      after: String(change.after ?? "")
+    })),
+    note: data.note ?? "",
+    createdAt: readTimestamp(data.createdAt)
+  };
+}
+
+function learnedRuleFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LearnedRule {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    name: data.name ?? "",
+    description: data.description ?? "",
+    triggerKeywords: Array.isArray(data.triggerKeywords)
+      ? data.triggerKeywords.map((keyword: unknown) => String(keyword)).filter(Boolean)
+      : [],
+    outcomeTaskType:
+      data.outcomeTaskType === "promise" ||
+      data.outcomeTaskType === "change" ||
+      data.outcomeTaskType === "followup" ||
+      data.outcomeTaskType === "payment" ||
+      data.outcomeTaskType === "invoice"
+        ? data.outcomeTaskType
+        : "",
+    outcomeRiskLevel:
+      data.outcomeRiskLevel === "low" || data.outcomeRiskLevel === "medium" || data.outcomeRiskLevel === "high"
+        ? data.outcomeRiskLevel
+        : "",
+    notifyPriority: data.notifyPriority === "high" ? "high" : "normal",
+    enabled: data.enabled !== false,
+    createdBy: data.createdBy ?? "",
+    updatedBy: data.updatedBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
   };
 }
 
@@ -468,6 +533,63 @@ export async function listAuditLogs() {
   );
 
   return snapshot.docs.map(auditLogFromDoc).slice(0, 200);
+}
+
+export async function listAiFeedbackEvents(maxItems = 150) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, AI_FEEDBACK_EVENTS_COLLECTION), orderBy("createdAt", "desc"), queryLimit(maxItems))
+  );
+
+  return snapshot.docs.map(aiFeedbackEventFromDoc);
+}
+
+export async function createAiFeedbackEvent(input: AiFeedbackEventInput) {
+  const database = requireDb();
+
+  await addDoc(collection(database, AI_FEEDBACK_EVENTS_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp()
+  });
+}
+
+export async function listLearnedRules() {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, LEARNED_RULES_COLLECTION), orderBy("createdAt", "desc"))
+  );
+
+  return snapshot.docs.map(learnedRuleFromDoc);
+}
+
+export async function createLearnedRule(input: LearnedRuleInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, LEARNED_RULES_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function updateLearnedRule(id: string, input: LearnedRuleInput) {
+  const database = requireDb();
+
+  await updateDoc(doc(database, LEARNED_RULES_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function setLearnedRuleEnabled(id: string, enabled: boolean, updatedBy: string) {
+  const database = requireDb();
+
+  await updateDoc(doc(database, LEARNED_RULES_COLLECTION, id), {
+    enabled,
+    updatedBy,
+    updatedAt: serverTimestamp()
+  });
 }
 
 export async function getProject(id: string) {

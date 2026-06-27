@@ -112,5 +112,15 @@ service cloud.firestore {
       allow create: if canWriteOps();
       allow update, delete: if false;
     }
+
+    match /ai_feedback_events/{eventId} {
+      allow read: if isOwner();
+      allow create: if canWriteOps();
+      allow update, delete: if false;
+    }
+
+    match /learned_rules/{ruleId} {
+      allow read, create, update, delete: if isOwner();
+    }
   }
 }

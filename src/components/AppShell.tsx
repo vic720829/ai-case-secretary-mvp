@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bell,
   Bot,
+  BrainCircuit,
   BriefcaseBusiness,
   CalendarDays,
   ClipboardList,
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/messages", label: "LINE對話", icon: MessageSquareText },
   { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText, ownerOnly: true },
   { href: "/users", label: "員工管理", icon: UserCog },
+  { href: "/learning", label: "AI學習", icon: BrainCircuit, ownerOnly: true },
   { href: "/audit-logs", label: "操作紀錄", icon: History, ownerOnly: true },
   { href: "/milestones", label: "關鍵節點", icon: Flag }
 ];

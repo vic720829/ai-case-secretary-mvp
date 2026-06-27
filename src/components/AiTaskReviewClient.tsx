@@ -9,11 +9,20 @@ import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui"
 import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { approveAiTask, listAiTasksForReview, listProjects, rejectAiTask, updateAiTaskDraft } from "@/lib/firestore";
+import {
+  approveAiTask,
+  createAiFeedbackEvent,
+  listAiTasksForReview,
+  listProjects,
+  rejectAiTask,
+  updateAiTaskDraft
+} from "@/lib/firestore";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
+  AiFeedbackAction,
+  AiFeedbackChange,
   AiTaskReviewStatus,
   AiTaskType,
   LineSenderRole,
@@ -26,7 +35,7 @@ import { useAuth } from "./AuthProvider";
 const reviewedAiTaskLimit = 80;
 
 export function AiTaskReviewClient() {
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +100,15 @@ export function AiTaskReviewClient() {
     setError("");
 
     try {
-      await updateAiTaskDraft(task.id, normalizeDraftInput(draftValues[task.id] ?? toDraftInput(task)));
+      const before = toDraftInput(task);
+      const after = normalizeDraftInput(draftValues[task.id] ?? before);
+      await updateAiTaskDraft(task.id, after);
+      await recordAiFeedbackEventSafely({
+        task,
+        action: "update_ai_task_draft",
+        changes: diffDraftInput(before, after),
+        note: "網站儲存 AI 草稿"
+      });
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
@@ -105,9 +122,16 @@ export function AiTaskReviewClient() {
     setError("");
 
     try {
-      const draft = normalizeDraftInput(draftValues[task.id] ?? toDraftInput(task));
+      const before = toDraftInput(task);
+      const draft = normalizeDraftInput(draftValues[task.id] ?? before);
       await updateAiTaskDraft(task.id, draft);
       await approveAiTask(task.id, toTaskInput(draft, task), user?.email ?? user?.uid ?? "unknown");
+      await recordAiFeedbackEventSafely({
+        task,
+        action: "approve_ai_task",
+        changes: diffDraftInput(before, draft),
+        note: "網站核准 AI 草稿"
+      });
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
@@ -125,11 +149,47 @@ export function AiTaskReviewClient() {
 
     try {
       await rejectAiTask(task.id, user?.email ?? user?.uid ?? "unknown");
+      await recordAiFeedbackEventSafely({
+        task,
+        action: "reject_ai_task",
+        changes: [],
+        note: "網站拒絕 AI 草稿"
+      });
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
     } finally {
       setProcessingId("");
+    }
+  }
+
+  async function recordAiFeedbackEventSafely({
+    task,
+    action,
+    changes,
+    note
+  }: {
+    task: AiTask;
+    action: AiFeedbackAction;
+    changes: AiFeedbackChange[];
+    note: string;
+  }) {
+    try {
+      await createAiFeedbackEvent({
+        source: "website",
+        action,
+        targetType: "ai_task",
+        targetId: task.id,
+        targetTitle: task.title,
+        projectId: task.projectId,
+        actorId: user?.uid ?? user?.email ?? "",
+        actorName: profile?.displayName || user?.email || "unknown",
+        actorRole: profile?.role ?? "",
+        changes,
+        note
+      });
+    } catch {
+      // Learning logs must not block the actual review workflow.
     }
   }
 
@@ -512,6 +572,26 @@ function normalizeDraftInput(input: AiTaskDraftUpdateInput): AiTaskDraftUpdateIn
     description: input.description.trim(),
     assignedTo: input.assignedTo.trim()
   };
+}
+
+function diffDraftInput(before: AiTaskDraftUpdateInput, after: AiTaskDraftUpdateInput): AiFeedbackChange[] {
+  const fields: Array<{ key: keyof AiTaskDraftUpdateInput; label: string }> = [
+    { key: "projectId", label: "案件" },
+    { key: "title", label: "標題" },
+    { key: "description", label: "內容" },
+    { key: "taskType", label: "類型" },
+    { key: "status", label: "狀態" },
+    { key: "assignedTo", label: "負責人" },
+    { key: "dueDate", label: "截止日" }
+  ];
+
+  return fields
+    .map(({ key, label }) => ({
+      field: label,
+      before: String(before[key] ?? ""),
+      after: String(after[key] ?? "")
+    }))
+    .filter((change) => change.before !== change.after);
 }
 
 function isOlderThanMinutes(date: Date | null, minutes: number) {

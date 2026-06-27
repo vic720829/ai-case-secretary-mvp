@@ -23,6 +23,18 @@ export type ReminderStatus = "pending" | "confirmed";
 export type WebhookLogStatus = "success" | "skipped" | "error";
 export type UserRole = "owner" | "admin" | "staff" | "viewer";
 export type AuditAction = "create" | "update" | "delete";
+export type AiFeedbackSource = "website" | "line";
+export type AiFeedbackAction =
+  | "approve_ai_task"
+  | "reject_ai_task"
+  | "update_ai_task_draft"
+  | "confirm_reminder"
+  | "snooze_reminder"
+  | "keep_reminder"
+  | "resolve_ai_followup"
+  | "snooze_ai_followup"
+  | "complete_task";
+export type AiFeedbackTargetType = "ai_task" | "reminder" | "task";
 
 export type ProjectInput = {
   name: string;
@@ -292,4 +304,47 @@ export type AuditLog = {
     after: string;
   }>;
   createdAt: Date | null;
+};
+
+export type AiFeedbackChange = {
+  field: string;
+  before: string;
+  after: string;
+};
+
+export type AiFeedbackEventInput = {
+  source: AiFeedbackSource;
+  action: AiFeedbackAction;
+  targetType: AiFeedbackTargetType;
+  targetId: string;
+  targetTitle: string;
+  projectId: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  changes: AiFeedbackChange[];
+  note: string;
+};
+
+export type AiFeedbackEvent = AiFeedbackEventInput & {
+  id: string;
+  createdAt: Date | null;
+};
+
+export type LearnedRuleInput = {
+  name: string;
+  description: string;
+  triggerKeywords: string[];
+  outcomeTaskType: AiTaskType | "";
+  outcomeRiskLevel: RiskLevel | "";
+  notifyPriority: ReminderPriority;
+  enabled: boolean;
+  createdBy: string;
+  updatedBy: string;
+};
+
+export type LearnedRule = LearnedRuleInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 };
