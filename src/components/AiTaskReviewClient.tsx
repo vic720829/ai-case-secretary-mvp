@@ -18,7 +18,6 @@ import {
   updateAiTaskDraft
 } from "@/lib/firestore";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
-import { notifyAdminGroupsAboutTask } from "@/lib/taskNotification";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
@@ -126,10 +125,7 @@ export function AiTaskReviewClient() {
       const before = toDraftInput(task);
       const draft = normalizeDraftInput(draftValues[task.id] ?? before);
       await updateAiTaskDraft(task.id, draft);
-      const taskId = await approveAiTask(task.id, toTaskInput(draft, task), user?.email ?? user?.uid ?? "unknown");
-      await notifyAdminGroupsAboutTask({ user, taskId, action: "ai_approved" }).catch((caught) => {
-        console.warn(caught instanceof Error ? caught.message : "通知公司後台群失敗。");
-      });
+      await approveAiTask(task.id, toTaskInput(draft, task), user?.email ?? user?.uid ?? "unknown");
       await recordAiFeedbackEventSafely({
         task,
         action: "approve_ai_task",

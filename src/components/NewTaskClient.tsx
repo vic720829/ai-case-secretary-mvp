@@ -7,13 +7,10 @@ import { PageHeader } from "./PageHeader";
 import { TaskForm } from "./TaskForm";
 import { LoadingState, SecondaryLink } from "./Ui";
 import { createTask, listProjects } from "@/lib/firestore";
-import { notifyAdminGroupsAboutTask } from "@/lib/taskNotification";
 import type { Project, TaskInput } from "@/lib/types";
-import { useAuth } from "./AuthProvider";
 
 export function NewTaskClient({ initialProjectId }: { initialProjectId?: string }) {
   const router = useRouter();
-  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,9 +26,6 @@ export function NewTaskClient({ initialProjectId }: { initialProjectId?: string 
 
   async function handleSubmit(value: TaskInput) {
     const id = await createTask(value);
-    await notifyAdminGroupsAboutTask({ user, taskId: id, action: "manual_created" }).catch((caught) => {
-      console.warn(caught instanceof Error ? caught.message : "通知公司後台群失敗。");
-    });
     router.push(`/tasks/${id}`);
   }
 
