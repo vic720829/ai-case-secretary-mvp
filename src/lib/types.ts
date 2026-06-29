@@ -5,6 +5,7 @@ export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
 export type LineMemberRole = "internal" | "client" | "vendor";
 export type LineSenderRole = LineMemberRole | "unknown";
+export type LineNotificationLevel = "primary" | "secondary" | "critical_only" | "test" | "none";
 export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type AiTaskResolutionStatus = "open" | "maybe_answered" | "confirmed_resolved";
@@ -177,6 +178,7 @@ export type LineGroupInput = {
   groupName: string;
   groupType?: "project" | "admin";
   allowAssistantReplies?: boolean;
+  notificationLevel?: LineNotificationLevel;
 };
 
 export type LineGroup = LineGroupInput & {

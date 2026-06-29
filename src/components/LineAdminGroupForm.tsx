@@ -2,7 +2,8 @@
 
 import { Bot, Save } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import type { LineGroupInput } from "@/lib/types";
+import { lineNotificationLevelOptions } from "@/lib/constants";
+import type { LineGroupInput, LineNotificationLevel } from "@/lib/types";
 import { Button, ErrorMessage } from "./Ui";
 
 export function LineAdminGroupForm({
@@ -16,6 +17,7 @@ export function LineAdminGroupForm({
 }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [groupName, setGroupName] = useState("公司後台群組");
+  const [notificationLevel, setNotificationLevel] = useState<LineNotificationLevel>("primary");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,10 +38,12 @@ export function LineAdminGroupForm({
         projectId: "",
         groupName: groupName.trim(),
         groupType: "admin",
-        allowAssistantReplies: true
+        allowAssistantReplies: true,
+        notificationLevel
       });
       setGroupId("");
       setGroupName("公司後台群組");
+      setNotificationLevel("primary");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "建立公司後台群組失敗";
       setError(message);
@@ -58,7 +62,7 @@ export function LineAdminGroupForm({
         只有登記在這裡的 LINE 群組，AI 助理才會回答問題。客戶群會保持安靜，只同步對話。
       </p>
       <ErrorMessage message={error} />
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <Field label="LINE groupId">
           <input
             className={inputClassName}
@@ -74,6 +78,24 @@ export function LineAdminGroupForm({
             onChange={(event) => setGroupName(event.target.value)}
             required
           />
+        </Field>
+        <Field label="通知層級">
+          <select
+            className={inputClassName}
+            value={notificationLevel}
+            onChange={(event) => setNotificationLevel(event.target.value as LineNotificationLevel)}
+          >
+            {lineNotificationLevelOptions
+              .filter((option) => option.value !== "none")
+              .map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+          </select>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {lineNotificationLevelOptions.find((option) => option.value === notificationLevel)?.description}
+          </p>
         </Field>
       </div>
       <div className="flex justify-end">

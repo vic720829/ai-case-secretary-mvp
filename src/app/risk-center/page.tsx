@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, Bot, BriefcaseBusiness, CalendarClock, Flag, Plus } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bot,
+  BriefcaseBusiness,
+  CalendarClock,
+  Flag,
+  MessageSquareWarning,
+  Plus
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
@@ -15,11 +24,12 @@ import {
   listMilestones,
   listProjectStages,
   listProjects,
+  listReminderLogs,
   listTasks
 } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
-import type { AiTask, Milestone, Project, ProjectStage, Task } from "@/lib/types";
+import type { AiTask, Milestone, Project, ProjectStage, ReminderLog, Task } from "@/lib/types";
 
 type HighRiskProject = {
   project: Project;
@@ -35,6 +45,7 @@ export default function RiskCenterPage() {
   const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [reminders, setReminders] = useState<ReminderLog[]>([]);
   const [memoTaskIds, setMemoTaskIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,18 +56,21 @@ export default function RiskCenterPage() {
       setError("");
 
       try {
-        const [nextProjects, nextTasks, nextAiTasks, nextStages, nextMilestones] = await Promise.all([
-          listProjects(),
-          listTasks(),
-          listAiTasks(),
-          listProjectStages(),
-          listMilestones()
-        ]);
+        const [nextProjects, nextTasks, nextAiTasks, nextStages, nextMilestones, nextReminders] =
+          await Promise.all([
+            listProjects(),
+            listTasks(),
+            listAiTasks(),
+            listProjectStages(),
+            listMilestones(),
+            listReminderLogs()
+          ]);
         setProjects(nextProjects);
         setTasks(nextTasks);
         setAiTasks(nextAiTasks);
         setStages(nextStages);
         setMilestones(nextMilestones);
+        setReminders(nextReminders);
       } catch (caught) {
         setError(getReadableError(caught));
       } finally {
@@ -119,6 +133,16 @@ export default function RiskCenterPage() {
         compareAiDraftRisk
       ),
     [highRiskPendingAiDrafts, maybeAnsweredAiDrafts, staleAiDrafts]
+  );
+  const customerUnansweredReminders = useMemo(
+    () =>
+      reminders.filter(
+        (reminder) =>
+          reminder.status === "pending" &&
+          (reminder.reminderType === "customer_message_unanswered" ||
+            reminder.reminderType === "customer_followup_unanswered")
+      ),
+    [reminders]
   );
   const milestoneWarnings = useMemo(
     () =>
@@ -226,7 +250,14 @@ export default function RiskCenterPage() {
       ) : null}
 
       {!error ? (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <RiskStatCard
+            title="客戶未回覆"
+            value={customerUnansweredReminders.length}
+            tone="red"
+            href="#customer-unanswered"
+            icon={<MessageSquareWarning className="h-5 w-5" aria-hidden />}
+          />
           <RiskStatCard
             title="待審草稿"
             value={pendingAiDrafts.length}
@@ -255,6 +286,7 @@ export default function RiskCenterPage() {
         <>
           <HighRiskProjectSection projects={highRiskProjects} />
           <MilestoneWarningSection milestones={milestoneWarnings} projects={projects} />
+          <CustomerUnansweredSection reminders={customerUnansweredReminders} projects={projects} />
           <AiPendingRiskSection aiTasks={aiPendingRisks} projects={projects} />
           <RiskSection
             id="high-risk-tasks"
@@ -594,6 +626,88 @@ function MilestoneWarningSection({
         <EmptyState
           title="今天沒有關鍵點預警"
         />
+      )}
+    </section>
+  );
+}
+
+function CustomerUnansweredSection({
+  reminders,
+  projects
+}: {
+  reminders: ReminderLog[];
+  projects: Project[];
+}) {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  return (
+    <section id="customer-unanswered" className="scroll-mt-24 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle title="客戶未回覆" description="提醒中心仍待處理的客戶訊息或客戶待追蹤事項" />
+        <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/reminders">
+          前往提醒中心
+        </Link>
+      </div>
+
+      {reminders.length ? (
+        <div className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-stone-200 text-sm">
+              <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">案件</th>
+                  <th className="px-4 py-3">提醒</th>
+                  <th className="px-4 py-3">來源</th>
+                  <th className="px-4 py-3">日期</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 bg-white">
+                {reminders.map((reminder) => {
+                  const project = projectById.get(reminder.projectId);
+
+                  return (
+                    <tr key={reminder.id} className="hover:bg-stone-50">
+                      <td className="px-4 py-4">
+                        {project ? (
+                          <Link
+                            className="font-semibold text-slate-950 hover:text-teal-700"
+                            href={`/projects/${project.id}`}
+                          >
+                            {project.name}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-500">未綁定案件</span>
+                        )}
+                        <div className="mt-1 text-xs text-slate-500">{project?.clientName ?? ""}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-slate-950">{reminder.title}</div>
+                        <div className="mt-1 text-xs leading-5 text-slate-500">
+                          {reminder.reminderType === "customer_message_unanswered"
+                            ? "客戶訊息尚未確認已回覆"
+                            : "客戶待追蹤事項尚未確認"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-600">{reminder.sourceLabel || "提醒中心"}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-600">{formatDate(reminder.dueDate)}</td>
+                      <td className="px-4 py-4 text-right">
+                        <Link
+                          className="inline-flex min-h-9 items-center rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100"
+                          href="/reminders"
+                        >
+                          處理提醒
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <EmptyState title="目前沒有客戶未回覆提醒" />
       )}
     </section>
   );

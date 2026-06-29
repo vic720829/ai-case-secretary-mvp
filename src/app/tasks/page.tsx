@@ -2,20 +2,24 @@
 
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
 import { getReadableError } from "@/lib/errors";
-import { deleteTask, listProjects, listRecentTasks } from "@/lib/firestore";
+import { createProjectMemoFromTask, deleteTask, listProjects, listRecentTasks } from "@/lib/firestore";
 import type { Project, Task } from "@/lib/types";
 
 const visibleTaskLimit = 150;
 
 export default function TasksPage() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [memoTaskIds, setMemoTaskIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [memoMessage, setMemoMessage] = useState("");
 
   async function loadData() {
     setError("");
@@ -47,6 +51,19 @@ export default function TasksPage() {
     }
   }
 
+  async function handleAddTaskMemo(task: Task) {
+    setError("");
+    setMemoMessage("");
+
+    try {
+      await createProjectMemoFromTask(task, user?.displayName || user?.email || "");
+      setMemoTaskIds((current) => new Set(current).add(task.id));
+      setMemoMessage(`已加入案件備忘錄：${task.title}`);
+    } catch (caught) {
+      setError(getReadableError(caught));
+    }
+  }
+
   if (loading) {
     return <LoadingState label="正在讀取待辦" />;
   }
@@ -64,6 +81,11 @@ export default function TasksPage() {
         }
       />
       <ErrorMessage message={error} />
+      {memoMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {memoMessage}
+        </div>
+      ) : null}
       {!error && tasks.length ? (
         <p className="text-sm text-slate-500">
           目前顯示最新 {visibleTaskLimit} 筆待辦；今日風險與提醒中心仍會完整檢查全部資料。
@@ -76,7 +98,13 @@ export default function TasksPage() {
         />
       ) : null}
       {!error && tasks.length ? (
-        <TaskTable tasks={tasks} projects={projects} onDelete={handleDelete} />
+        <TaskTable
+          tasks={tasks}
+          projects={projects}
+          memoTaskIds={memoTaskIds}
+          onAddMemo={handleAddTaskMemo}
+          onDelete={handleDelete}
+        />
       ) : null}
       {!error && !tasks.length ? (
         <EmptyState

@@ -7,6 +7,7 @@ import { LineAdminGroupForm } from "@/components/LineAdminGroupForm";
 import { LineGroupForm } from "@/components/LineGroupForm";
 import { PageHeader } from "@/components/PageHeader";
 import { Button, EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "@/components/Ui";
+import { lineNotificationLevelOptions } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import {
@@ -18,7 +19,7 @@ import {
   listProjects,
   updateLineGroup
 } from "@/lib/firestore";
-import type { LineGroup, LineGroupInput, LinePendingGroup, Message, Project } from "@/lib/types";
+import type { LineGroup, LineGroupInput, LineNotificationLevel, LinePendingGroup, Message, Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
@@ -132,7 +133,8 @@ export function LineGroupsClient() {
     await createLineGroup({
       ...value,
       groupType: "project",
-      allowAssistantReplies: false
+      allowAssistantReplies: false,
+      notificationLevel: "none"
     });
     setSelectedProjectGroupId("");
     setSelectedProjectGroupName("");
@@ -146,7 +148,8 @@ export function LineGroupsClient() {
       ...value,
       projectId: "",
       groupType: "admin",
-      allowAssistantReplies: true
+      allowAssistantReplies: true,
+      notificationLevel: value.notificationLevel ?? "primary"
     });
     try {
       await sendAdminWelcomeMessage(value.groupId.trim(), user);
@@ -186,7 +189,8 @@ export function LineGroupsClient() {
       projectId: group.groupType === "admin" ? "" : group.projectId,
       groupName: group.groupName,
       groupType: group.groupType ?? "project",
-      allowAssistantReplies: group.groupType === "admin" ? group.allowAssistantReplies !== false : false
+      allowAssistantReplies: group.groupType === "admin" ? group.allowAssistantReplies !== false : false,
+      notificationLevel: group.groupType === "admin" ? group.notificationLevel ?? "primary" : "none"
     });
   }
 
@@ -209,7 +213,8 @@ export function LineGroupsClient() {
         groupName: editValue.groupName.trim(),
         projectId: groupType === "admin" ? "" : editValue.projectId,
         groupType,
-        allowAssistantReplies: groupType === "admin" ? Boolean(editValue.allowAssistantReplies) : false
+        allowAssistantReplies: groupType === "admin" ? Boolean(editValue.allowAssistantReplies) : false,
+        notificationLevel: groupType === "admin" ? editValue.notificationLevel ?? "primary" : "none"
       };
 
       if (!nextValue.groupName) {
@@ -303,6 +308,7 @@ export function LineGroupsClient() {
                   <th className="px-4 py-3">群組</th>
                   <th className="px-4 py-3">綁定案件</th>
                   <th className="px-4 py-3">助理回覆</th>
+                  <th className="px-4 py-3">通知層級</th>
                   <th className="px-4 py-3">更新時間</th>
                   <th className="px-4 py-3">操作</th>
                 </tr>
@@ -390,6 +396,34 @@ export function LineGroupsClient() {
                           </span>
                         )}
                       </td>
+                      <td className="px-4 py-4">
+                        {isAdminGroup && isEditing ? (
+                          <div className="min-w-48">
+                            <select
+                              className={inputClassName}
+                              value={editValue.notificationLevel ?? "primary"}
+                              onChange={(event) =>
+                                setEditValue((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        notificationLevel: event.target.value as LineNotificationLevel
+                                      }
+                                    : current
+                                )
+                              }
+                            >
+                              {lineNotificationLevelOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <NotificationLevelLabel level={group.notificationLevel} />
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">
                         {formatDateTime(group.updatedAt ?? group.createdAt)}
                       </td>
@@ -457,6 +491,25 @@ function SummaryCard({ label, value, tone }: { label: string; value: number; ton
         </div>
       </div>
     </div>
+  );
+}
+
+function NotificationLevelLabel({ level }: { level?: LineNotificationLevel }) {
+  const option = getNotificationLevelOption(level);
+
+  return (
+    <div className="max-w-60">
+      <div className="text-sm font-medium text-slate-700">{option.label}</div>
+      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{option.description}</div>
+    </div>
+  );
+}
+
+function getNotificationLevelOption(level?: LineNotificationLevel) {
+  return (
+    lineNotificationLevelOptions.find((option) => option.value === level) ??
+    lineNotificationLevelOptions.find((option) => option.value === "none") ??
+    lineNotificationLevelOptions[0]
   );
 }
 

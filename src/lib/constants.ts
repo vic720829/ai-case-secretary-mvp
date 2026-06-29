@@ -2,6 +2,7 @@ import type {
   AiTaskType,
   LineMemberRole,
   LineMessageType,
+  LineNotificationLevel,
   ProjectStageStatus,
   RiskLevel,
   TaskSource,
@@ -38,6 +39,38 @@ export const lineMessageTypeOptions: Array<{ value: LineMessageType; label: stri
   { value: "text", label: "文字" },
   { value: "image", label: "圖片" },
   { value: "audio", label: "語音" }
+];
+
+export const lineNotificationLevelOptions: Array<{
+  value: LineNotificationLevel;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "primary",
+    label: "主要後台",
+    description: "收 high / critical 即時通知、每日摘要、可查詢案件。適合老闆或核心管理群。"
+  },
+  {
+    value: "secondary",
+    label: "一般後台",
+    description: "收每日摘要與 critical 即時通知、可查詢案件。適合設計師、助理、工務群。"
+  },
+  {
+    value: "critical_only",
+    label: "只收重大風險",
+    description: "只收缺失、客訴、修補、漏水、重大品質問題等 critical 通知。適合現場處理群。"
+  },
+  {
+    value: "test",
+    label: "測試群",
+    description: "不收正式推播，只用來測試查詢與按鈕功能。"
+  },
+  {
+    value: "none",
+    label: "停用通知",
+    description: "不收推播，也不作為日常管理群。"
+  }
 ];
 
 export const lineMemberRoleOptions: Array<{ value: LineMemberRole; label: string }> = [

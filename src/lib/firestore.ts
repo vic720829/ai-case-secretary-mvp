@@ -35,6 +35,7 @@ import type {
   MilestoneInput,
   LineGroup,
   LineGroupInput,
+  LineNotificationLevel,
   LinePendingGroup,
   LineMember,
   LineMemberInput,
@@ -356,17 +357,32 @@ function calendarEventFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Ca
 
 function lineGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LineGroup {
   const data = snapshot.data();
+  const groupType = data.groupType ?? "project";
 
   return {
     id: snapshot.id,
     groupId: data.groupId ?? "",
     projectId: data.projectId ?? "",
     groupName: data.groupName ?? "",
-    groupType: data.groupType ?? "project",
+    groupType,
     allowAssistantReplies: Boolean(data.allowAssistantReplies ?? false),
+    notificationLevel: normalizeLineNotificationLevel(
+      data.notificationLevel,
+      groupType === "admin" ? "primary" : "none"
+    ),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
+}
+
+function normalizeLineNotificationLevel(value: unknown, fallback: LineNotificationLevel): LineNotificationLevel {
+  return value === "primary" ||
+    value === "secondary" ||
+    value === "critical_only" ||
+    value === "test" ||
+    value === "none"
+    ? value
+    : fallback;
 }
 
 function linePendingGroupFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): LinePendingGroup {
