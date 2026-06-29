@@ -14,3 +14,4 @@ tsconfig.tsbuildinfo
 dev-server.log
 dev-server-error.log
 .dev-server.pid
+.dev-server-*.pid

@@ -27,6 +27,8 @@ import type {
   AiFeedbackEventInput,
   AuditActor,
   AuditLog,
+  CalendarEvent,
+  CalendarEventInput,
   LearnedRule,
   LearnedRuleInput,
   Milestone,
@@ -40,6 +42,8 @@ import type {
   MessageAttachment,
   Project,
   ProjectInput,
+  ProjectMemo,
+  ProjectMemoInput,
   ProjectStage,
   ProjectStageInput,
   ReminderLog,
@@ -53,8 +57,10 @@ import type {
 
 const PROJECTS_COLLECTION = "projects";
 const TASKS_COLLECTION = "tasks";
+const PROJECT_MEMOS_COLLECTION = "project_memos";
 const PROJECT_STAGES_COLLECTION = "projectStages";
 const MILESTONES_COLLECTION = "milestones";
+const CALENDAR_EVENTS_COLLECTION = "calendar_events";
 const LINE_GROUPS_COLLECTION = "line_groups";
 const LINE_PENDING_GROUPS_COLLECTION = "line_pending_groups";
 const LINE_MEMBERS_COLLECTION = "line_members";
@@ -252,6 +258,25 @@ function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
   };
 }
 
+function projectMemoFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectMemo {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    projectId: data.projectId ?? "",
+    title: data.title ?? "",
+    content: data.content ?? "",
+    sourceTaskId: data.sourceTaskId ?? "",
+    sourceTaskTitle: data.sourceTaskTitle ?? "",
+    sourceTaskStatus: data.sourceTaskStatus ?? "todo",
+    sourceTaskDueDate: data.sourceTaskDueDate ?? "",
+    sourceTaskRiskLevel: data.sourceTaskRiskLevel ?? "low",
+    createdBy: data.createdBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
 function projectStageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectStage {
   const data = snapshot.data();
 
@@ -282,6 +307,47 @@ function milestoneFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Milest
     completed: Boolean(data.completed ?? false),
     riskLevel: data.riskLevel ?? "low",
     reminderDaysBefore: Number(data.reminderDaysBefore ?? 0),
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function calendarEventFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): CalendarEvent {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    title: data.title ?? "",
+    description: data.description ?? "",
+    projectId: data.projectId ?? "",
+    startDate: data.startDate ?? "",
+    endDate: data.endDate ?? data.startDate ?? "",
+    startTime: data.startTime ?? "",
+    endTime: data.endTime ?? "",
+    location: data.location ?? "",
+    owner: data.owner ?? "",
+    counterpartyType:
+      data.counterpartyType === "customer" ||
+      data.counterpartyType === "vendor" ||
+      data.counterpartyType === "internal"
+        ? data.counterpartyType
+        : "other",
+    counterpartyName: data.counterpartyName ?? "",
+    contactMethod: data.contactMethod ?? "",
+    eventType:
+      data.eventType === "site_visit" ||
+      data.eventType === "meeting" ||
+      data.eventType === "design" ||
+      data.eventType === "construction" ||
+      data.eventType === "delivery" ||
+      data.eventType === "payment"
+        ? data.eventType
+        : "other",
+    status:
+      data.status === "done" || data.status === "cancelled"
+        ? data.status
+        : "scheduled",
+    source: data.source === "line" || data.source === "ai" ? data.source : "manual",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
@@ -654,8 +720,10 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   const [
     projectSnapshot,
     linkedTasks,
+    linkedProjectMemos,
     linkedStages,
     linkedMilestones,
+    linkedCalendarEvents,
     linkedLineGroups,
     linkedMessages,
     linkedLineMembers,
@@ -665,8 +733,10 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   ] = await Promise.all([
     getDoc(doc(database, PROJECTS_COLLECTION, id)),
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, PROJECT_MEMOS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, CALENDAR_EVENTS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_GROUPS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MESSAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_MEMBERS_COLLECTION), where("projectId", "==", id))),
@@ -680,11 +750,17 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   linkedTasks.docs.forEach((taskSnapshot) => {
     batch.delete(taskSnapshot.ref);
   });
+  linkedProjectMemos.docs.forEach((memoSnapshot) => {
+    batch.delete(memoSnapshot.ref);
+  });
   linkedStages.docs.forEach((stageSnapshot) => {
     batch.delete(stageSnapshot.ref);
   });
   linkedMilestones.docs.forEach((milestoneSnapshot) => {
     batch.delete(milestoneSnapshot.ref);
+  });
+  linkedCalendarEvents.docs.forEach((eventSnapshot) => {
+    batch.delete(eventSnapshot.ref);
   });
   linkedLineGroups.docs.forEach((lineGroupSnapshot) => {
     batch.delete(lineGroupSnapshot.ref);
@@ -776,6 +852,67 @@ export async function updateTask(id: string, input: TaskInput) {
 export async function deleteTask(id: string) {
   const database = requireDb();
   await deleteDoc(doc(database, TASKS_COLLECTION, id));
+}
+
+export async function listProjectMemosByProject(projectId: string) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, PROJECT_MEMOS_COLLECTION), where("projectId", "==", projectId))
+  );
+
+  return snapshot.docs
+    .map(projectMemoFromDoc)
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export async function createProjectMemo(input: ProjectMemoInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, PROJECT_MEMOS_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function createProjectMemoFromTask(task: Task, createdBy = "") {
+  if (!task.projectId) {
+    throw new Error("這個待辦沒有綁定案件，無法加入案件備忘錄。");
+  }
+
+  const database = requireDb();
+  const ref = doc(database, PROJECT_MEMOS_COLLECTION, `task_${task.id}`);
+
+  await runTransaction(database, async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const existing = snapshot.exists() ? snapshot.data() : null;
+
+    transaction.set(
+      ref,
+      {
+        projectId: task.projectId,
+        title: task.title,
+        content: task.description || "由待辦加入備忘錄，原待辦未填寫內容。",
+        sourceTaskId: task.id,
+        sourceTaskTitle: task.title,
+        sourceTaskStatus: task.status,
+        sourceTaskDueDate: task.dueDate,
+        sourceTaskRiskLevel: task.riskLevel,
+        createdBy: existing?.createdBy || createdBy,
+        createdAt: existing?.createdAt ?? serverTimestamp(),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  });
+
+  return ref.id;
+}
+
+export async function deleteProjectMemo(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, PROJECT_MEMOS_COLLECTION, id));
 }
 
 export async function listProjectStages() {
@@ -877,6 +1014,44 @@ export async function updateMilestone(id: string, input: MilestoneInput) {
 export async function deleteMilestone(id: string) {
   const database = requireDb();
   await deleteDoc(doc(database, MILESTONES_COLLECTION, id));
+}
+
+export async function listCalendarEvents() {
+  const database = requireDb();
+  const snapshot = await getDocs(collection(database, CALENDAR_EVENTS_COLLECTION));
+
+  return snapshot.docs
+    .map(calendarEventFromDoc)
+    .sort((a, b) => {
+      const dateOrder = (a.startDate || "9999-99-99").localeCompare(b.startDate || "9999-99-99");
+      if (dateOrder) return dateOrder;
+
+      return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+    });
+}
+
+export async function createCalendarEvent(input: CalendarEventInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, CALENDAR_EVENTS_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function updateCalendarEvent(id: string, input: CalendarEventInput) {
+  const database = requireDb();
+  await updateDoc(doc(database, CALENDAR_EVENTS_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteCalendarEvent(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, CALENDAR_EVENTS_COLLECTION, id));
 }
 
 export async function listLineGroups() {

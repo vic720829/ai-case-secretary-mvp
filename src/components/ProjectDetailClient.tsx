@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Edit3, Gauge, ImageIcon, MessageSquareText, Plus, X } from "lucide-react";
+import { ArrowLeft, Edit3, Gauge, ImageIcon, MessageSquareText, NotebookText, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
@@ -13,30 +13,36 @@ import { toAuditActor } from "@/lib/audit";
 import {
   deleteProject,
   deleteTask,
+  createProjectMemoFromTask,
   getProject,
+  listProjectMemosByProject,
   listTasksByProject,
   updateProject
 } from "@/lib/firestore";
-import type { Project, ProjectInput, Task } from "@/lib/types";
+import type { Project, ProjectInput, ProjectMemo, Task } from "@/lib/types";
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [memos, setMemos] = useState<ProjectMemo[]>([]);
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [memoMessage, setMemoMessage] = useState("");
 
   const loadData = useCallback(async () => {
     setError("");
-    const [nextProject, nextTasks] = await Promise.all([
+    const [nextProject, nextTasks, nextMemos] = await Promise.all([
       getProject(projectId),
-      listTasksByProject(projectId)
+      listTasksByProject(projectId),
+      listProjectMemosByProject(projectId)
     ]);
 
     setProject(nextProject);
     setTasks(nextTasks);
+    setMemos(nextMemos);
     setLoading(false);
   }, [projectId]);
 
@@ -64,6 +70,20 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       setTasks((current) => current.filter((item) => item.id !== task.id));
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "刪除待辦失敗。";
+      setError(message);
+    }
+  }
+
+  async function handleAddTaskMemo(task: Task) {
+    setError("");
+    setMemoMessage("");
+
+    try {
+      await createProjectMemoFromTask(task, user?.displayName || user?.email || "");
+      await loadData();
+      setMemoMessage(`已加入案件備忘錄：${task.title}`);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "加入備忘錄失敗。";
       setError(message);
     }
   }
@@ -114,6 +134,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
               <ImageIcon className="h-4 w-4" aria-hidden />
               案件附件
             </SecondaryLink>
+            <SecondaryLink href={`/projects/${projectId}/memos`}>
+              <NotebookText className="h-4 w-4" aria-hidden />
+              案件備忘錄
+            </SecondaryLink>
             <ConfirmDeleteButton
               confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
               onConfirm={handleDeleteProject}
@@ -122,6 +146,11 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         }
       />
       <ErrorMessage message={error} />
+      {memoMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {memoMessage}
+        </div>
+      ) : null}
       {projectEditorOpen ? (
         <ProjectEditDialog
           project={project}
@@ -138,7 +167,13 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           </PrimaryLink>
         </div>
         {tasks.length ? (
-          <TaskTable tasks={tasks} projects={[project]} onDelete={handleDeleteTask} />
+          <TaskTable
+            tasks={tasks}
+            projects={[project]}
+            memoTaskIds={new Set(memos.map((memo) => memo.sourceTaskId).filter((id): id is string => Boolean(id)))}
+            onAddMemo={handleAddTaskMemo}
+            onDelete={handleDeleteTask}
+          />
         ) : (
           <EmptyState
             title="此案件還沒有待辦"

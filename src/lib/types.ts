@@ -21,6 +21,17 @@ export type ReminderType =
   | "high_risk";
 export type ReminderStatus = "pending" | "confirmed";
 export type WebhookLogStatus = "success" | "skipped" | "error";
+export type CalendarEventType =
+  | "site_visit"
+  | "meeting"
+  | "design"
+  | "construction"
+  | "delivery"
+  | "payment"
+  | "other";
+export type CalendarEventStatus = "scheduled" | "done" | "cancelled";
+export type CalendarEventSource = "manual" | "line" | "ai";
+export type CalendarEventCounterpartyType = "customer" | "vendor" | "internal" | "other";
 export type UserRole = "owner" | "admin" | "staff" | "viewer";
 export type AuditAction = "create" | "update" | "delete";
 export type AiFeedbackSource = "website" | "line";
@@ -85,6 +96,24 @@ export type Task = TaskInput & {
   updatedAt: Date | null;
 };
 
+export type ProjectMemoInput = {
+  projectId: string;
+  title: string;
+  content: string;
+  sourceTaskId?: string;
+  sourceTaskTitle?: string;
+  sourceTaskStatus?: TaskStatus;
+  sourceTaskDueDate?: string;
+  sourceTaskRiskLevel?: RiskLevel;
+  createdBy?: string;
+};
+
+export type ProjectMemo = ProjectMemoInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 export type ProjectStageInput = {
   projectId: string;
   stageName: string;
@@ -113,6 +142,30 @@ export type MilestoneInput = {
 };
 
 export type Milestone = MilestoneInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type CalendarEventInput = {
+  title: string;
+  description: string;
+  projectId: string;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  owner: string;
+  counterpartyType: CalendarEventCounterpartyType;
+  counterpartyName: string;
+  contactMethod: string;
+  eventType: CalendarEventType;
+  status: CalendarEventStatus;
+  source: CalendarEventSource;
+};
+
+export type CalendarEvent = CalendarEventInput & {
   id: string;
   createdAt: Date | null;
   updatedAt: Date | null;

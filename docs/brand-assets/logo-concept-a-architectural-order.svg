@@ -1,0 +1,15 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Logo concept A - architectural order</title>
+  <desc id="desc">A minimal architectural logo mark formed by overlapping rectangular outlines and a small champagne origin point.</desc>
+  <rect width="512" height="512" fill="#F7F6F2"/>
+  <g stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M118 356H394" stroke="#111111" stroke-width="13"/>
+    <path d="M154 356V126H262V356" stroke="#111111" stroke-width="13"/>
+    <path d="M239 356V205H354V356" stroke="#64635F" stroke-width="13"/>
+    <path d="M188 356V272H288V356" stroke="#C9A66B" stroke-width="8"/>
+    <path d="M256 356V296" stroke="#C9A66B" stroke-width="6"/>
+  </g>
+  <circle cx="256" cy="356" r="12" fill="#C9A66B"/>
+  <circle cx="256" cy="356" r="24" fill="#C9A66B" opacity=".12"/>
+  <path d="M139 386H373" stroke="#111111" stroke-width="4"/>
+</svg>

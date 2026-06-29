@@ -1,0 +1,12 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Logo concept C - light portal</title>
+  <desc id="desc">A solid architectural doorway mark with a subtle champagne inner edge and a light plane.</desc>
+  <rect width="512" height="512" fill="#F7F6F2"/>
+  <path d="M139 112H356V396H300V169H195V396H139V112Z" fill="#111111"/>
+  <path d="M300 169H356V396L300 341V169Z" fill="#2C2C2A"/>
+  <path d="M195 396H300L389 449H260L195 396Z" fill="#BDA987" opacity=".42"/>
+  <path d="M300 169V341" stroke="#C9A66B" stroke-width="8" stroke-linecap="square"/>
+  <path d="M300 341L389 449" stroke="#C9A66B" stroke-width="5" opacity=".9"/>
+  <circle cx="300" cy="341" r="12" fill="#C9A66B"/>
+  <circle cx="300" cy="341" r="28" fill="#C9A66B" opacity=".13"/>
+</svg>

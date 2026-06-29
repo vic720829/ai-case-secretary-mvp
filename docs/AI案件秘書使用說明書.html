@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI案件秘書 使用說明書</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #172033;
+      background: #f3f5f2;
+      font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+      line-height: 1.62;
+      letter-spacing: 0;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto 20px;
+      padding: 18mm 16mm;
+      background: #fbfbf8;
+      box-shadow: 0 18px 55px rgba(20, 35, 50, 0.14);
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    .cover {
+      padding: 0;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      background:
+        linear-gradient(135deg, rgba(13, 118, 110, 0.98), rgba(30, 64, 95, 0.96)),
+        linear-gradient(45deg, #0f766e, #1f2937);
+      color: #ffffff;
+    }
+
+    .cover-pattern {
+      position: absolute;
+      inset: 0;
+      opacity: 0.17;
+      background-image:
+        linear-gradient(90deg, rgba(255,255,255,.28) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255,255,255,.18) 1px, transparent 1px);
+      background-size: 18mm 18mm;
+    }
+
+    .cover-inner {
+      position: relative;
+      z-index: 1;
+      padding: 30mm 19mm 14mm;
+    }
+
+    .brand-mark {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.32);
+      font-size: 26px;
+      font-weight: 900;
+      margin-bottom: 34mm;
+    }
+
+    .kicker {
+      display: inline-block;
+      padding: 5px 10px;
+      border: 1px solid rgba(255,255,255,0.38);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #d7fff8;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 43px;
+      line-height: 1.12;
+      letter-spacing: 0;
+      font-weight: 900;
+    }
+
+    .subtitle {
+      max-width: 520px;
+      margin: 18px 0 0;
+      color: #d8ece8;
+      font-size: 16px;
+    }
+
+    .cover-footer {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 19mm 18mm;
+      color: #e6fffb;
+      font-size: 12px;
+    }
+
+    .cover-card {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.11);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+
+    .section-kicker {
+      color: #0f766e;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin: 0 0 6px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      color: #111827;
+      font-size: 26px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      color: #172033;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 12px;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .muted {
+      color: #64748b;
+    }
+
+    .toc {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .toc-item {
+      padding: 12px 14px;
+      border: 1px solid #d8dfd8;
+      border-radius: 12px;
+      background: #ffffff;
+    }
+
+    .toc-num {
+      color: #0f766e;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid.two {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .grid.three {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .card {
+      border: 1px solid #dce3de;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 14px 15px;
+    }
+
+    .card strong {
+      color: #0f172a;
+    }
+
+    .note {
+      border-left: 5px solid #0f766e;
+      background: #ecfdf5;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    .warning {
+      border-left: 5px solid #dc2626;
+      background: #fff1f2;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    .amber {
+      border-left: 5px solid #d97706;
+      background: #fffbeb;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 16px;
+      background: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+
+    th {
+      background: #12302d;
+      color: #ffffff;
+      text-align: left;
+      padding: 9px 10px;
+      font-weight: 800;
+    }
+
+    td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code,
+    .cmd {
+      font-family: "Consolas", "Courier New", monospace;
+      background: #eef2f7;
+      color: #0f172a;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 12px;
+    }
+
+    pre.cmd {
+      display: block;
+      white-space: pre-wrap;
+      margin: 8px 0 0;
+      padding: 12px 14px;
+      border-radius: 10px;
+      line-height: 1.6;
+    }
+
+    .flow {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: 1fr 22px 1fr 22px 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-box {
+      background: #ffffff;
+      border: 1px solid #dce3de;
+      border-radius: 12px;
+      padding: 10px 12px;
+      text-align: center;
+      font-weight: 800;
+      min-height: 54px;
+      display: grid;
+      place-items: center;
+    }
+
+    .arrow {
+      text-align: center;
+      color: #0f766e;
+      font-weight: 900;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      margin-right: 4px;
+    }
+
+    .badge.green { background: #dcfce7; color: #166534; }
+    .badge.amber { background: #fef3c7; color: #92400e; border-left: 0; margin: 0 4px 0 0; }
+    .badge.red { background: #fee2e2; color: #991b1b; }
+    .badge.blue { background: #dbeafe; color: #1e40af; }
+    .badge.slate { background: #e2e8f0; color: #334155; }
+
+    .page-number {
+      position: absolute;
+      right: 16mm;
+      bottom: 9mm;
+      color: #94a3b8;
+      font-size: 10px;
+    }
+
+    .quote {
+      font-size: 20px;
+      color: #0f172a;
+      line-height: 1.45;
+      border-left: 6px solid #0f766e;
+      padding-left: 16px;
+      margin: 22px 0;
+      font-weight: 800;
+    }
+
+    .checklist li {
+      list-style: none;
+      position: relative;
+      padding-left: 2px;
+    }
+
+    .checklist li::before {
+      content: "✓";
+      color: #0f766e;
+      font-weight: 900;
+      margin-right: 8px;
+    }
+
+    @media print {
+      html,
+      body {
+        background: #ffffff;
+        width: 210mm;
+      }
+
+      .page {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        box-shadow: none;
+        overflow: hidden;
+        break-after: page;
+        page-break-after: always;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+
+      .page:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+
+      .card,
+      .note,
+      .warning,
+      .amber,
+      table,
+      .flow,
+      .toc-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="cover-pattern"></div>
+    <div class="cover-inner">
+      <div class="brand-mark">AI</div>
+      <div class="kicker">Interior Ops MVP｜使用說明與系統邏輯</div>
+      <h1>AI案件秘書<br />使用說明書</h1>
+      <p class="subtitle">室內設計與工程公司專用的案件、待辦、LINE 同步、工期與風險追蹤後台。這份文件給老闆、設計師、助理與工務一起使用。</p>
+    </div>
+    <div class="cover-footer">
+      <div class="cover-card">
+        <strong>版本</strong><br />2026.06.26
+      </div>
+      <div class="cover-card">
+        <strong>系統</strong><br />AI案件秘書 MVP
+      </div>
+      <div class="cover-card">
+        <strong>重點</strong><br />少漏回、少漏追、少漏工期
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Overview</p>
+    <h2>這套系統在幫你解決什麼</h2>
+    <p class="quote">AI案件秘書不是一般 CRM。它的核心是把 LINE 客戶對話、案件待辦、工程工期與風險提醒接在一起，避免事情被看過、答應過，最後卻忘記。</p>
+    <div class="grid two">
+      <div class="card">
+        <h3>主要用途</h3>
+        <ul class="checklist">
+          <li>管理案件基本資料與負責人</li>
+          <li>追蹤待辦、截止日、風險等級</li>
+          <li>同步案件 LINE 群組訊息</li>
+          <li>由 AI 建立待審草稿，再由人審核</li>
+          <li>管理工期表、工程進場與關鍵節點</li>
+          <li>在 LINE 後台群收到提醒與摘要</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>使用原則</h3>
+        <ul class="checklist">
+          <li>客戶群只收訊息，不亂回覆</li>
+          <li>公司後台群才會回覆問題與發提醒</li>
+          <li>AI 建立的是草稿，不直接變正式待辦</li>
+          <li>重大風險優先進入今日風險中心</li>
+          <li>員工帳號由管理者建立，不開放自由註冊</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>目錄</h3>
+    <div class="toc">
+      <div class="toc-item"><div class="toc-num">01</div>登入、角色與後台選單</div>
+      <div class="toc-item"><div class="toc-num">02</div>每日工作流程</div>
+      <div class="toc-item"><div class="toc-num">03</div>案件、待辦與工程進度</div>
+      <div class="toc-item"><div class="toc-num">04</div>LINE 群組與 LINE 成員</div>
+      <div class="toc-item"><div class="toc-num">05</div>AI 待辦審核邏輯</div>
+      <div class="toc-item"><div class="toc-num">06</div>今日風險中心邏輯</div>
+      <div class="toc-item"><div class="toc-num">07</div>工期表與 LINE 指令</div>
+      <div class="toc-item"><div class="toc-num">08</div>照片、客訴與多後台群規則</div>
+    </div>
+    <div class="page-number">01</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Access</p>
+    <h2>登入、角色與後台選單</h2>
+    <p>員工請使用管理者建立的 Email 與密碼登入。系統目前不開放員工自行註冊，避免不明帳號進入公司資料。</p>
+
+    <table>
+      <thead>
+        <tr><th>角色</th><th>適合對象</th><th>權限重點</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Owner</strong></td><td>老闆、系統擁有者</td><td>最高權限，可看 Webhook 紀錄、操作紀錄、員工管理與全部資料。</td></tr>
+        <tr><td><strong>Admin</strong></td><td>主管、管理者</td><td>可管理員工、案件、LINE 設定與日常營運資料。</td></tr>
+        <tr><td><strong>Staff</strong></td><td>設計師、助理、工務</td><td>可管理案件、待辦、工期、提醒與 LINE 工作流。</td></tr>
+        <tr><td><strong>Viewer</strong></td><td>只需查看的人員</td><td>只看資料，不適合執行審核或管理設定。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>左側選單用途</h3>
+    <table>
+      <thead>
+        <tr><th>功能</th><th>用途</th><th>建議使用頻率</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>今日風險</td><td>看今天最需要處理的風險、逾期、待審與到期事項。</td><td>每天多次</td></tr>
+        <tr><td>待辦審核</td><td>審核 AI 從 LINE 對話抓出的待辦草稿。</td><td>收到提醒時</td></tr>
+        <tr><td>提醒中心</td><td>查看尚未確認、稍後提醒、高優先提醒。</td><td>每天</td></tr>
+        <tr><td>案件列表</td><td>建立案件、查看案件詳情、進入工程進度與 LINE 對話。</td><td>每天</td></tr>
+        <tr><td>工期總表</td><td>集中查看全部案件工期節點與今日施工安排。</td><td>每天</td></tr>
+        <tr><td>待辦列表</td><td>查看所有正式待辦、負責人、截止日、風險。</td><td>每天</td></tr>
+        <tr><td>LINE群組</td><td>綁定案件 LINE 群與公司後台群。</td><td>新增群組時</td></tr>
+        <tr><td>LINE成員</td><td>設定 LINE 發話者身份：內部人員、客戶、廠商。</td><td>新人或新群時</td></tr>
+        <tr><td>LINE對話</td><td>查看同步進來的 LINE 原始訊息與圖片。</td><td>查紀錄時</td></tr>
+        <tr><td>員工管理</td><td>建立員工帳號、角色、啟用狀態。</td><td>人員異動時</td></tr>
+        <tr><td>Webhook紀錄 / 操作紀錄</td><td>系統除錯與責任追蹤，僅 Owner 顯示。</td><td>異常時</td></tr>
+      </tbody>
+    </table>
+    <div class="page-number">02</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Daily Flow</p>
+    <h2>每日工作流程</h2>
+    <div class="grid three">
+      <div class="card">
+        <span class="badge green">08:30</span>
+        <h3>開工摘要</h3>
+        <p>讓團隊一早知道今天要盯什麼。</p>
+        <ul>
+          <li>今天到期 / 已逾期待辦</li>
+          <li>今天進場工程</li>
+          <li>今天關鍵節點</li>
+          <li>高風險案件</li>
+          <li>昨天到現在未審核草稿</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="badge amber">14:00</span>
+        <h3>未回覆檢查</h3>
+        <p>避免客戶訊息看了忘記回。</p>
+        <ul>
+          <li>客戶訊息超過 2 小時未回覆</li>
+          <li>AI 草稿超過 30 分鐘未審核</li>
+          <li>客戶待確認事項</li>
+          <li>今天應回覆但未完成的承諾</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="badge red">18:30</span>
+        <h3>收尾提醒</h3>
+        <p>下班前把洞補起來。</p>
+        <ul>
+          <li>今日新增變更 / 收款 / 發票草稿</li>
+          <li>仍未處理的逾期事項</li>
+          <li>高風險案件與待辦</li>
+          <li>提醒進入提醒中心收尾</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>建議日常 SOP：</strong>早上先看「今日風險」，中午前處理待辦審核，下午看未回覆檢查，下班前確認提醒中心沒有高優先未處理項目。
+    </div>
+
+    <h3>LINE 後台群按鈕</h3>
+    <table>
+      <thead>
+        <tr><th>按鈕</th><th>用途</th><th>重要邏輯</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>已確認 / 已回覆</td><td>表示員工已看過並處理完成。</td><td>一旦按下，其他後台群再按不會覆蓋。</td></tr>
+        <tr><td>稍後提醒 / 明天追蹤</td><td>目前不能完成，需要延後提醒。</td><td>若已被確認，延後動作不會生效。</td></tr>
+        <tr><td>通過建立待辦</td><td>將 AI 草稿變成正式待辦。</td><td>第一個人按下後鎖定，其他人不能再拒絕或重複建立。</td></tr>
+        <tr><td>拒絕草稿</td><td>AI 誤判或不需要追蹤時使用。</td><td>第一個人拒絕後，其他人不能再通過。</td></tr>
+        <tr><td>網站編輯</td><td>內容、日期、負責人需要調整時進網站處理。</td><td>網站保留完整審核紀錄。</td></tr>
+      </tbody>
+    </table>
+    <div class="page-number">03</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Projects</p>
+    <h2>案件、待辦、工程進度</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>案件管理</h3>
+        <p>案件是所有資料的核心。新增案件後，待辦、工期、關鍵節點、LINE 群組都應綁定到案件。</p>
+        <ul>
+          <li>案件名稱、客戶名稱</li>
+          <li>目前階段、狀態</li>
+          <li>負責設計師、設計助理</li>
+          <li>預計完工日</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>待辦管理</h3>
+        <p>正式待辦代表公司要執行或追蹤的工作。AI 草稿通過後也會變成正式待辦。</p>
+        <ul>
+          <li>標題、內容、負責人</li>
+          <li>截止日、狀態</li>
+          <li>來源：手動 / LINE / AI / 語音</li>
+          <li>風險：低 / 中 / 高</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>工程進度與工期表</h3>
+    <table>
+      <thead>
+        <tr><th>項目</th><th>用途</th><th>提醒方式</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>工程進度</td><td>每個案件自己的工程階段與完成比例。</td><td>案件詳情內查看。</td></tr>
+        <tr><td>施工工期表</td><td>每個案件自己的施工排程，可用月曆看工程項目。</td><td>LINE 可問指定案件工期表。</td></tr>
+        <tr><td>工期總表</td><td>跨案件查看今天哪些案場有什麼工種。</td><td>後台總表與 LINE「今天工期」。</td></tr>
+        <tr><td>關鍵節點</td><td>簽約、丈量、圖面確認、進場、驗收等重要節點。</td><td>可設定提前 N 天提醒。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">案件</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">工期節點</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">關鍵節點</div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-box">LINE 訊息</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">AI 待審草稿</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">正式待辦</div>
+      </div>
+    </div>
+
+    <div class="amber">
+      <strong>實務建議：</strong>工期節點用「工程項目」記，例如木工工程、水電工程、泥作工程；關鍵節點用「不可漏掉的重要日期」記，例如系統櫃丈量、圖面確認、驗收、請款。
+    </div>
+    <div class="page-number">04</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">LINE</p>
+    <h2>LINE 群組與 LINE 成員</h2>
+    <h3>LINE 群組類型</h3>
+    <table>
+      <thead>
+        <tr><th>群組類型</th><th>用途</th><th>AI 行為</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>案件客戶群</td><td>同步客戶、設計師、廠商在案件群內的對話。</td><td>只收訊息與建立草稿，不在客戶群亂回答。</td></tr>
+        <tr><td>公司後台群</td><td>公司內部收提醒、審核草稿、問 AI 問題。</td><td>會回答問題、發提醒、顯示審核按鈕。</td></tr>
+        <tr><td>未綁定群組</td><td>機器人收到事件但尚未指定用途。</td><td>網站 LINE 群組頁可查看並綁定。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>LINE 成員身份</h3>
+    <table>
+      <thead>
+        <tr><th>身份</th><th>意思</th><th>AI 判斷</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>內部人員</td><td>公司員工、設計師、助理、工務。</td><td>說「明天回覆」會被視為公司承諾。</td></tr>
+        <tr><td>客戶</td><td>業主或客戶代表。</td><td>提問、變更、抱怨會被追蹤。</td></tr>
+        <tr><td>廠商</td><td>工班、供應商、外部協作人員。</td><td>可作為待追蹤訊息來源。</td></tr>
+        <tr><td>未綁定</td><td>尚未在 LINE 成員頁建立。</td><td><strong>預設視為客戶</strong>，避免漏掉客戶訊息。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warning">
+      <strong>重要：</strong>客戶群不會出現 AI 審核按鈕，也不應要求客戶在群內輸入指令。所有公司內部指令請在公司後台群操作。
+    </div>
+
+    <h3>LINE 後台常用指令</h3>
+    <table>
+      <thead>
+        <tr><th>你可以問</th><th>系統會回答</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="cmd">今天有什麼事情？</span></td><td>今天到期待辦、關鍵節點與工期提醒。</td></tr>
+        <tr><td><span class="cmd">明天有什麼事情？</span></td><td>明天待辦、關鍵節點與工期安排。</td></tr>
+        <tr><td><span class="cmd">有哪些案件有風險？</span></td><td>高風險、逾期工期、逾期關鍵節點。</td></tr>
+        <tr><td><span class="cmd">有哪些款項要收？</span></td><td>收款類 AI 待辦。</td></tr>
+        <tr><td><span class="cmd">有哪些發票還沒開？</span></td><td>發票類 AI 待辦。</td></tr>
+        <tr><td><span class="cmd">測試做到哪裡？</span></td><td>案件目前階段、完成比例、下一階段、風險。</td></tr>
+        <tr><td><span class="cmd">測試工期表</span></td><td>指定案件所有工期排程與今天工種。</td></tr>
+        <tr><td><span class="cmd">今天工期</span></td><td>今天所有案件施工工種安排。</td></tr>
+      </tbody>
+    </table>
+    <div class="page-number">05</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">AI Review</p>
+    <h2>AI 待辦審核邏輯</h2>
+    <p>AI 不會直接幫你建立正式待辦。它先建立「待審草稿」，由員工在網站或公司 LINE 後台通過 / 拒絕。</p>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">案件 LINE 對話</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">AI 分析</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">待審草稿</div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-box">網站或 LINE 審核</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">正式待辦</div>
+        <div class="arrow">→</div>
+        <div class="flow-box">風險 / 提醒</div>
+      </div>
+    </div>
+
+    <h3>AI 會抓哪些類型</h3>
+    <table>
+      <thead>
+        <tr><th>類型</th><th>例句</th><th>預設風險</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>承諾 promise</td><td>我明天回覆、我幫你確認、我安排一下。</td><td>中</td></tr>
+        <tr><td>變更 change</td><td>改顏色、改尺寸、新增抽屜、不做電視牆。</td><td>高</td></tr>
+        <tr><td>追蹤 followup</td><td>客戶尚未確認、這件要再追、客戶問工期表。</td><td>中</td></tr>
+        <tr><td>收款 payment</td><td>第二期款、尾款、請款、款項。</td><td>高</td></tr>
+        <tr><td>發票 invoice</td><td>發票、統編、報帳。</td><td>高</td></tr>
+        <tr><td>客訴 / 修補</td><td>缺失、修補、品質不好、很爛、不滿意、有問題。</td><td><strong>高</strong></td></tr>
+      </tbody>
+    </table>
+
+    <h3>審核逾時規則</h3>
+    <table>
+      <thead>
+        <tr><th>時間</th><th>系統處理</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>訊息進來</td><td>符合條件會即時通知公司後台群。</td></tr>
+        <tr><td>超過 30 分鐘未審核</td><td>進入提醒中心與風險中心的「超過 30 分鐘未審核」。</td></tr>
+        <tr><td>超過 3 小時未審核</td><td>標成高優先提醒。</td></tr>
+        <tr><td>隔天 9:00 仍未審核</td><td>開工摘要會列出。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <strong>網站與 LINE 的分工：</strong>簡單明確的草稿可在 LINE 後台直接通過 / 拒絕；需要改內容、日期、負責人時，請點網站編輯。
+    </div>
+    <div class="page-number">06</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Risk Center</p>
+    <h2>今日風險中心邏輯</h2>
+    <p>今日風險中心的目的不是統計 AI 做了多少事，而是回答：今天我到底要先處理什麼？</p>
+
+    <table>
+      <thead>
+        <tr><th>區塊</th><th>出現條件</th><th>你要做什麼</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>高風險案件</td><td>案件有逾期工期、逾期關鍵節點、高風險關鍵節點或高風險待辦。</td><td>先確認案件是否需要主管介入。</td></tr>
+        <tr><td>高風險待辦</td><td>正式待辦未完成且風險等級為高。</td><td>指派負責人與處理期限。</td></tr>
+        <tr><td>已逾期待辦</td><td>正式待辦未完成，截止日早於今天。</td><td>更新狀態、補回覆、重新安排期限。</td></tr>
+        <tr><td>今天到期待辦</td><td>正式待辦未完成，截止日等於今天。</td><td>當天收掉或延後並說明原因。</td></tr>
+        <tr><td>關鍵點預警</td><td>關鍵節點到期日扣掉提前提醒天數等於今天。</td><td>提前準備，不等到到期才處理。</td></tr>
+        <tr><td>待審與未確認事項</td><td>AI 草稿超過 30 分鐘未審、可能已回覆但未確認、高風險待審。</td><td>進待辦審核確認。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>高風險自動判斷</h3>
+    <ul>
+      <li>AI 類型為變更、收款、發票，通常視為高風險。</li>
+      <li>標題含客訴、缺失、修補、品質不好、很爛、不滿意、有問題等，直接高風險。</li>
+      <li>里程碑已逾期、工期節點未完成且逾期，會推高案件風險。</li>
+      <li>高風險關鍵節點未完成，也會讓案件進入高風險案件。</li>
+    </ul>
+
+    <div class="warning">
+      <strong>處理原則：</strong>風險中心不是讓你看數字而已。每一個標籤或區塊都應該能帶你去對應列表，找到要處理的內容。
+    </div>
+    <div class="page-number">07</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Schedule</p>
+    <h2>工期表與 LINE 指令</h2>
+    <p>工期表指令的目標是讓 AI 像助理一樣打開案件施工排程表，看完後回答你：「這個案件全部工期排程是什麼，以及今天做什麼工種。」</p>
+
+    <h3>指定案件工期表</h3>
+    <div class="card">
+      <p><strong>你問：</strong><span class="cmd">測試工期表</span></p>
+      <p><strong>系統回覆：</strong></p>
+      <pre class="cmd">測試｜工期排程
+
+1. 拆除工程｜2026/06/20 - 2026/06/21｜已完成
+2. 水電工程｜2026/06/22 - 2026/06/25｜施工中
+3. 木工工程｜2026/06/26 - 2026/06/30｜未開始
+
+今天工種：木工工程
+- 木工工程｜2026/06/26 - 2026/06/30｜未開始
+今天關鍵節點：系統櫃丈量</pre>
+    </div>
+
+    <h3>今天所有案場工期</h3>
+    <div class="card">
+      <p><strong>你問：</strong><span class="cmd">今天工期</span></p>
+      <p><strong>系統回覆：</strong></p>
+      <pre class="cmd">今天工期｜3 個施工安排
+- 三重元泰：木工工程｜2026/06/26 - 2026/06/30｜施工中
+- 測試：油漆工程｜2026/06/26 - 2026/06/27｜未開始
+- 內湖案：水電工程｜2026/06/24 - 2026/06/26｜施工中</pre>
+    </div>
+
+    <h3>目前支援的工期問法</h3>
+    <table>
+      <thead>
+        <tr><th>問法</th><th>結果</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>案件名稱 + 工期表</td><td>回覆該案件所有工期排程與今天工種。</td></tr>
+        <tr><td>案件名稱 + 工期排程</td><td>同上。</td></tr>
+        <tr><td>案件名稱 + 今天工種</td><td>回覆今天該案件施工工種。</td></tr>
+        <tr><td>今天工期 / 今日工期</td><td>回覆今天所有案件施工工種。</td></tr>
+        <tr><td>今天進場 / 今日進場</td><td>回覆今天進場或施工中的工程項目。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <strong>穩定性設計：</strong>工期表指令不先送 OpenAI 判斷，而是直接查 Firestore 的 <code>projectStages</code> 與 <code>milestones</code>，減少誤判。
+    </div>
+    <div class="page-number">08</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Images</p>
+    <h2>照片、客訴與附件邏輯</h2>
+    <h3>客戶傳照片時</h3>
+    <table>
+      <thead>
+        <tr><th>情境</th><th>系統處理</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>客戶先傳文字「這邊要修補」，再傳照片</td><td>文字與照片會關聯，建立 AI 待審草稿。</td></tr>
+        <tr><td>客戶先傳照片，再補文字說目的</td><td>後續文字會讀取前 10 分鐘內圖片，補進草稿附件。</td></tr>
+        <tr><td>客戶一次傳多張照片</td><td>同案件、同群組、同發話者，5 分鐘內合併成同一批附件。</td></tr>
+        <tr><td>照片沒有文字</td><td>建立「圖片待確認」草稿，請人工判斷是否為缺失、變更或追蹤。</td></tr>
+        <tr><td>文字寫在照片上</td><td>目前尚未做 OCR，系統不會自動讀圖中文字。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>照片存放</h3>
+    <ul>
+      <li>LINE 原始圖片會保存於 LINE 對話紀錄。</li>
+      <li>AI 草稿會顯示相關圖片與前後文。</li>
+      <li>審核通過後，正式待辦只顯示「附件數」，點進待辦詳情才看大圖。</li>
+      <li>如果 Firebase Storage 暫時儲存失敗，系統會改用 LINE 圖片代理網址，避免附件變空。</li>
+    </ul>
+
+    <h3>客訴 / 修補高風險規則</h3>
+    <div class="warning">
+      只要待辦標題含「客訴、缺失、修補、品質不好、很爛、不滿意、有問題、漏水、破損、補漆」等字眼，正式待辦會自動設為高風險，並進入今日風險中心的高風險待辦。
+    </div>
+    <div class="page-number">09</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Rules</p>
+    <h2>多後台群、按鈕與安全邏輯</h2>
+    <h3>多個公司後台群</h3>
+    <p>系統允許多個公司後台群，例如老闆群、設計師群、工務群、測試群。只要群組被設定為公司後台群且允許助理回覆，就會收到提醒。</p>
+
+    <table>
+      <thead>
+        <tr><th>情境</th><th>結果</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>三個後台群收到同一筆 AI 草稿</td><td>第一個按通過或拒絕的人決定結果，其他人再按會顯示已審核。</td></tr>
+        <tr><td>A 群按已確認，B 群再按稍後提醒</td><td>已確認結果被鎖住，B 群不能覆蓋。</td></tr>
+        <tr><td>A 群按已回覆，B 群再按明天追蹤</td><td>已回覆結果被鎖住，B 群不能覆蓋。</td></tr>
+        <tr><td>有人按舊 LINE 訊息裡的按鈕</td><td>系統會回覆已處理或已審核，不會重複建立。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>公司後台群自動說明</h3>
+    <p>當機器人加入已設定為公司後台群的 LINE 群組，會傳送簡短功能說明，告訴員工它會提醒哪些事項、可按哪些按鈕，以及不會在客戶群亂回。</p>
+
+    <h3>Webhook 與操作紀錄</h3>
+    <ul>
+      <li>Webhook 紀錄用來查 LINE 事件是否進來、是否建立 AI 草稿、是否發通知。</li>
+      <li>操作紀錄用來查誰修改案件、員工或資料。</li>
+      <li>這兩個功能只給 Owner 顯示，避免一般員工看到系統除錯資訊。</li>
+    </ul>
+
+    <div class="note">
+      <strong>最重要的安全原則：</strong>客戶群安靜同步；公司後台群才互動；AI 只先提案，人負責最後確認。
+    </div>
+    <div class="page-number">10</div>
+  </section>
+
+  <section class="page">
+    <p class="section-kicker">Training</p>
+    <h2>員工使用 SOP</h2>
+    <h3>設計師 / 助理每天要做</h3>
+    <ol>
+      <li>早上看 LINE 開工摘要。</li>
+      <li>打開今日風險中心，先處理高風險與逾期。</li>
+      <li>檢查待辦審核，通過或拒絕 AI 草稿。</li>
+      <li>確認今天工期與今天關鍵節點。</li>
+      <li>下午處理未回覆檢查。</li>
+      <li>下班前看提醒中心，確認沒有高優先項目。</li>
+    </ol>
+
+    <h3>新增案件後要做</h3>
+    <ol>
+      <li>建立案件基本資料。</li>
+      <li>建立該案件施工工期表。</li>
+      <li>建立關鍵節點與提前提醒天數。</li>
+      <li>把案件 LINE 群組綁定到案件。</li>
+      <li>設定 LINE 成員身份，至少把內部人員標出來。</li>
+    </ol>
+
+    <h3>遇到客訴 / 修補要做</h3>
+    <ol>
+      <li>確認 AI 是否建立高風險草稿。</li>
+      <li>審核通過成正式待辦。</li>
+      <li>指定負責人與截止日。</li>
+      <li>到案件待辦或待辦詳情確認照片附件。</li>
+      <li>處理完把待辦狀態改完成。</li>
+    </ol>
+
+    <h3>常見問題</h3>
+    <table>
+      <thead>
+        <tr><th>問題</th><th>處理方式</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>LINE 後台沒反應</td><td>查看 Webhook 紀錄是否有進來；確認群組是否設為公司後台群。</td></tr>
+        <tr><td>客戶訊息沒有建立草稿</td><td>確認案件 LINE 群組是否綁定案件，發話者是否被判定為客戶或廠商。</td></tr>
+        <tr><td>照片沒有顯示</td><td>到 LINE 對話看原始訊息；若 fileUrl 異常，Webhook 紀錄會留圖片儲存錯誤。</td></tr>
+        <tr><td>AI 抓錯</td><td>拒絕草稿或到網站編輯後通過。AI 是協助，不是最終決策。</td></tr>
+        <tr><td>同一提醒很多群都按了</td><td>第一個確認的人會鎖住結果，後面按鈕不會覆蓋。</td></tr>
+      </tbody>
+    </table>
+    <div class="page-number">11</div>
+  </section>
+</body>
+</html>

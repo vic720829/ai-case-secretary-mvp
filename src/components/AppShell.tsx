@@ -32,6 +32,7 @@ const navItems = [
   { href: "/ai-tasks", label: "待辦審核", icon: Bot },
   { href: "/reminders", label: "提醒中心", icon: Bell },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
+  { href: "/calendar", label: "共享月曆", icon: CalendarDays },
   { href: "/schedule", label: "工期總表", icon: CalendarDays },
   { href: "/tasks", label: "待辦列表", icon: ClipboardList },
   { href: "/line-groups", label: "LINE群組", icon: Link2 },

@@ -1,0 +1,90 @@
+<svg width="1800" height="1050" viewBox="0 0 1800 1050" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Three original logo concepts</title>
+  <desc id="desc">A clean presentation board with three original vector logo directions: architectural order, origin axis, and light portal.</desc>
+  <rect width="1800" height="1050" fill="#F7F6F2"/>
+  <path d="M600 80V970M1200 80V970" stroke="#D9D7D0" stroke-width="2"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="90" y="96" font-size="28" font-weight="700" letter-spacing="4">CONCEPT A</text>
+    <text x="690" y="96" font-size="28" font-weight="700" letter-spacing="4">CONCEPT B</text>
+    <text x="1290" y="96" font-size="28" font-weight="700" letter-spacing="4">CONCEPT C</text>
+    <text x="90" y="132" font-size="19" letter-spacing="2" fill="#6C6962">ARCHITECTURAL ORDER</text>
+    <text x="690" y="132" font-size="19" letter-spacing="2" fill="#6C6962">ORIGIN AXIS</text>
+    <text x="1290" y="132" font-size="19" letter-spacing="2" fill="#6C6962">LIGHT PORTAL</text>
+  </g>
+
+  <g transform="translate(90 185)">
+    <rect width="420" height="420" fill="#F7F6F2"/>
+    <g stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M85 292H335" stroke="#111111" stroke-width="12"/>
+      <path d="M118 292V84H216V292" stroke="#111111" stroke-width="12"/>
+      <path d="M195 292V156H300V292" stroke="#64635F" stroke-width="12"/>
+      <path d="M150 292V218H242V292" stroke="#C9A66B" stroke-width="7"/>
+      <path d="M210 292V238" stroke="#C9A66B" stroke-width="5"/>
+    </g>
+    <circle cx="210" cy="292" r="11" fill="#C9A66B"/>
+    <circle cx="210" cy="292" r="22" fill="#C9A66B" opacity=".12"/>
+    <path d="M104 322H316" stroke="#111111" stroke-width="4"/>
+  </g>
+
+  <g transform="translate(690 185)">
+    <rect width="420" height="420" fill="#F7F6F2"/>
+    <g stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M210 56V364" stroke="#111111" stroke-width="11"/>
+      <path d="M56 210H364" stroke="#111111" stroke-width="11"/>
+      <path d="M258 210V124" stroke="#111111" stroke-width="9"/>
+      <path d="M258 164H330V292" stroke="#111111" stroke-width="9"/>
+      <path d="M162 210V292" stroke="#64635F" stroke-width="7"/>
+      <path d="M132 252H258" stroke="#64635F" stroke-width="7"/>
+      <path d="M210 210L292 128" stroke="#C9A66B" stroke-width="5"/>
+      <path d="M210 210L292 292" stroke="#C9A66B" stroke-width="5"/>
+    </g>
+    <circle cx="210" cy="210" r="12" fill="#C9A66B"/>
+    <circle cx="210" cy="210" r="32" fill="#C9A66B" opacity=".1"/>
+  </g>
+
+  <g transform="translate(1290 185)">
+    <rect width="420" height="420" fill="#F7F6F2"/>
+    <path d="M95 55H298V330H246V108H148V330H95V55Z" fill="#111111"/>
+    <path d="M246 108H298V330L246 280V108Z" fill="#2C2C2A"/>
+    <path d="M148 330H246L330 380H208L148 330Z" fill="#BDA987" opacity=".42"/>
+    <path d="M246 108V280" stroke="#C9A66B" stroke-width="7" stroke-linecap="square"/>
+    <path d="M246 280L330 380" stroke="#C9A66B" stroke-width="5" opacity=".9"/>
+    <circle cx="246" cy="280" r="11" fill="#C9A66B"/>
+    <circle cx="246" cy="280" r="26" fill="#C9A66B" opacity=".13"/>
+  </g>
+
+  <g transform="translate(90 685)">
+    <text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="2" fill="#111111">SYSTEM NOTES</text>
+    <text x="0" y="42" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#5F5D58">Simple geometry, scalable strokes, black-only friendly.</text>
+    <rect x="0" y="86" width="86" height="34" fill="#111111"/>
+    <rect x="96" y="86" width="86" height="34" fill="#64635F"/>
+    <rect x="192" y="86" width="86" height="34" fill="#BDA987"/>
+    <rect x="288" y="86" width="86" height="34" fill="#C9A66B"/>
+  </g>
+
+  <g transform="translate(690 685)">
+    <text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="2" fill="#111111">USE</text>
+    <text x="0" y="42" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#5F5D58">Works for signage, favicon, document headers, and app icon.</text>
+    <g transform="translate(0 82)">
+      <rect width="82" height="82" fill="#111111"/>
+      <path d="M18 60H64M24 60V19H43V60M39 60V34H59V60" stroke="#C9A66B" stroke-width="4"/>
+      <circle cx="41" cy="60" r="4" fill="#C9A66B"/>
+    </g>
+    <g transform="translate(116 82)">
+      <rect width="82" height="82" fill="#111111"/>
+      <path d="M41 14V68M14 41H68M50 41V25M50 33H64V58" stroke="#C9A66B" stroke-width="4"/>
+      <circle cx="41" cy="41" r="4" fill="#C9A66B"/>
+    </g>
+    <g transform="translate(232 82)">
+      <rect width="82" height="82" fill="#111111"/>
+      <path d="M20 18H61V64H51V29H31V64H20V18Z" fill="#C9A66B"/>
+    </g>
+  </g>
+
+  <g transform="translate(1290 685)">
+    <text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="2" fill="#111111">DIRECTION</text>
+    <text x="0" y="42" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#5F5D58">Interior design language first; cosmic idea only as origin/light.</text>
+    <path d="M0 104H420" stroke="#D9D7D0" stroke-width="2"/>
+    <text x="0" y="154" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#5F5D58">Next step: choose one mark, then refine proportion and typography.</text>
+  </g>
+</svg>

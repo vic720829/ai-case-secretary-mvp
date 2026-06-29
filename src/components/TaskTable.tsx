@@ -1,4 +1,4 @@
-import { Paperclip, Pencil, Trash2 } from "lucide-react";
+import { BookPlus, Paperclip, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatDate, formatDateTime, isTaskOverdue } from "@/lib/date";
 import type { Project, Task } from "@/lib/types";
@@ -7,10 +7,14 @@ import { RiskBadge, SourceBadge, TaskStatusBadge } from "./StatusBadges";
 export function TaskTable({
   tasks,
   projects,
+  memoTaskIds,
+  onAddMemo,
   onDelete
 }: {
   tasks: Task[];
   projects: Project[];
+  memoTaskIds?: Set<string>;
+  onAddMemo?: (task: Task) => void | Promise<void>;
   onDelete?: (task: Task) => void;
 }) {
   const projectById = new Map(projects.map((project) => [project.id, project]));
@@ -82,6 +86,24 @@ export function TaskTable({
                   <td className="px-4 py-4 text-xs text-slate-500">{formatDateTime(task.updatedAt)}</td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-2">
+                      {onAddMemo ? (
+                        <button
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          type="button"
+                          onClick={() => {
+                            void onAddMemo(task);
+                          }}
+                          disabled={!task.projectId || memoTaskIds?.has(task.id)}
+                          aria-label={
+                            memoTaskIds?.has(task.id)
+                              ? `${task.title} 已加入備忘錄`
+                              : `將 ${task.title} 加入備忘錄`
+                          }
+                          title={memoTaskIds?.has(task.id) ? "已加入備忘錄" : "加入備忘錄"}
+                        >
+                          <BookPlus className="h-4 w-4" aria-hidden />
+                        </button>
+                      ) : null}
                       <Link
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50"
                         href={`/tasks/${task.id}`}

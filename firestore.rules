@@ -62,12 +62,22 @@ service cloud.firestore {
       allow create, update, delete: if canWriteOps();
     }
 
+    match /project_memos/{memoId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
     match /projectStages/{stageId} {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();
     }
 
     match /milestones/{milestoneId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
+    match /calendar_events/{eventId} {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();
     }

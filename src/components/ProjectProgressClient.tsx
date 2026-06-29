@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MilestoneForm } from "./MilestoneForm";
 import { MilestoneTable } from "./MilestoneTable";
 import { PageHeader } from "./PageHeader";
+import { ProjectGanttChart } from "./ProjectGanttChart";
 import { ProjectScheduleCalendar } from "./ProjectScheduleCalendar";
 import { ProjectStageForm } from "./ProjectStageForm";
 import { ProjectStageTable } from "./ProjectStageTable";
@@ -80,8 +81,12 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
     const confirmed = window.confirm(`確定刪除工期節點「${stage.stageName}」？`);
     if (!confirmed) return;
 
-    await deleteProjectStage(stage.id);
-    await loadData();
+    try {
+      await deleteProjectStage(stage.id);
+      await loadData();
+    } catch (caught) {
+      setError(getReadableError(caught));
+    }
   }
 
   async function handleCreateMilestone(value: MilestoneInput) {
@@ -101,8 +106,12 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
     const confirmed = window.confirm(`確定刪除關鍵節點「${milestone.title}」？`);
     if (!confirmed) return;
 
-    await deleteMilestone(milestone.id);
-    await loadData();
+    try {
+      await deleteMilestone(milestone.id);
+      await loadData();
+    } catch (caught) {
+      setError(getReadableError(caught));
+    }
   }
 
   if (loading) {
@@ -169,6 +178,13 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
           <div className="h-full rounded-full bg-teal-700" style={{ width: `${progress}%` }} />
         </div>
       </section>
+
+      <ProjectGanttChart
+        project={project}
+        stages={stages}
+        milestones={milestones}
+        onEditStage={setEditingStage}
+      />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-slate-950">施工工期表</h2>

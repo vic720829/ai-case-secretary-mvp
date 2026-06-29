@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>宇亮寬宏設計工程有限公司｜請款單</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ink: #1d2424;
+      --muted: #64706d;
+      --line: #d8c7a1;
+      --gold: #b88a3b;
+      --gold-deep: #8d6426;
+      --green: #153f38;
+      --green-soft: #e8f0ec;
+      --paper: #fbf8ef;
+      --blue: #243b53;
+      --red: #a82424;
+    }
+
+    html,
+    body {
+      margin: 0;
+      background: #ece8dc;
+      color: var(--ink);
+      font-family: "Noto Serif TC", "Source Han Serif TC", "Microsoft JhengHei", "PMingLiU", serif;
+      line-height: 1.55;
+    }
+
+    body {
+      padding: 24px;
+    }
+
+    .sheet {
+      position: relative;
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      overflow: hidden;
+      background:
+        linear-gradient(135deg, rgba(21, 63, 56, .08), transparent 31%),
+        radial-gradient(circle at 88% 14%, rgba(184, 138, 59, .16), transparent 25%),
+        linear-gradient(180deg, #fffdf7, var(--paper));
+      box-shadow: 0 20px 45px rgba(29, 36, 36, .16);
+    }
+
+    .sheet::before {
+      content: "";
+      position: absolute;
+      inset: 14mm;
+      border: 1.2mm double rgba(184, 138, 59, .56);
+      pointer-events: none;
+    }
+
+    .sheet::after {
+      content: "請款";
+      position: absolute;
+      right: -4mm;
+      bottom: 28mm;
+      color: rgba(21, 63, 56, .05);
+      font-size: 42mm;
+      font-weight: 900;
+      letter-spacing: .18em;
+      writing-mode: vertical-rl;
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      padding: 22mm 24mm 18mm;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 10mm;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      border: 1px solid rgba(184, 138, 59, .62);
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, .75), rgba(232, 240, 236, .9)),
+        linear-gradient(45deg, transparent 0 48%, rgba(184, 138, 59, .5) 49% 51%, transparent 52%);
+      color: var(--green);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .company {
+      margin: 0;
+      color: var(--green);
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .company-sub {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    .serial {
+      min-width: 45mm;
+      border-left: 3px solid var(--gold);
+      padding-left: 12px;
+      color: var(--blue);
+      font-size: 12px;
+    }
+
+    .serial strong {
+      display: block;
+      color: var(--gold-deep);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 10px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      gap: 20px;
+      margin: 0 0 9mm;
+      padding-bottom: 7mm;
+      border-bottom: 1px solid rgba(184, 138, 59, .45);
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--green);
+      font-size: 48px;
+      font-weight: 900;
+      line-height: 1.06;
+      letter-spacing: .18em;
+    }
+
+    .subtitle {
+      margin: 3mm 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      letter-spacing: .08em;
+    }
+
+    .amount-card {
+      min-width: 56mm;
+      border: 1px solid rgba(184, 138, 59, .52);
+      background: rgba(255, 255, 255, .58);
+      padding: 12px 14px;
+      text-align: right;
+    }
+
+    .amount-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .12em;
+    }
+
+    .amount-card strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--green);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 27px;
+      letter-spacing: .03em;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px 16px;
+      margin-bottom: 8mm;
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: 28mm minmax(0, 1fr);
+      align-items: center;
+      min-height: 36px;
+      border-bottom: 1px solid rgba(100, 112, 109, .35);
+      background: rgba(255, 255, 255, .28);
+      padding: 3px 0;
+    }
+
+    .field.wide {
+      grid-column: 1 / -1;
+    }
+
+    .label {
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+    }
+
+    .value {
+      min-height: 23px;
+      color: #26302e;
+      font-size: 14.5px;
+      letter-spacing: .03em;
+    }
+
+    .placeholder {
+      color: rgba(38, 48, 46, .46);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8mm 0 3mm;
+      color: var(--green);
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: .12em;
+    }
+
+    .section-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: rgba(184, 138, 59, .4);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, .48);
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      border: 1px solid rgba(184, 138, 59, .42);
+      padding: 9px 10px;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-align: left;
+    }
+
+    td.money,
+    th.money {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 65mm;
+      gap: 18px;
+      margin-top: 5mm;
+    }
+
+    .note {
+      border-left: 3px solid var(--gold);
+      background: rgba(255, 255, 255, .5);
+      padding: 10px 12px;
+      color: #46524f;
+      font-size: 12.5px;
+    }
+
+    .total-box {
+      border: 1px solid rgba(184, 138, 59, .48);
+      background: rgba(255, 255, 255, .6);
+    }
+
+    .total-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid rgba(184, 138, 59, .32);
+    }
+
+    .total-row:last-child {
+      border-bottom: 0;
+    }
+
+    .total-row div {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .total-row div:last-child {
+      text-align: right;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-weight: 700;
+    }
+
+    .grand {
+      background: var(--green);
+      color: white;
+    }
+
+    .payment-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 16px;
+      margin-top: 3mm;
+    }
+
+    .payment-item {
+      border-bottom: 1px solid rgba(100, 112, 109, .35);
+      padding: 5px 0;
+    }
+
+    .payment-item strong {
+      display: block;
+      color: var(--green);
+      font-size: 12.5px;
+      letter-spacing: .1em;
+    }
+
+    .payment-item span {
+      display: block;
+      min-height: 24px;
+      color: rgba(38, 48, 46, .46);
+      font-size: 14px;
+    }
+
+    .signatures {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18mm;
+      margin-top: 12mm;
+    }
+
+    .signature {
+      min-height: 27mm;
+      padding-bottom: 5mm;
+      border-bottom: 1px solid rgba(29, 36, 36, .48);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .signature-title {
+      color: var(--green);
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .seal {
+      position: absolute;
+      right: 29mm;
+      bottom: 23mm;
+      display: grid;
+      place-items: center;
+      width: 25mm;
+      height: 25mm;
+      border: 2px solid rgba(168, 36, 36, .58);
+      border-radius: 50%;
+      color: rgba(168, 36, 36, .58);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: .14em;
+      text-align: center;
+      transform: rotate(-10deg);
+    }
+
+    .footer {
+      position: absolute;
+      left: 24mm;
+      right: 24mm;
+      bottom: 12mm;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid rgba(184, 138, 59, .35);
+      padding-top: 8px;
+      color: var(--muted);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 10px;
+      letter-spacing: .08em;
+    }
+
+    @media screen and (max-width: 900px) {
+      body {
+        padding: 0;
+        background: var(--paper);
+      }
+
+      .sheet {
+        width: 100%;
+        min-height: auto;
+        margin: 0;
+        box-shadow: none;
+      }
+
+      .content {
+        padding: 28px;
+      }
+
+      .sheet::before {
+        inset: 12px;
+      }
+
+      .topbar,
+      .hero,
+      .summary,
+      .payment-grid,
+      .signatures {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      h1 {
+        font-size: 38px;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        width: 210mm;
+        background: white;
+        padding: 0;
+      }
+
+      .sheet {
+        margin: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="sheet">
+    <main class="content">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">ZK</div>
+          <div>
+            <p class="company">宇亮寬宏設計工程有限公司</p>
+            <p class="company-sub">Yu Liang Kuan Hong Design Engineering</p>
+          </div>
+        </div>
+        <div class="serial">
+          <strong>Payment Request</strong>
+          請款單編號：YYYYMMDD-001
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <h1>請款單</h1>
+          <p class="subtitle">工程款項請款憑據，本單非統一發票，發票或收據依付款及稅務規定另行開立。</p>
+        </div>
+        <div class="amount-card">
+          <span>本次請款金額</span>
+          <strong>NT$ 0</strong>
+        </div>
+      </section>
+
+      <section class="info-grid" aria-label="請款基本資料">
+        <div class="field">
+          <div class="label">請款日期</div>
+          <div class="value placeholder">民國　　　年　　　月　　　日</div>
+        </div>
+        <div class="field">
+          <div class="label">付款期限</div>
+          <div class="value placeholder">民國　　　年　　　月　　　日</div>
+        </div>
+        <div class="field">
+          <div class="label">客戶名稱</div>
+          <div class="value placeholder">請填寫客戶或公司名稱</div>
+        </div>
+        <div class="field">
+          <div class="label">聯絡電話</div>
+          <div class="value placeholder">請填寫聯絡電話</div>
+        </div>
+        <div class="field wide">
+          <div class="label">工程名稱</div>
+          <div class="value placeholder">請填寫工程案名</div>
+        </div>
+        <div class="field wide">
+          <div class="label">工程地址</div>
+          <div class="value placeholder">請填寫施工地址</div>
+        </div>
+        <div class="field">
+          <div class="label">請款期別</div>
+          <div class="value placeholder">訂金／中期款／尾款／追加工程款</div>
+        </div>
+        <div class="field">
+          <div class="label">合約總額</div>
+          <div class="value placeholder">NT$</div>
+        </div>
+      </section>
+
+      <div class="section-title">請款明細</div>
+      <table aria-label="請款明細表">
+        <thead>
+          <tr>
+            <th style="width: 14%;">項次</th>
+            <th>項目說明</th>
+            <th style="width: 18%;" class="money">金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>01</td>
+            <td>工程款項</td>
+            <td class="money">NT$ 0</td>
+          </tr>
+          <tr>
+            <td>02</td>
+            <td class="placeholder">請填寫其他請款項目</td>
+            <td class="money placeholder">NT$</td>
+          </tr>
+          <tr>
+            <td>03</td>
+            <td class="placeholder">請填寫其他請款項目</td>
+            <td class="money placeholder">NT$</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <section class="summary">
+        <div class="note">
+          <strong>備註：</strong>
+          請款金額、付款條件、追加減工程及稅額計算，依雙方契約、報價單、追加減確認文件及實際付款約定辦理。
+        </div>
+        <div class="total-box" aria-label="金額合計">
+          <div class="total-row">
+            <div>小計</div>
+            <div>NT$ 0</div>
+          </div>
+          <div class="total-row">
+            <div>營業稅</div>
+            <div>NT$ 0</div>
+          </div>
+          <div class="total-row grand">
+            <div>應付總額</div>
+            <div>NT$ 0</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="section-title">匯款資訊</div>
+      <section class="payment-grid" aria-label="匯款資訊">
+        <div class="payment-item">
+          <strong>戶名</strong>
+          <span>宇亮寬宏設計工程有限公司</span>
+        </div>
+        <div class="payment-item">
+          <strong>銀行名稱</strong>
+          <span>請填寫銀行名稱</span>
+        </div>
+        <div class="payment-item">
+          <strong>分行</strong>
+          <span>請填寫分行名稱</span>
+        </div>
+        <div class="payment-item">
+          <strong>帳號</strong>
+          <span>請填寫匯款帳號</span>
+        </div>
+      </section>
+
+      <section class="signatures">
+        <div class="signature">
+          <div class="signature-title">宇亮寬宏設計工程有限公司</div>
+          <div>經辦／負責人簽章：</div>
+        </div>
+        <div class="signature">
+          <div class="signature-title">客戶確認</div>
+          <div>簽收／確認人：</div>
+        </div>
+      </section>
+
+      <div class="seal" aria-hidden="true">公司<br>用印</div>
+    </main>
+    <footer class="footer">
+      <span>YU LIANG KUAN HONG DESIGN ENGINEERING</span>
+      <span>PAYMENT REQUEST</span>
+    </footer>
+  </section>
+</body>
+</html>

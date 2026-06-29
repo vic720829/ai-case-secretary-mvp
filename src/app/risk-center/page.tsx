@@ -3,12 +3,20 @@
 import { AlertCircle, AlertTriangle, Bot, BriefcaseBusiness, CalendarClock, Flag, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
 import { formatDate, formatDateTime, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listAiTasks, listMilestones, listProjectStages, listProjects, listTasks } from "@/lib/firestore";
+import {
+  createProjectMemoFromTask,
+  listAiTasks,
+  listMilestones,
+  listProjectStages,
+  listProjects,
+  listTasks
+} from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type { AiTask, Milestone, Project, ProjectStage, Task } from "@/lib/types";
@@ -21,13 +29,16 @@ type HighRiskProject = {
 };
 
 export default function RiskCenterPage() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [aiTasks, setAiTasks] = useState<AiTask[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [memoTaskIds, setMemoTaskIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [memoMessage, setMemoMessage] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -55,6 +66,19 @@ export default function RiskCenterPage() {
 
     void loadData();
   }, []);
+
+  async function handleAddTaskMemo(task: Task) {
+    setError("");
+    setMemoMessage("");
+
+    try {
+      await createProjectMemoFromTask(task, user?.displayName || user?.email || "");
+      setMemoTaskIds((current) => new Set(current).add(task.id));
+      setMemoMessage(`已加入案件備忘錄：${task.title}`);
+    } catch (caught) {
+      setError(getReadableError(caught));
+    }
+  }
 
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "done"), [tasks]);
   const highRiskTasks = useMemo(
@@ -142,6 +166,11 @@ export default function RiskCenterPage() {
       />
 
       <ErrorMessage message={error} />
+      {memoMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {memoMessage}
+        </div>
+      ) : null}
       {error ? (
         <EmptyState
           title="風險中心讀取失敗"
@@ -233,6 +262,8 @@ export default function RiskCenterPage() {
             description="未完成且風險等級為高"
             tasks={highRiskTasks}
             projects={projects}
+            memoTaskIds={memoTaskIds}
+            onAddMemo={handleAddTaskMemo}
             empty="目前沒有高風險待辦。"
           />
           <RiskSection
@@ -241,6 +272,8 @@ export default function RiskCenterPage() {
             description="未完成且截止日已過"
             tasks={overdueTasks}
             projects={projects}
+            memoTaskIds={memoTaskIds}
+            onAddMemo={handleAddTaskMemo}
             empty="目前沒有逾期待辦。"
           />
           <RiskSection
@@ -249,6 +282,8 @@ export default function RiskCenterPage() {
             description="未完成且截止日是今天"
             tasks={dueTodayTasks}
             projects={projects}
+            memoTaskIds={memoTaskIds}
+            onAddMemo={handleAddTaskMemo}
             empty="今天沒有到期待辦。"
           />
           <RiskSection
@@ -257,6 +292,8 @@ export default function RiskCenterPage() {
             description="未完成且截止日在未來 3 天內"
             tasks={upcomingTasks}
             projects={projects}
+            memoTaskIds={memoTaskIds}
+            onAddMemo={handleAddTaskMemo}
             empty="未來 3 天內沒有待辦。"
           />
         </>
@@ -568,6 +605,8 @@ function RiskSection({
   description,
   tasks,
   projects,
+  memoTaskIds,
+  onAddMemo,
   empty
 }: {
   id: string;
@@ -575,6 +614,8 @@ function RiskSection({
   description: string;
   tasks: Task[];
   projects: Project[];
+  memoTaskIds: Set<string>;
+  onAddMemo: (task: Task) => void | Promise<void>;
   empty: string;
 }) {
   return (
@@ -586,7 +627,7 @@ function RiskSection({
         </Link>
       </div>
       {tasks.length ? (
-        <TaskTable tasks={tasks} projects={projects} />
+        <TaskTable tasks={tasks} projects={projects} memoTaskIds={memoTaskIds} onAddMemo={onAddMemo} />
       ) : (
         <EmptyState title={empty} />
       )}

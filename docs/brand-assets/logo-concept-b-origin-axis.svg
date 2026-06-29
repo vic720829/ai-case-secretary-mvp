@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Logo concept B - origin axis</title>
+  <desc id="desc">A minimal logo mark built from precise axes, spatial lines, and a champagne origin point.</desc>
+  <rect width="512" height="512" fill="#F7F6F2"/>
+  <g stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M256 94V418" stroke="#111111" stroke-width="12"/>
+    <path d="M94 256H418" stroke="#111111" stroke-width="12"/>
+    <path d="M307 256V166" stroke="#111111" stroke-width="10"/>
+    <path d="M307 208H382V344" stroke="#111111" stroke-width="10"/>
+    <path d="M205 256V346" stroke="#64635F" stroke-width="8"/>
+    <path d="M172 300H307" stroke="#64635F" stroke-width="8"/>
+    <path d="M256 256L342 170" stroke="#C9A66B" stroke-width="5"/>
+    <path d="M256 256L342 342" stroke="#C9A66B" stroke-width="5"/>
+  </g>
+  <circle cx="256" cy="256" r="13" fill="#C9A66B"/>
+  <circle cx="256" cy="256" r="34" fill="#C9A66B" opacity=".1"/>
+</svg>
