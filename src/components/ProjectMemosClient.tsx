@@ -1,22 +1,28 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, NotebookText } from "lucide-react";
+import { ArrowLeft, ExternalLink, NotebookText, Plus } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "@/components/Ui";
+import { Button, EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "@/components/Ui";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { deleteProjectMemo, getProject, listProjectMemosByProject } from "@/lib/firestore";
+import { createProjectMemo, deleteProjectMemo, getProject, listProjectMemosByProject } from "@/lib/firestore";
 import type { Project, ProjectMemo } from "@/lib/types";
 import { RiskBadge, TaskStatusBadge } from "./StatusBadges";
 
 export function ProjectMemosClient({ projectId }: { projectId: string }) {
+  const { profile, user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [memos, setMemos] = useState<ProjectMemo[]>([]);
+  const [memoTitle, setMemoTitle] = useState("");
+  const [memoContent, setMemoContent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const loadData = useCallback(async () => {
     setError("");
@@ -42,6 +48,36 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
   async function handleDeleteMemo(memo: ProjectMemo) {
     await deleteProjectMemo(memo.id);
     setMemos((current) => current.filter((item) => item.id !== memo.id));
+  }
+
+  async function handleCreateMemo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setSubmitting(true);
+
+    try {
+      const title = memoTitle.trim();
+      const content = memoContent.trim();
+
+      if (!title) throw new Error("請輸入備忘錄標題。");
+      if (!content) throw new Error("請輸入備忘錄內容。");
+
+      await createProjectMemo({
+        projectId,
+        title,
+        content,
+        createdBy: profile?.displayName || user?.email || ""
+      });
+      setMemoTitle("");
+      setMemoContent("");
+      setSuccessMessage(`已新增備忘錄：${title}`);
+      await loadData();
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (loading) {
@@ -77,6 +113,11 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
       />
 
       <ErrorMessage message={error} />
+      {successMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      ) : null}
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
         <div className="flex items-start gap-3">
@@ -90,6 +131,51 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+            <Plus className="h-5 w-5" aria-hidden />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">新增備忘錄</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              不一定要從待辦轉入，也可以手動記錄客戶同意、現場變更、尺寸調整或之後查案會用到的重點。
+            </p>
+          </div>
+        </div>
+
+        <form className="mt-5 grid gap-4" onSubmit={(event) => void handleCreateMemo(event)}>
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">標題</span>
+            <input
+              className={inputClassName}
+              value={memoTitle}
+              onChange={(event) => setMemoTitle(event.target.value)}
+              placeholder="例如：客戶同意主臥衣櫃改尺寸"
+              required
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">內容</span>
+            <textarea
+              className={`${inputClassName} min-h-28 resize-y`}
+              value={memoContent}
+              onChange={(event) => setMemoContent(event.target.value)}
+              placeholder="記錄答應過什麼、誰提出、什麼時間、後續要注意什麼。"
+              required
+            />
+          </label>
+
+          <div className="flex justify-end">
+            <Button type="submit" disabled={submitting || !memoTitle.trim() || !memoContent.trim()}>
+              <Plus className="h-4 w-4" aria-hidden />
+              {submitting ? "儲存中" : "新增備忘錄"}
+            </Button>
+          </div>
+        </form>
       </section>
 
       {memos.length ? (
@@ -137,3 +223,6 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
     </div>
   );
 }
+
+const inputClassName =
+  "mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20";

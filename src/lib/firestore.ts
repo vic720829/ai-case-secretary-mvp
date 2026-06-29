@@ -260,17 +260,18 @@ function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
 
 function projectMemoFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectMemo {
   const data = snapshot.data();
+  const sourceTaskId = data.sourceTaskId ?? "";
 
   return {
     id: snapshot.id,
     projectId: data.projectId ?? "",
     title: data.title ?? "",
     content: data.content ?? "",
-    sourceTaskId: data.sourceTaskId ?? "",
+    sourceTaskId,
     sourceTaskTitle: data.sourceTaskTitle ?? "",
-    sourceTaskStatus: data.sourceTaskStatus ?? "todo",
+    sourceTaskStatus: sourceTaskId ? data.sourceTaskStatus ?? "todo" : undefined,
     sourceTaskDueDate: data.sourceTaskDueDate ?? "",
-    sourceTaskRiskLevel: data.sourceTaskRiskLevel ?? "low",
+    sourceTaskRiskLevel: sourceTaskId ? data.sourceTaskRiskLevel ?? "low" : undefined,
     createdBy: data.createdBy ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
