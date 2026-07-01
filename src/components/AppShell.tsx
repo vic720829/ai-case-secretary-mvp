@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ClipboardList,
   Flag,
+  GitBranch,
   History,
   LayoutDashboard,
   KeyRound,
@@ -30,6 +31,7 @@ import { useAuth } from "./AuthProvider";
 const navItems = [
   { href: "/risk-center", label: "今日風險", icon: AlertTriangle },
   { href: "/ai-tasks", label: "待辦審核", icon: Bot },
+  { href: "/incidents", label: "事件中心", icon: GitBranch },
   { href: "/reminders", label: "提醒中心", icon: Bell },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
   { href: "/calendar", label: "共享月曆", icon: CalendarDays },
@@ -95,7 +97,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </Link>
 
-        <nav className="mt-8 space-y-1">
+        <div className="mt-5 grid gap-2">
+          <Link
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
+            href="/projects/new"
+          >
+            <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+            建立案件
+          </Link>
+          <Link
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-50"
+            href="/tasks/new"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            建立待辦
+          </Link>
+        </div>
+
+        <nav className="mt-6 space-y-1">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -173,6 +192,22 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+            href="/projects/new"
+          >
+            <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+            建立案件
+          </Link>
+          <Link
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700"
+            href="/tasks/new"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            建立待辦
+          </Link>
+        </div>
         <nav className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
@@ -199,14 +234,26 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </main>
 
-      <Link
-        className="fixed bottom-5 right-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-teal-700 text-white shadow-panel transition hover:bg-teal-800 lg:hidden"
-        href="/tasks/new"
-        aria-label="新增待辦"
-        title="新增待辦"
-      >
-        <Plus className="h-5 w-5" aria-hidden />
-      </Link>
+      <div className="fixed bottom-5 right-5 z-30 flex flex-col items-end gap-2 lg:hidden">
+        <Link
+          className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-700 shadow-panel transition hover:bg-teal-50"
+          href="/projects/new"
+          aria-label="建立案件"
+          title="建立案件"
+        >
+          <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+          建立案件
+        </Link>
+        <Link
+          className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-teal-700 px-4 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
+          href="/tasks/new"
+          aria-label="建立待辦"
+          title="建立待辦"
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          建立待辦
+        </Link>
+      </div>
 
       {passwordModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">

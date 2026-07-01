@@ -25,7 +25,8 @@ export function RiskBadge({ risk }: { risk: RiskLevel }) {
   const map: Record<RiskLevel, { label: string; className: string }> = {
     low: { label: "低風險", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
     medium: { label: "中風險", className: "bg-amber-50 text-amber-700 ring-amber-200" },
-    high: { label: "高風險", className: "bg-red-50 text-red-700 ring-red-200" }
+    high: { label: "高風險", className: "bg-red-50 text-red-700 ring-red-200" },
+    critical: { label: "重大風險", className: "bg-rose-100 text-rose-800 ring-rose-300" }
   };
 
   return <Badge className={map[risk].className}>{map[risk].label}</Badge>;

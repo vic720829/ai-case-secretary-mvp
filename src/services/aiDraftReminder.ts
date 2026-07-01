@@ -1,15 +1,14 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey } from "../lib/reminders";
+import { getAiTaskRiskLevel } from "../lib/riskRules";
+import type { AiTaskType } from "../lib/types";
 import { buildAiDraftReviewLineMessages } from "./aiDraftReviewLineMessages";
+import { listAdminNotificationGroups } from "./lineAdminGroups";
 import { pushLineMessages } from "./line";
 
 const pendingReviewMinutes = 30;
 const highPriorityMinutes = 180;
-
-type AdminGroup = {
-  groupId: string;
-};
 
 type ProjectSummary = {
   name: string;
@@ -29,8 +28,7 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
   const db = getAdminDb();
   const now = new Date();
   const today = taipeiDateString(now);
-  const [adminGroups, projectSnapshot, aiTaskSnapshot] = await Promise.all([
-    listAdminGroups(),
+  const [projectSnapshot, aiTaskSnapshot] = await Promise.all([
     db.collection("projects").get(),
     db.collection("ai_tasks").get()
   ]);
@@ -104,7 +102,7 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
     if (isHighPriority && !wasHighPriority) result.markedHighPriority += 1;
 
     if (shouldNotify30m) {
-      const notificationResult = await notifyAdminGroups(adminGroups, {
+      const notificationResult = await notifyAdminGroups(db, {
         draftId: doc.id,
         title,
         projectName: getProjectName(projects.get(projectId)),
@@ -123,19 +121,8 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
   return result;
 }
 
-async function listAdminGroups(): Promise<AdminGroup[]> {
-  const db = getAdminDb();
-  const snapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
-
-  return snapshot.docs
-    .map((doc) => doc.data())
-    .filter((group) => group.allowAssistantReplies !== false)
-    .map((group) => ({ groupId: String(group.groupId ?? "") }))
-    .filter((group) => group.groupId);
-}
-
 async function notifyAdminGroups(
-  adminGroups: AdminGroup[],
+  db: FirebaseFirestore.Firestore,
   input: {
     draftId: string;
     title: string;
@@ -147,6 +134,8 @@ async function notifyAdminGroups(
     ageMinutes: number;
   }
 ) {
+  const riskLevel = getAiTaskRiskLevel(normalizeAiTaskType(input.taskType), input.title);
+  const adminGroups = await listAdminNotificationGroups(db, riskLevel === "critical" ? "critical" : "primary");
   if (!adminGroups.length) return { sent: 0, failed: 0 };
 
   const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
@@ -183,6 +172,23 @@ async function notifyAdminGroups(
     sent: results.filter((item) => item.status === "fulfilled").length,
     failed: results.filter((item) => item.status === "rejected").length
   };
+}
+
+function normalizeAiTaskType(value: string): AiTaskType {
+  if (
+    value === "promise" ||
+    value === "change" ||
+    value === "followup" ||
+    value === "payment" ||
+    value === "invoice" ||
+    value === "complaint" ||
+    value === "schedule" ||
+    value === "file"
+  ) {
+    return value;
+  }
+
+  return "followup";
 }
 
 function getProjectName(project?: ProjectSummary) {

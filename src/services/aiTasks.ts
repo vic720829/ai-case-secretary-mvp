@@ -20,7 +20,16 @@ export type AiMessageContext = {
   recentMessages?: AiMessageContextItem[];
 };
 
-const taskTypes: AiTaskType[] = ["promise", "change", "followup", "payment", "invoice"];
+const taskTypes: AiTaskType[] = [
+  "promise",
+  "change",
+  "followup",
+  "payment",
+  "invoice",
+  "complaint",
+  "schedule",
+  "file"
+];
 
 export function dateStringToTimestamp(value?: string) {
   if (!value) return null;
@@ -74,7 +83,7 @@ async function analyzeWithOpenAi(
           "你是室內設計公司的案件秘書，請只回 JSON array。",
           "若訊息不需要追蹤，回 []。",
           "item 欄位只能包含 title, description, taskType, assignedTo, dueDate。",
-          "taskType 只能是 promise, change, followup, payment, invoice。",
+          "taskType 只能是 promise, change, followup, payment, invoice, complaint, schedule, file。",
           "dueDate 若可推論才填 YYYY-MM-DD。",
           `今天日期：${datePlusDays(0)}（Asia/Taipei）`,
           "",
@@ -88,9 +97,11 @@ async function analyzeWithOpenAi(
           "- 若內部人員的承諾需要上下文，請參考最近訊息，讓 title/description 寫出要回覆哪一件事。",
           "- 客戶提出改顏色、改尺寸、新增、取消、不要做，建立 change。",
           "- 客戶提到設計修改、設計變更、調整設計，建立 change。",
-          "- 客戶提到缺失、修補、很爛、品質不好、不滿意、抱怨、客訴，建立 followup，通常需要立即處理。",
+          "- 客戶提到缺失、修補、很爛、品質不好、不滿意、抱怨、客訴，建立 complaint。",
           "- 款項、請款、尾款、二期款建立 payment。",
           "- 發票、統編、報帳建立 invoice。",
+          "- 工期、進場、退場、延期、改期、沒來、趕工建立 schedule。",
+          "- 圖面、施工圖、CAD、報價單、工程表、合約建立 file。",
           "",
           `senderRole: ${senderRole}`,
           `LINE 對話: ${text}`,
@@ -132,6 +143,7 @@ async function analyzeWithOpenAi(
 function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSuggestion[] {
   const suggestions: AiTaskSuggestion[] = [];
   const dueDate = inferDueDate(text);
+  const clientRequestQuestion = isClientRequestQuestion(text);
 
   if (/(發票|統編|報帳|收據)/.test(text)) {
     suggestions.push({
@@ -155,8 +167,26 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     suggestions.push({
       title: makeTitle(text, "客訴/缺失處理"),
       description: text,
-      taskType: "followup",
+      taskType: "complaint",
       dueDate: dueDate ?? datePlusDays(0)
+    });
+  }
+
+  if (hasScheduleWords(text) && !clientRequestQuestion) {
+    suggestions.push({
+      title: makeTitle(text, "工期事項"),
+      description: text,
+      taskType: "schedule",
+      dueDate
+    });
+  }
+
+  if (hasFileWords(text) && !clientRequestQuestion) {
+    suggestions.push({
+      title: makeTitle(text, "圖面/檔案事項"),
+      description: text,
+      taskType: "file",
+      dueDate
     });
   }
 
@@ -169,7 +199,7 @@ function analyzeWithRules(text: string, senderRole: LineSenderRole): AiTaskSugge
     });
   }
 
-  if (isClientRequestQuestion(text)) {
+  if (clientRequestQuestion) {
     suggestions.push({
       title: makeTitle(text, senderRole === "internal" ? "客戶問句待確認" : "待回覆客戶"),
       description: text,
@@ -223,6 +253,14 @@ function hasComplaintOrDefectWords(text: string) {
 
 function hasDesignChangeWords(text: string) {
   return /(設計修改|修改設計|設計變更|調整設計|改設計|改|變更|新增|取消|不要|不做|顏色|尺寸|抽屜|電視牆|門片|磁磚|木地板|特殊塗料)/.test(text);
+}
+
+function hasScheduleWords(text: string) {
+  return /(進場|退場|施工排程|施工工期|工程排程|延期|延後|改期|改時間|沒來|未到|趕工|停工|復工)/.test(text);
+}
+
+function hasFileWords(text: string) {
+  return /(圖面|施工圖|CAD|cad|平面圖|立面圖|報價單|估價單|工程表|合約|檔案|文件|資料)/.test(text);
 }
 
 function hasCommitmentWords(text: string) {

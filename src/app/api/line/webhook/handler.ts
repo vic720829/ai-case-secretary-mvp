@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import { canReviewAiDraft } from "@/lib/aiReviewPolicy";
 import { canLineGroupUseAssistantReplies, canReplyInLineChat } from "@/lib/lineReplyPolicy";
-import type { AiFeedbackAction, AiTaskType, LineMessageType, LineSenderRole } from "@/lib/types";
+import type { AiFeedbackAction, AiTaskType, LineMessageType, LineSenderRole, RiskLevel } from "@/lib/types";
 import {
   analyzeMessageForAiTasks,
   dateStringToTimestamp,
@@ -14,6 +14,8 @@ import {
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
+import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
+import { buildIncidentKey, getPrimaryIncidentType, maxRiskLevel } from "@/lib/incidentRules";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import {
   downloadLineMessageContent,
@@ -47,6 +49,23 @@ type LineAttachmentForWrite = {
 type SavedLineFile = {
   fileUrl: string;
   errorMessage: string;
+};
+
+type AiTaskDraftCreateResult = {
+  draftIds: string[];
+  newDraftIds: string[];
+  reusedDraftIds: string[];
+  mergedItems: AiTaskMergedItem[];
+};
+
+type AiTaskMergedItem = {
+  targetId: string;
+  approvedTaskId: string;
+  title: string;
+  taskType: AiTaskType;
+  duplicateCount: number;
+  dedupeReason: string;
+  targetStatus: "pending_draft" | "approved_task";
 };
 
 export async function handleLineWebhookEvents(events: LineWebhookEvent[]) {
@@ -210,6 +229,21 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       baseSuggestions.length || !nearbyAttachments.length
         ? baseSuggestions
         : [buildImageReviewSuggestion(event.message.text)];
+    const incidentId = shouldCreateAiDrafts
+      ? await upsertLineIncident(db, {
+          projectId,
+          groupId,
+          messageId: messageRef.id,
+          lineMessageId,
+          messageType,
+          messageText: event.message.text,
+          messageTimestamp: event.timestamp ? Timestamp.fromMillis(event.timestamp) : null,
+          senderName,
+          senderRole,
+          contextText: getLatestCustomerContextText(recentMessages),
+          suggestions
+        })
+      : "";
 
     const pendingImageDraft = nearbyAttachments.length
       ? await findPendingImageDraftForAttachments(db, {
@@ -219,7 +253,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           attachmentMessageIds: nearbyAttachments.map((attachment) => attachment.messageId)
         })
       : null;
-    const createdDraftIds = await createAiTaskDrafts(db, {
+    const draftResult = await createAiTaskDrafts(db, {
       projectId,
       groupId,
       sourceMessageId: messageRef.id,
@@ -228,8 +262,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       suggestions,
       attachments: nearbyAttachments,
+      incidentId,
       reusableDraftId: pendingImageDraft?.id ?? ""
     });
+    const createdDraftIds = draftResult.draftIds;
     const relationHints = suggestions.length
       ? await linkPossibleAnsweredFollowups(db, {
           projectId,
@@ -240,7 +276,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           createdDraftIds
         }).catch(() => [])
       : [];
-    const shouldNotifyAiDraft = shouldNotifyAiDrafts(createdDraftIds, pendingImageDraft?.data);
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, pendingImageDraft?.data);
     const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
@@ -256,6 +292,15 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     if (adminNotification.sent > 0) {
       await markAiDraftsAdminNotified(db, createdDraftIds);
     }
+    const mergedNotification = draftResult.mergedItems.length
+      ? await notifyAdminGroupsAboutMergedAiTasks(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: event.message.text,
+          mergedItems: draftResult.mergedItems
+        })
+      : { sent: 0, failed: 0, groups: 0 };
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
@@ -294,8 +339,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       messageId: messageRef.id,
       lineMessageId,
       aiTaskDrafts: suggestions.length,
-      adminNotifications: adminNotification.sent + unboundNotification.sent,
-      adminNotificationFailures: adminNotification.failed + unboundNotification.failed,
+      adminNotifications: adminNotification.sent + unboundNotification.sent + mergedNotification.sent,
+      adminNotificationFailures: adminNotification.failed + unboundNotification.failed + mergedNotification.failed,
+      aiDraftsMerged: draftResult.mergedItems.length,
+      aiDraftMergedNotifications: mergedNotification.sent,
       aiDraftRelations: relationHints.length,
       projectId,
       senderName,
@@ -358,7 +405,22 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
         ? baseSuggestions
         : [buildImageReviewSuggestion(nearbyText, attachments.length)]
       : [];
-    const createdDraftIds = await createAiTaskDrafts(db, {
+    const incidentId = shouldCreateAiDrafts
+      ? await upsertLineIncident(db, {
+          projectId,
+          groupId,
+          messageId: messageRef.id,
+          lineMessageId,
+          messageType,
+          messageText: nearbyText || "圖片訊息",
+          messageTimestamp: currentTimestamp,
+          senderName,
+          senderRole,
+          suggestions,
+          attachmentMessageIds: attachments.map((item) => item.messageId)
+        })
+      : "";
+    const draftResult = await createAiTaskDrafts(db, {
       projectId,
       groupId,
       sourceMessageId: messageRef.id,
@@ -367,9 +429,11 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       suggestions,
       attachments,
+      incidentId,
       reusableDraftId: pendingImageDraft?.id ?? ""
     });
-    const shouldNotifyAiDraft = shouldNotifyAiDrafts(createdDraftIds, pendingImageDraft?.data);
+    const createdDraftIds = draftResult.draftIds;
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, pendingImageDraft?.data);
     const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
@@ -385,6 +449,15 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     if (adminNotification.sent > 0) {
       await markAiDraftsAdminNotified(db, createdDraftIds);
     }
+    const mergedNotification = draftResult.mergedItems.length
+      ? await notifyAdminGroupsAboutMergedAiTasks(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: nearbyText || "圖片訊息",
+          mergedItems: draftResult.mergedItems
+        })
+      : { sent: 0, failed: 0, groups: 0 };
     const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
@@ -403,8 +476,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       messageId: messageRef.id,
       lineMessageId,
       aiTaskDrafts: suggestions.length,
-      adminNotifications: adminNotification.sent + unboundNotification.sent,
-      adminNotificationFailures: adminNotification.failed + unboundNotification.failed,
+      adminNotifications: adminNotification.sent + unboundNotification.sent + mergedNotification.sent,
+      adminNotificationFailures: adminNotification.failed + unboundNotification.failed + mergedNotification.failed,
+      aiDraftsMerged: draftResult.mergedItems.length,
+      aiDraftMergedNotifications: mergedNotification.sent,
       projectId,
       senderName,
       senderRole,
@@ -428,16 +503,30 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
     return { skipped: true, reason: "Unsupported postback" };
   }
 
+  const supportedActions = [
+    "approve_ai_task",
+    "reject_ai_task",
+    "resolve_ai_followup",
+    "snooze_ai_followup",
+    "confirm_reminder",
+    "snooze_reminder",
+    "keep_reminder"
+  ];
+  if (!supportedActions.includes(action)) {
+    return { skipped: true, reason: "Unsupported postback" };
+  }
+
+  const isAdminGroup = await isAssistantAdminGroup(db, getEventGroupId(event));
+  if (!isAdminGroup) {
+    return { skipped: true, reason: "Postback outside admin LINE group", action, key };
+  }
+
   if (["approve_ai_task", "reject_ai_task"].includes(action)) {
     return handleAiTaskReviewPostback(db, event, action, key);
   }
 
   if (["resolve_ai_followup", "snooze_ai_followup"].includes(action)) {
     return handleAiFollowupPostback(db, event, action, key, params);
-  }
-
-  if (!["confirm_reminder", "snooze_reminder", "keep_reminder"].includes(action)) {
-    return { skipped: true, reason: "Unsupported postback" };
   }
 
   const senderName = await getLineSenderName(event);
@@ -600,7 +689,6 @@ async function handleAiFollowupPostback(
 ) {
   const isAdminGroup = await isAssistantAdminGroup(db, getEventGroupId(event));
   if (!isAdminGroup) {
-    await replyLineText(event.replyToken, "客戶回覆追蹤只能在公司 LINE 後台群組操作。");
     return { skipped: true, reason: "AI followup outside admin LINE group", key };
   }
 
@@ -752,7 +840,6 @@ async function handleAiTaskReviewPostback(
 ) {
   const isAdminGroup = await isAssistantAdminGroup(db, getEventGroupId(event));
   if (!isAdminGroup) {
-    await replyLineText(event.replyToken, "AI 草稿審核只能在公司 LINE 後台群組操作。");
     return { skipped: true, reason: "AI review outside admin LINE group", key };
   }
 
@@ -831,6 +918,17 @@ async function handleAiTaskReviewPostback(
       },
       { merge: true }
     );
+    if (taskInput.incidentId) {
+      transaction.set(
+        db.collection("incidents").doc(taskInput.incidentId),
+        {
+          aiTaskIds: FieldValue.arrayUnion(key),
+          taskIds: FieldValue.arrayUnion(taskRef.id),
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
 
     return {
       status: "approved" as const,
@@ -984,6 +1082,136 @@ async function syncLinePendingGroup(
   };
 }
 
+async function upsertLineIncident(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    groupId: string;
+    messageId: string;
+    lineMessageId: string;
+    messageType: LineMessageType;
+    messageText: string;
+    messageTimestamp: Timestamp | null;
+    senderName: string;
+    senderRole: LineSenderRole;
+    contextText?: string;
+    suggestions: AiTaskSuggestion[];
+    attachmentMessageIds?: string[];
+  }
+) {
+  const incidentType = getPrimaryIncidentType(input.suggestions.map((suggestion) => suggestion.taskType));
+  const firstSuggestion = input.suggestions[0];
+  const title = shortText(firstSuggestion?.title || input.messageText || "LINE 訊息待確認", 80);
+  const summary = shortText(firstSuggestion?.description || input.messageText || title, 300);
+  const groupingText = getIncidentGroupingText(input);
+  const riskLevel = maxRiskLevel(
+    input.suggestions.map((suggestion) => getAiTaskRiskLevel(suggestion.taskType, suggestion.title)),
+    "low"
+  );
+  const incidentKey = buildIncidentKey({
+    projectId: input.projectId,
+    groupId: input.groupId,
+    incidentType,
+    title,
+    text: groupingText
+  });
+  const incidentId = incidentDocumentIdFromKey(incidentKey);
+  const incidentRef = db.collection("incidents").doc(incidentId);
+  const incidentSnapshot = await incidentRef.get();
+  const existing = incidentSnapshot.exists ? incidentSnapshot.data() ?? {} : {};
+  const existingRiskLevel = normalizeRiskLevel(String(existing.riskLevel ?? ""), "low");
+  const nextRiskLevel = maxRiskLevel([existingRiskLevel, riskLevel], "low");
+  const messageTime = input.messageTimestamp ?? FieldValue.serverTimestamp();
+  const payload: FirebaseFirestore.DocumentData = {
+    incidentKey,
+    projectId: input.projectId,
+    groupId: input.groupId,
+    title: String(existing.title ?? "") || title,
+    summary,
+    incidentType,
+    riskLevel: nextRiskLevel,
+    status: existing.status === "resolved" || existing.status === "ignored" ? existing.status : "open",
+    source: "line",
+    sourceMessageIds: FieldValue.arrayUnion(input.messageId),
+    messageTypes: FieldValue.arrayUnion(input.messageType),
+    lastMessageAt: messageTime,
+    lastSenderName: input.senderName,
+    lastSenderRole: input.senderRole,
+    updatedAt: FieldValue.serverTimestamp()
+  };
+
+  if (!incidentSnapshot.exists) {
+    payload.aiTaskIds = [];
+    payload.taskIds = [];
+    payload.firstMessageAt = messageTime;
+    payload.createdAt = FieldValue.serverTimestamp();
+  }
+
+  if (input.lineMessageId) {
+    payload.lineMessageIds = FieldValue.arrayUnion(input.lineMessageId);
+  }
+
+  if (input.attachmentMessageIds?.length) {
+    payload.attachmentMessageIds = FieldValue.arrayUnion(...input.attachmentMessageIds);
+  }
+
+  await incidentRef.set(payload, { merge: true });
+  await db.collection("messages").doc(input.messageId).set(
+    {
+      incidentId,
+      incidentKey,
+      incidentLinkedAt: FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  return incidentId;
+}
+
+async function appendAiDraftsToIncident(db: FirebaseFirestore.Firestore, incidentId: string, draftIds: string[]) {
+  const uniqueDraftIds = [...new Set(draftIds.filter(Boolean))];
+  if (!incidentId || !uniqueDraftIds.length) return;
+
+  await db.collection("incidents").doc(incidentId).set(
+    {
+      aiTaskIds: FieldValue.arrayUnion(...uniqueDraftIds),
+      updatedAt: FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+function incidentDocumentIdFromKey(incidentKey: string) {
+  return createHash("sha256").update(incidentKey).digest("hex");
+}
+
+function normalizeRiskLevel(value: string, fallback: RiskLevel): RiskLevel {
+  return value === "low" || value === "medium" || value === "high" || value === "critical" ? value : fallback;
+}
+
+function getIncidentGroupingText(input: {
+  messageText: string;
+  contextText?: string;
+  senderRole: LineSenderRole;
+  suggestions: AiTaskSuggestion[];
+}) {
+  const shouldUseContext =
+    input.senderRole !== "client" &&
+    Boolean(input.contextText?.trim()) &&
+    input.suggestions.some((suggestion) => ["promise", "followup", "schedule", "file"].includes(suggestion.taskType));
+
+  return shouldUseContext ? `${input.contextText}\n${input.messageText}` : input.messageText;
+}
+
+function getLatestCustomerContextText(messages: AiMessageContextItem[]) {
+  return (
+    [...messages]
+      .reverse()
+      .find((message) => message.senderRole === "client" || message.senderRole === "unknown")
+      ?.text.trim() ?? ""
+  );
+}
+
 async function createAiTaskDrafts(
   db: FirebaseFirestore.Firestore,
   input: {
@@ -995,15 +1223,31 @@ async function createAiTaskDrafts(
     senderRole: LineSenderRole;
     suggestions: AiTaskSuggestion[];
     attachments: LineAttachmentForWrite[];
+    incidentId?: string;
     reusableDraftId?: string;
   }
 ) {
   const attachmentMessageIds = input.attachments.map((attachment) => attachment.messageId);
-  const createdDraftIds: string[] = [];
+  const result: AiTaskDraftCreateResult = {
+    draftIds: [],
+    newDraftIds: [],
+    reusedDraftIds: [],
+    mergedItems: []
+  };
 
   for (const [index, suggestion] of input.suggestions.entries()) {
+    const reusableDraft =
+      index === 0 && input.reusableDraftId
+        ? { id: input.reusableDraftId, data: null as FirebaseFirestore.DocumentData | null, reason: "image_attachment" }
+        : await findReusableIncidentAiDraft(db, {
+            incidentId: input.incidentId ?? "",
+            currentSourceMessageId: input.sourceMessageId,
+            taskType: suggestion.taskType,
+            excludedDraftIds: result.draftIds
+          });
     const payload = {
       projectId: input.projectId,
+      incidentId: input.incidentId ?? "",
       sourceMessageId: input.sourceMessageId,
       sourceGroupId: input.groupId,
       sourceSenderId: input.sourceSenderId,
@@ -1030,9 +1274,31 @@ async function createAiTaskDrafts(
       updatedAt: FieldValue.serverTimestamp()
     };
 
-    if (index === 0 && input.reusableDraftId) {
-      await db.collection("ai_tasks").doc(input.reusableDraftId).set(payload, { merge: true });
-      createdDraftIds.push(input.reusableDraftId);
+    if (reusableDraft) {
+      const mergedItem = await mergeAiTaskDraft(db, reusableDraft, payload, input.sourceMessageId, attachmentMessageIds);
+      result.draftIds.push(reusableDraft.id);
+      result.reusedDraftIds.push(reusableDraft.id);
+      if (mergedItem) result.mergedItems.push(mergedItem);
+      continue;
+    }
+
+    const existingApprovedTask = await findExistingApprovedIncidentAiTask(db, {
+      incidentId: input.incidentId ?? "",
+      currentSourceMessageId: input.sourceMessageId,
+      taskType: suggestion.taskType
+    });
+
+    if (existingApprovedTask) {
+      const mergedItem = await markDuplicateOnExistingAiTask(
+        db,
+        existingApprovedTask,
+        payload,
+        input.sourceMessageId,
+        attachmentMessageIds
+      );
+      result.draftIds.push("");
+      result.reusedDraftIds.push(existingApprovedTask.id);
+      if (mergedItem) result.mergedItems.push(mergedItem);
       continue;
     }
 
@@ -1040,15 +1306,184 @@ async function createAiTaskDrafts(
       ...payload,
       createdAt: FieldValue.serverTimestamp()
     });
-    createdDraftIds.push(draftRef.id);
+    result.draftIds.push(draftRef.id);
+    result.newDraftIds.push(draftRef.id);
   }
 
-  return createdDraftIds;
+  if (input.incidentId && result.draftIds.length) {
+    await appendAiDraftsToIncident(db, input.incidentId, result.draftIds);
+  }
+
+  return result;
 }
 
-function shouldNotifyAiDrafts(createdDraftIds: string[], reusableDraftData?: FirebaseFirestore.DocumentData) {
-  if (!createdDraftIds.length) return false;
-  if (!reusableDraftData) return true;
+async function findReusableIncidentAiDraft(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    incidentId: string;
+    currentSourceMessageId: string;
+    taskType: AiTaskType;
+    excludedDraftIds: string[];
+  }
+) {
+  if (!input.incidentId) return null;
+
+  const snapshot = await db.collection("ai_tasks").where("incidentId", "==", input.incidentId).get();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const excludedDraftIds = new Set(input.excludedDraftIds);
+  const candidate = snapshot.docs
+    .map((doc) => ({ id: doc.id, data: doc.data() }))
+    .filter((item) => !excludedDraftIds.has(item.id))
+    .filter((item) => String(item.data.sourceMessageId ?? "") !== input.currentSourceMessageId)
+    .filter((item) => String(item.data.taskType ?? "") === input.taskType)
+    .filter((item) => String(item.data.reviewStatus ?? "pending") === "pending")
+    .filter((item) => !String(item.data.approvedTaskId ?? ""))
+    .filter((item) => timestampToMillis(item.data.createdAt) >= cutoff || timestampToMillis(item.data.updatedAt) >= cutoff)
+    .sort((a, b) => timestampToMillis(b.data.updatedAt || b.data.createdAt) - timestampToMillis(a.data.updatedAt || a.data.createdAt))[0];
+
+  return candidate ? { ...candidate, reason: "same_incident_pending_draft" } : null;
+}
+
+async function findExistingApprovedIncidentAiTask(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    incidentId: string;
+    currentSourceMessageId: string;
+    taskType: AiTaskType;
+  }
+) {
+  if (!input.incidentId) return null;
+
+  const snapshot = await db.collection("ai_tasks").where("incidentId", "==", input.incidentId).get();
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const candidate = snapshot.docs
+    .map((doc) => ({ id: doc.id, data: doc.data() }))
+    .filter((item) => String(item.data.sourceMessageId ?? "") !== input.currentSourceMessageId)
+    .filter((item) => String(item.data.taskType ?? "") === input.taskType)
+    .filter((item) => String(item.data.reviewStatus ?? "pending") === "approved")
+    .filter((item) => Boolean(String(item.data.approvedTaskId ?? "")))
+    .filter((item) => String(item.data.status ?? "todo") !== "done")
+    .filter((item) => timestampToMillis(item.data.createdAt) >= cutoff || timestampToMillis(item.data.updatedAt) >= cutoff)
+    .sort((a, b) => timestampToMillis(b.data.updatedAt || b.data.createdAt) - timestampToMillis(a.data.updatedAt || a.data.createdAt))[0];
+
+  return candidate ? { ...candidate, reason: "same_incident_approved_task" } : null;
+}
+
+async function mergeAiTaskDraft(
+  db: FirebaseFirestore.Firestore,
+  reusableDraft: {
+    id: string;
+    data: FirebaseFirestore.DocumentData | null;
+    reason: string;
+  },
+  payload: FirebaseFirestore.DocumentData,
+  sourceMessageId: string,
+  attachmentMessageIds: string[]
+) {
+  const updatePayload: FirebaseFirestore.DocumentData =
+    reusableDraft.reason === "image_attachment"
+      ? payload
+      : {
+          incidentId: payload.incidentId,
+          projectId: payload.projectId,
+          sourceGroupId: payload.sourceGroupId,
+          sourceSenderId: payload.sourceSenderId,
+          sourceSenderName: payload.sourceSenderName,
+          sourceSenderRole: payload.sourceSenderRole,
+          title: payload.title,
+          description: payload.description,
+          taskType: payload.taskType,
+          status: payload.status,
+          assignedTo: payload.assignedTo,
+          dueDate: payload.dueDate,
+          latestSourceMessageId: sourceMessageId,
+          duplicateSourceMessageIds: FieldValue.arrayUnion(sourceMessageId),
+          duplicateCount: FieldValue.increment(1),
+          dedupeReason: reusableDraft.reason,
+          updatedAt: FieldValue.serverTimestamp()
+        };
+
+  if (reusableDraft.reason !== "image_attachment" && attachmentMessageIds.length) {
+    updatePayload.attachmentMessageIds = FieldValue.arrayUnion(...attachmentMessageIds);
+    updatePayload.attachmentCount = FieldValue.increment(attachmentMessageIds.length);
+  }
+
+  await db.collection("ai_tasks").doc(reusableDraft.id).set(updatePayload, { merge: true });
+
+  if (reusableDraft.reason === "image_attachment") return null;
+
+  return buildMergedAiTaskItem({
+    id: reusableDraft.id,
+    data: reusableDraft.data,
+    fallback: payload,
+    reason: reusableDraft.reason,
+    targetStatus: "pending_draft"
+  });
+}
+
+async function markDuplicateOnExistingAiTask(
+  db: FirebaseFirestore.Firestore,
+  existingTask: {
+    id: string;
+    data: FirebaseFirestore.DocumentData;
+    reason: string;
+  },
+  payload: FirebaseFirestore.DocumentData,
+  sourceMessageId: string,
+  attachmentMessageIds: string[]
+) {
+  const updatePayload: FirebaseFirestore.DocumentData = {
+    latestSourceMessageId: sourceMessageId,
+    duplicateSourceMessageIds: FieldValue.arrayUnion(sourceMessageId),
+    duplicateCount: FieldValue.increment(1),
+    dedupeReason: existingTask.reason,
+    updatedAt: FieldValue.serverTimestamp()
+  };
+
+  if (attachmentMessageIds.length) {
+    updatePayload.attachmentMessageIds = FieldValue.arrayUnion(...attachmentMessageIds);
+    updatePayload.attachmentCount = FieldValue.increment(attachmentMessageIds.length);
+  }
+
+  if (payload.incidentId) updatePayload.incidentId = payload.incidentId;
+  if (payload.projectId) updatePayload.projectId = payload.projectId;
+
+  await db.collection("ai_tasks").doc(existingTask.id).set(updatePayload, { merge: true });
+
+  return buildMergedAiTaskItem({
+    id: existingTask.id,
+    data: existingTask.data,
+    fallback: payload,
+    reason: existingTask.reason,
+    targetStatus: "approved_task"
+  });
+}
+
+function buildMergedAiTaskItem(input: {
+  id: string;
+  data: FirebaseFirestore.DocumentData | null;
+  fallback: FirebaseFirestore.DocumentData;
+  reason: string;
+  targetStatus: "pending_draft" | "approved_task";
+}): AiTaskMergedItem {
+  const data = input.data ?? {};
+  const currentDuplicateCount = Number(data.duplicateCount ?? 0);
+
+  return {
+    targetId: input.id,
+    approvedTaskId: String(data.approvedTaskId ?? ""),
+    title: String(data.title ?? input.fallback.title ?? "AI 待辦"),
+    taskType: normalizeAiTaskType(String(data.taskType ?? input.fallback.taskType ?? "followup")),
+    duplicateCount: currentDuplicateCount + 1,
+    dedupeReason: input.reason,
+    targetStatus: input.targetStatus
+  };
+}
+
+function shouldNotifyAiDrafts(result: AiTaskDraftCreateResult, reusableDraftData?: FirebaseFirestore.DocumentData) {
+  if (!result.draftIds.length) return false;
+  if (result.newDraftIds.length) return true;
+  if (!reusableDraftData) return false;
 
   return !reusableDraftData.adminNotifiedAt;
 }
@@ -1227,7 +1662,7 @@ async function notifyAdminGroupsAboutAiDrafts(
   }
 ) {
   try {
-    const adminGroups = await listAssistantAdminGroupIds(db);
+    const adminGroups = await listAssistantAdminGroupIds(db, getAiDraftNotificationAudience(input.suggestions));
 
     if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
 
@@ -1237,6 +1672,9 @@ async function notifyAdminGroupsAboutAiDrafts(
       ? `${String(project.name)}${project.clientName ? ` / ${String(project.clientName)}` : ""}`
       : "未綁定案件";
     const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
+    const draftItems = input.suggestions
+      .map((suggestion, index) => ({ suggestion, index, draftId: input.createdDraftIds[index] ?? "" }))
+      .filter((item) => item.draftId);
     const relationLines = input.relationHints.length
       ? ["", "保守關聯提示：", ...input.relationHints.map((relation) => `- ${relation.hint}`)]
       : [];
@@ -1247,10 +1685,11 @@ async function notifyAdminGroupsAboutAiDrafts(
       `原對話：${input.text}`,
       input.attachmentCount ? `附件：${input.attachmentCount} 張圖片` : "",
       "",
-      ...input.suggestions.slice(0, 5).map((suggestion, index) => {
+      ...draftItems.slice(0, 5).map(({ suggestion, index }) => {
         const dueDate = suggestion.dueDate ? `｜截止：${suggestion.dueDate.replaceAll("-", "/")}` : "";
         const draftId = input.createdDraftIds[index] ? `｜草稿ID：${input.createdDraftIds[index]}` : "";
-        return `- ${suggestion.title}｜${suggestion.taskType}${dueDate}${draftId}`;
+        const riskLevel = getAiTaskRiskLevel(suggestion.taskType, suggestion.title);
+        return `- ${suggestion.title}｜${aiTaskTypeLabel(suggestion.taskType)}｜${riskLevelLabel(riskLevel)}${dueDate}${draftId}`;
       }),
       ...relationLines,
       "",
@@ -1260,7 +1699,7 @@ async function notifyAdminGroupsAboutAiDrafts(
       projectName,
       reviewUrl,
       summaryText: text,
-      items: input.suggestions.map((suggestion, index) => ({
+      items: draftItems.map(({ suggestion, index }) => ({
         id: input.createdDraftIds[index] ?? "",
         title: suggestion.title,
         taskType: suggestion.taskType,
@@ -1269,6 +1708,62 @@ async function notifyAdminGroupsAboutAiDrafts(
     });
     const results = await Promise.allSettled(
       adminGroups.map((groupId) => pushLineMessages(groupId, reviewMessages))
+    );
+
+    return {
+      sent: results.filter((result) => result.status === "fulfilled").length,
+      failed: results.filter((result) => result.status === "rejected").length,
+      groups: adminGroups.length
+    };
+  } catch {
+    return { sent: 0, failed: 1, groups: 0 };
+  }
+}
+
+async function notifyAdminGroupsAboutMergedAiTasks(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    projectId: string;
+    senderName: string;
+    senderRole: LineSenderRole;
+    text: string;
+    mergedItems: AiTaskMergedItem[];
+  }
+) {
+  try {
+    if (!input.mergedItems.length) return { sent: 0, failed: 0, groups: 0 };
+
+    const adminGroups = await listAssistantAdminGroupIds(db, getMergedAiTaskNotificationAudience(input.mergedItems));
+    if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+
+    const projectSnapshot = input.projectId ? await db.collection("projects").doc(input.projectId).get() : null;
+    const project = projectSnapshot?.exists ? projectSnapshot.data() ?? {} : {};
+    const projectName = project.name
+      ? `${String(project.name)}${project.clientName ? ` / ${String(project.clientName)}` : ""}`
+      : "未綁定案件";
+    const incidentUrl = getSiteUrl() ? `${getSiteUrl()}/incidents` : "";
+    const aiTasksUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
+    const lines = [
+      "AI 已合併相似訊息",
+      `案件：${projectName}`,
+      `來源：${input.senderName || "LINE 成員"}（${senderRoleLabel(input.senderRole)}）`,
+      `訊息：${shortText(input.text, 80)}`,
+      "",
+      ...input.mergedItems.slice(0, 6).map((item) => {
+        const totalRelated = item.duplicateCount + 1;
+        const targetLabel = item.targetStatus === "approved_task" ? "已核准待辦" : "待審草稿";
+        const riskLevel = getAiTaskRiskLevel(item.taskType, item.title);
+
+        return `- ${item.title}（${aiTaskTypeLabel(item.taskType)} / ${riskLevelLabel(riskLevel)} / ${targetLabel}）：已合併 ${item.duplicateCount} 則相似訊息，同一事件共 ${totalRelated} 則`;
+      }),
+      input.mergedItems.length > 6 ? `另有 ${input.mergedItems.length - 6} 筆合併項目` : "",
+      "",
+      incidentUrl ? `事件中心：${incidentUrl}` : "",
+      aiTasksUrl ? `待辦審核：${aiTasksUrl}` : ""
+    ].filter(Boolean);
+    const text = lines.join("\n");
+    const results = await Promise.allSettled(
+      adminGroups.map((groupId) => pushLineMessages(groupId, [{ type: "text", text }]))
     );
 
     return {
@@ -1355,14 +1850,22 @@ async function notifyAdminGroupsAboutPendingLineGroup(
   }
 }
 
-async function listAssistantAdminGroupIds(db: FirebaseFirestore.Firestore) {
-  const adminGroupSnapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
+async function listAssistantAdminGroupIds(
+  db: FirebaseFirestore.Firestore,
+  audience: AdminNotificationAudience = "primary"
+) {
+  const adminGroups = await listAdminNotificationGroups(db, audience);
+  return adminGroups.map((group) => group.groupId);
+}
 
-  return adminGroupSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((group) => group.allowAssistantReplies !== false)
-    .map((group) => String(group.groupId ?? ""))
-    .filter(Boolean);
+function getAiDraftNotificationAudience(suggestions: AiTaskSuggestion[]): AdminNotificationAudience {
+  return suggestions.some((suggestion) => getAiTaskRiskLevel(suggestion.taskType, suggestion.title) === "critical")
+    ? "critical"
+    : "primary";
+}
+
+function getMergedAiTaskNotificationAudience(items: AiTaskMergedItem[]): AdminNotificationAudience {
+  return items.some((item) => getAiTaskRiskLevel(item.taskType, item.title) === "critical") ? "critical" : "primary";
 }
 
 async function isAssistantAdminGroup(db: FirebaseFirestore.Firestore, groupId: string) {
@@ -1383,6 +1886,7 @@ function buildTaskFromAiDraft(aiTask: FirebaseFirestore.DocumentData) {
     title: String(aiTask.title ?? "").trim(),
     description: String(aiTask.description ?? "").trim(),
     projectId: String(aiTask.projectId ?? "").trim(),
+    incidentId: String(aiTask.incidentId ?? "").trim(),
     assignee: String(aiTask.assignedTo ?? "").trim(),
     dueDate: timestampToTaipeiInputDate(aiTask.dueDate),
     status: normalizeTaskStatus(String(aiTask.status ?? "")),
@@ -1419,7 +1923,16 @@ function readLineAttachments(value: unknown): LineAttachmentForWrite[] {
 }
 
 function normalizeAiTaskType(value: string): AiTaskType {
-  if (value === "promise" || value === "change" || value === "followup" || value === "payment" || value === "invoice") {
+  if (
+    value === "promise" ||
+    value === "change" ||
+    value === "followup" ||
+    value === "payment" ||
+    value === "invoice" ||
+    value === "complaint" ||
+    value === "schedule" ||
+    value === "file"
+  ) {
     return value;
   }
 
@@ -1625,6 +2138,26 @@ function senderRoleLabel(role: LineSenderRole) {
     vendor: "廠商",
     unknown: "身份未登記"
   }[role];
+}
+
+function aiTaskTypeLabel(type: AiTaskType) {
+  return {
+    promise: "承諾",
+    change: "變更",
+    followup: "追蹤",
+    payment: "收款",
+    invoice: "發票",
+    complaint: "客訴 / 缺失",
+    schedule: "工期",
+    file: "圖面 / 檔案"
+  }[type];
+}
+
+function riskLevelLabel(riskLevel: string) {
+  if (riskLevel === "critical") return "重大風險";
+  if (riskLevel === "high") return "高風險";
+  if (riskLevel === "medium") return "中風險";
+  return "低風險";
 }
 
 function isPotentialAnswerDraft(suggestion: AiTaskSuggestion, senderRole: LineSenderRole) {

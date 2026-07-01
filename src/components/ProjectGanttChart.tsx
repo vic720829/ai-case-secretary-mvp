@@ -3,6 +3,7 @@
 import { AlertTriangle, CalendarDays, CheckCircle2, Pencil, Timer } from "lucide-react";
 import { EmptyState } from "@/components/Ui";
 import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
+import { isHighOrCriticalRisk } from "@/lib/riskRules";
 import type { Milestone, Project, ProjectStage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ProjectStageStatusBadge } from "./StatusBadges";
@@ -260,7 +261,7 @@ function MilestoneMarker({
   const offset = daysBetween(timeline.startDate, milestone.dueDate);
   if (offset < 0 || offset >= timeline.dates.length) return null;
 
-  const highRisk = milestone.riskLevel === "high" || (!milestone.completed && isDateOverdue(milestone.dueDate));
+  const highRisk = isHighOrCriticalRisk(milestone.riskLevel) || (!milestone.completed && isDateOverdue(milestone.dueDate));
 
   return (
     <div

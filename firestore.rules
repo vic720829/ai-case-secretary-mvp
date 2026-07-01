@@ -67,6 +67,16 @@ service cloud.firestore {
       allow create, update, delete: if canWriteOps();
     }
 
+    match /project_memories/{memoryId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
+    match /project_summaries/{summaryId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
     match /projectStages/{stageId} {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();
@@ -103,6 +113,11 @@ service cloud.firestore {
     }
 
     match /ai_tasks/{aiTaskId} {
+      allow read: if canReadOps();
+      allow create, update, delete: if canWriteOps();
+    }
+
+    match /incidents/{incidentId} {
       allow read: if canReadOps();
       allow create, update, delete: if canWriteOps();
     }

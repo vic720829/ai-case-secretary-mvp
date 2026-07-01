@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
+import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import type { AiTask, LineSenderRole, Project } from "@/lib/types";
+import { RiskBadge } from "./StatusBadges";
 
 export function AiTaskTable({
   aiTasks,
@@ -23,6 +25,7 @@ export function AiTaskTable({
               <th className="px-4 py-3">AI 待辦</th>
               <th className="px-4 py-3">案件</th>
               <th className="px-4 py-3">類型</th>
+              <th className="px-4 py-3">風險</th>
               <th className="px-4 py-3">狀態</th>
               <th className="px-4 py-3">截止日</th>
               <th className="px-4 py-3">建立時間</th>
@@ -61,6 +64,9 @@ export function AiTaskTable({
                     )}
                   </td>
                   <td className="px-4 py-4 text-slate-600">{typeLabel.get(task.taskType) ?? task.taskType}</td>
+                  <td className="px-4 py-4">
+                    <RiskBadge risk={getAiTaskRiskLevel(task.taskType, task.title)} />
+                  </td>
                   <td className="px-4 py-4 text-slate-600">{statusLabel.get(task.status) ?? task.status}</td>
                   <td className="px-4 py-4 text-slate-600">
                     {task.dueDate ? formatDate(task.dueDate.toISOString().slice(0, 10)) : "未設定"}

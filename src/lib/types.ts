@@ -1,14 +1,19 @@
 export type TaskStatus = "todo" | "doing" | "done";
 export type TaskSource = "manual" | "line" | "ai" | "voice";
-export type RiskLevel = "low" | "medium" | "high";
+export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
 export type LineMemberRole = "internal" | "client" | "vendor";
 export type LineSenderRole = LineMemberRole | "unknown";
 export type LineNotificationLevel = "primary" | "secondary" | "critical_only" | "test" | "none";
-export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice";
+export type AiTaskType = "promise" | "change" | "followup" | "payment" | "invoice" | "complaint" | "schedule" | "file";
 export type AiTaskReviewStatus = "pending" | "approved" | "rejected";
 export type AiTaskResolutionStatus = "open" | "maybe_answered" | "confirmed_resolved";
+export type IncidentType = AiTaskType | "unknown";
+export type IncidentStatus = "open" | "resolved" | "ignored";
+export type ProjectMemoryType = "permanent" | "temporary";
+export type ProjectMemoryStatus = "active" | "archived";
+export type ProjectMemoryImportance = "normal" | "high";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task" | "message";
 export type ReminderPriority = "normal" | "high";
 export type ReminderType =
@@ -81,6 +86,7 @@ export type TaskInput = {
   title: string;
   description: string;
   projectId: string;
+  incidentId?: string;
   assignee: string;
   dueDate: string;
   status: TaskStatus;
@@ -110,6 +116,46 @@ export type ProjectMemoInput = {
 };
 
 export type ProjectMemo = ProjectMemoInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type ProjectMemoryInput = {
+  projectId: string;
+  title: string;
+  content: string;
+  memoryType: ProjectMemoryType;
+  status: ProjectMemoryStatus;
+  importance: ProjectMemoryImportance;
+  expiresAt: string;
+  sourceMemoId?: string;
+  sourceTaskId?: string;
+  sourceIncidentId?: string;
+  createdBy?: string;
+};
+
+export type ProjectMemory = ProjectMemoryInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type ProjectSummarySection = {
+  title: string;
+  items: string[];
+};
+
+export type ProjectAiSummaryInput = {
+  projectId: string;
+  summaryText: string;
+  sections: ProjectSummarySection[];
+  source: "ai" | "system";
+  model: string;
+  refreshedBy: string;
+};
+
+export type ProjectAiSummary = ProjectAiSummaryInput & {
   id: string;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -218,6 +264,7 @@ export type LineMember = LineMemberInput & {
 export type MessageInput = {
   projectId: string;
   groupId: string;
+  incidentId?: string;
   lineMessageId: string;
   senderId: string;
   senderName: string;
@@ -247,6 +294,7 @@ export type MessageAttachment = {
 
 export type AiTaskInput = {
   projectId: string;
+  incidentId?: string;
   sourceMessageId: string;
   sourceGroupId: string;
   sourceSenderId?: string;
@@ -278,6 +326,27 @@ export type AiTask = Omit<AiTaskInput, "dueDate" | "reviewedAt" | "resolutionLin
   reviewedAt: Date | null;
   resolutionLinkedAt: Date | null;
   createdAt: Date | null;
+};
+
+export type Incident = {
+  id: string;
+  incidentKey: string;
+  projectId: string;
+  groupId: string;
+  title: string;
+  summary: string;
+  incidentType: IncidentType;
+  riskLevel: RiskLevel;
+  status: IncidentStatus;
+  source: "line" | "manual" | "ai";
+  sourceMessageIds: string[];
+  lineMessageIds: string[];
+  aiTaskIds: string[];
+  taskIds: string[];
+  firstMessageAt: Date | null;
+  lastMessageAt: Date | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 };
 
 export type AiTaskDraftUpdateInput = {

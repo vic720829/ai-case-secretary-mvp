@@ -8,6 +8,7 @@ import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { isDateDueSoon, isDateOverdue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import { isHighOrCriticalRisk } from "@/lib/riskRules";
 import type { Milestone, Project, ProjectStage } from "@/lib/types";
 
 export default function MilestonesPage() {
@@ -56,7 +57,7 @@ export default function MilestonesPage() {
     [activeMilestones]
   );
   const highRiskMilestones = useMemo(
-    () => activeMilestones.filter((milestone) => milestone.riskLevel === "high"),
+    () => activeMilestones.filter((milestone) => isHighOrCriticalRisk(milestone.riskLevel)),
     [activeMilestones]
   );
 
@@ -68,7 +69,7 @@ export default function MilestonesPage() {
     <div className="space-y-6">
       <PageHeader
         title="關鍵節點"
-        description="集中查看各案件里程碑的即將到期、已逾期與高風險項目。"
+        description="集中查看各案件里程碑的即將到期、已逾期與高/重大風險項目。"
       />
 
       <ErrorMessage message={error} />
@@ -94,7 +95,7 @@ export default function MilestonesPage() {
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
           <MetricCard
-            title="高風險"
+            title="高/重大風險"
             value={highRiskMilestones.length}
             tone="red"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
@@ -119,11 +120,11 @@ export default function MilestonesPage() {
             empty="目前沒有逾期的關鍵節點。"
           />
           <MilestoneSection
-            title="高風險"
+            title="高/重大風險"
             milestones={highRiskMilestones}
             projects={projects}
             stages={stages}
-            empty="目前沒有高風險關鍵節點。"
+            empty="目前沒有高/重大風險關鍵節點。"
           />
         </>
       ) : null}

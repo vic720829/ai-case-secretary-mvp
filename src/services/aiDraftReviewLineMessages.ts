@@ -32,7 +32,7 @@ export function buildAiDraftReviewTemplateMessage(
   const safeReviewUrl = normalizeHttpUrl(reviewUrl);
   const editUrl = safeReviewUrl ? appendQueryParam(safeReviewUrl, "draftId", item.id) : "";
   const dueDate = item.dueDate ? `截止：${item.dueDate.replaceAll("-", "/")}` : "截止：未設定";
-  const typeLabel = item.taskType ? String(item.taskType) : "待判斷";
+  const typeLabel = item.taskType ? aiTaskTypeLabel(String(item.taskType)) : "待判斷";
   const actions: Extract<LinePushMessage, { type: "template" }>["template"]["actions"] = [
     {
       type: "postback",
@@ -68,6 +68,18 @@ export function buildAiDraftReviewTemplateMessage(
       }
     }
   ];
+}
+
+function aiTaskTypeLabel(type: string) {
+  if (type === "promise") return "承諾";
+  if (type === "change") return "變更";
+  if (type === "followup") return "追蹤";
+  if (type === "payment") return "收款";
+  if (type === "invoice") return "發票";
+  if (type === "complaint") return "客訴 / 缺失";
+  if (type === "schedule") return "工期";
+  if (type === "file") return "圖面 / 檔案";
+  return type;
 }
 
 function normalizeHttpUrl(value: string) {

@@ -32,7 +32,8 @@ export const taskSourceOptions: Array<{ value: TaskSource; label: string }> = [
 export const riskLevelOptions: Array<{ value: RiskLevel; label: string }> = [
   { value: "low", label: "低" },
   { value: "medium", label: "中" },
-  { value: "high", label: "高" }
+  { value: "high", label: "高" },
+  { value: "critical", label: "重大" }
 ];
 
 export const lineMessageTypeOptions: Array<{ value: LineMessageType; label: string }> = [
@@ -84,7 +85,10 @@ export const aiTaskTypeOptions: Array<{ value: AiTaskType; label: string }> = [
   { value: "change", label: "變更" },
   { value: "followup", label: "追蹤" },
   { value: "payment", label: "收款" },
-  { value: "invoice", label: "發票" }
+  { value: "invoice", label: "發票" },
+  { value: "complaint", label: "客訴 / 缺失" },
+  { value: "schedule", label: "工期" },
+  { value: "file", label: "圖面 / 檔案" }
 ];
 
 export const userRoleOptions: Array<{ value: UserRole; label: string; description: string }> = [

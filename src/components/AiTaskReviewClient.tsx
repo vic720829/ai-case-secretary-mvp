@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { RiskBadge } from "@/components/StatusBadges";
 import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { aiTaskTypeOptions, taskStatusOptions } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
@@ -300,6 +301,7 @@ function AiTaskReviewTable({
               const draft = draftValues[task.id] ?? toDraftInput(task);
               const project = projectById.get(draft.projectId);
               const disabled = processingId === task.id || !project || !draft.title.trim();
+              const riskLevel = getAiTaskRiskLevel(draft.taskType, draft.title);
 
               return (
                 <tr key={task.id} className="hover:bg-stone-50">
@@ -364,6 +366,9 @@ function AiTaskReviewTable({
                       ))}
                     </select>
                     <div className="mt-2 text-xs text-slate-500">原判斷：{typeLabel.get(task.taskType) ?? task.taskType}</div>
+                    <div className="mt-2">
+                      <RiskBadge risk={riskLevel} />
+                    </div>
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     <input
@@ -641,6 +646,7 @@ function toTaskInput(input: AiTaskDraftUpdateInput, task: AiTask): TaskInput {
     title: input.title,
     description: input.description,
     projectId: input.projectId,
+    incidentId: task.incidentId,
     assignee: input.assignedTo,
     dueDate: input.dueDate,
     status: input.status,

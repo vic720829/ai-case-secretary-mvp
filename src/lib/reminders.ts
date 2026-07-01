@@ -1,4 +1,5 @@
 import { todayInputValue } from "./date";
+import { isHighOrCriticalRisk } from "./riskRules";
 import type {
   AiTask,
   Milestone,
@@ -41,8 +42,20 @@ export function buildReminderCandidates({
     if (task.dueDate && task.dueDate < today) {
       candidates.push(toCandidate("task", task.id, "overdue", task.projectId, "待辦已逾期", task.title, task.dueDate, today));
     }
-    if (task.riskLevel === "high") {
-      candidates.push(toCandidate("task", task.id, "high_risk", task.projectId, "高風險待辦", task.title, task.dueDate, today));
+    if (isHighOrCriticalRisk(task.riskLevel)) {
+      candidates.push(
+        toCandidate(
+          "task",
+          task.id,
+          "high_risk",
+          task.projectId,
+          task.riskLevel === "critical" ? "重大風險待辦" : "高風險待辦",
+          task.title,
+          task.dueDate,
+          today,
+          "high"
+        )
+      );
     }
   });
 
@@ -101,8 +114,20 @@ export function buildReminderCandidates({
     if (milestone.dueDate && milestone.dueDate < today) {
       candidates.push(toCandidate("milestone", milestone.id, "overdue", milestone.projectId, "關鍵節點已逾期", milestone.title, milestone.dueDate, today));
     }
-    if (milestone.riskLevel === "high") {
-      candidates.push(toCandidate("milestone", milestone.id, "high_risk", milestone.projectId, "高風險關鍵節點", milestone.title, milestone.dueDate, today));
+    if (isHighOrCriticalRisk(milestone.riskLevel)) {
+      candidates.push(
+        toCandidate(
+          "milestone",
+          milestone.id,
+          "high_risk",
+          milestone.projectId,
+          milestone.riskLevel === "critical" ? "重大風險關鍵節點" : "高風險關鍵節點",
+          milestone.title,
+          milestone.dueDate,
+          today,
+          "high"
+        )
+      );
     }
   });
 

@@ -1,4 +1,5 @@
 import { isDateOverdue } from "./date";
+import { isHighOrCriticalRisk } from "./riskRules";
 import type { Milestone, Project, ProjectStage } from "./types";
 
 export function getProjectProgress(stages: ProjectStage[]) {
@@ -29,7 +30,7 @@ export function getProjectRiskReasons(stages: ProjectStage[], milestones: Milest
     (stage) => stage.status !== "done" && isDateOverdue(stage.endDate)
   );
   const highRiskMilestones = milestones.filter(
-    (milestone) => !milestone.completed && milestone.riskLevel === "high"
+    (milestone) => !milestone.completed && isHighOrCriticalRisk(milestone.riskLevel)
   );
 
   if (overdueMilestones.length) {
@@ -41,7 +42,7 @@ export function getProjectRiskReasons(stages: ProjectStage[], milestones: Milest
   }
 
   if (highRiskMilestones.length) {
-    reasons.push(`高風險標記 ${highRiskMilestones.length} 項`);
+    reasons.push(`高/重大風險標記 ${highRiskMilestones.length} 項`);
   }
 
   return reasons;

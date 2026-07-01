@@ -974,6 +974,7 @@ function getStatusText(item: CalendarItem) {
 
   if (item.source === "milestone") {
     if (item.status === "done") return "完成";
+    if (item.status === "critical") return "重大風險";
     if (item.status === "high") return "高風險";
     if (item.status === "medium") return "中風險";
     return isDateOverdue(item.endDate) ? "逾期" : "待確認";
@@ -992,6 +993,7 @@ function getItemPillClassName(item: CalendarItem) {
   }
 
   if (item.source === "milestone") {
+    if (item.status === "critical") return "bg-rose-100 text-rose-800";
     if (item.status === "high" || isDateOverdue(item.endDate)) return "bg-red-50 text-red-800";
     return "bg-amber-50 text-amber-800";
   }

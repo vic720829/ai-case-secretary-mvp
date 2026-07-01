@@ -3,6 +3,7 @@ import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey } from "../lib/reminders";
 import type { LineSenderRole } from "../lib/types";
 import { buildAiDraftReviewTemplateMessage } from "./aiDraftReviewLineMessages";
+import { listAdminNotificationGroups } from "./lineAdminGroups";
 import { pushLineMessages, type LinePushMessage } from "./line";
 
 type AdminGroup = {
@@ -250,7 +251,7 @@ function buildEveningCloseoutMessages(data: WorkflowData): LinePushMessage[] {
   const newRiskDrafts = data.aiTasks.filter(
     (task) =>
       task.reviewStatus === "pending" &&
-      ["change", "payment", "invoice"].includes(task.taskType) &&
+      ["change", "payment", "invoice", "complaint", "schedule", "file"].includes(task.taskType) &&
       timestampToTaipeiDate(task.createdAt) === data.today
   );
 
@@ -262,7 +263,7 @@ function buildEveningCloseoutMessages(data: WorkflowData): LinePushMessage[] {
     formatAiTaskSection("今天承諾回覆但未完成", promiseDueToday, data.projects),
     formatStageSection("明天進場前置提醒", tomorrowStages, data.projects),
     formatMilestoneSection("明天到期關鍵節點", tomorrowMilestones, data.projects),
-    formatAiTaskSection("今日新增變更 / 收款 / 發票草稿", newRiskDrafts, data.projects),
+    formatAiTaskSection("今日新增風險草稿", newRiskDrafts, data.projects),
     overdueTasks.length ? formatTaskSection("仍逾期未處理", overdueTasks, data.projects) : "",
     "",
     "建議下班前把今天承諾、明天進場、變更與收款發票先收乾淨。"
@@ -444,13 +445,7 @@ async function upsertCustomerMessageReminderLogs(items: MessageRow[], today: str
 
 async function listAdminGroups(): Promise<AdminGroup[]> {
   const db = getAdminDb();
-  const snapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
-
-  return snapshot.docs
-    .map((doc) => doc.data())
-    .filter((group) => group.allowAssistantReplies !== false)
-    .map((group) => ({ groupId: String(group.groupId ?? "") }))
-    .filter((group) => group.groupId);
+  return listAdminNotificationGroups(db, "daily");
 }
 
 async function loadWorkflowData(): Promise<WorkflowData> {

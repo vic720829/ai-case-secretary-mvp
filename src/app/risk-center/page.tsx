@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
-import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
+import { EmptyState, ErrorMessage, LoadingState, PrimaryLink, SecondaryLink } from "@/components/Ui";
 import { formatDate, formatDateTime, isTaskDueToday, isTaskOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import {
@@ -28,7 +28,7 @@ import {
   listTasks
 } from "@/lib/firestore";
 import { getCurrentStage, getProjectProgress, getProjectRiskReasons } from "@/lib/progress";
-import { getAiTaskRiskLevel } from "@/lib/riskRules";
+import { getAiTaskRiskLevel, isHighOrCriticalRisk } from "@/lib/riskRules";
 import type { AiTask, Milestone, Project, ProjectStage, ReminderLog, Task } from "@/lib/types";
 
 type HighRiskProject = {
@@ -96,7 +96,7 @@ export default function RiskCenterPage() {
 
   const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "done"), [tasks]);
   const highRiskTasks = useMemo(
-    () => activeTasks.filter((task) => task.riskLevel === "high"),
+    () => activeTasks.filter((task) => isHighOrCriticalRisk(task.riskLevel)),
     [activeTasks]
   );
   const overdueTasks = useMemo(
@@ -182,10 +182,16 @@ export default function RiskCenterPage() {
         title="今日風險中心"
         description={`今天是 ${todayInputValue().replaceAll("-", "/")}。集中查看高風險案件、待辦逾期與到期項目。`}
         action={
-          <PrimaryLink href="/tasks/new">
-            <Plus className="h-4 w-4" aria-hidden />
-            新增待辦
-          </PrimaryLink>
+          <>
+            <SecondaryLink href="/projects/new">
+              <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+              建立案件
+            </SecondaryLink>
+            <PrimaryLink href="/tasks/new">
+              <Plus className="h-4 w-4" aria-hidden />
+              建立待辦
+            </PrimaryLink>
+          </>
         }
       />
 
@@ -205,14 +211,14 @@ export default function RiskCenterPage() {
       {!error ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <RiskStatCard
-            title="高風險案件"
+            title="高/重大風險案件"
             value={highRiskProjects.length}
             tone="red"
             href="#high-risk-projects"
             icon={<BriefcaseBusiness className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
-            title="高風險待辦"
+            title="高/重大風險待辦"
             value={highRiskTasks.length}
             tone="red"
             href="#high-risk-tasks"
@@ -290,8 +296,8 @@ export default function RiskCenterPage() {
           <AiPendingRiskSection aiTasks={aiPendingRisks} projects={projects} />
           <RiskSection
             id="high-risk-tasks"
-            title="高風險待辦"
-            description="未完成且風險等級為高"
+            title="高/重大風險待辦"
+            description="未完成且風險等級為高或重大"
             tasks={highRiskTasks}
             projects={projects}
             memoTaskIds={memoTaskIds}
@@ -501,7 +507,7 @@ function HighRiskProjectSection({ projects }: { projects: HighRiskProject[] }) {
   return (
     <section id="high-risk-projects" className="scroll-mt-24 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <SectionTitle title="高風險案件" description="有逾期工期、逾期關鍵點或高風險關鍵點" />
+        <SectionTitle title="高/重大風險案件" description="有逾期工期、逾期關鍵點或高/重大風險關鍵點" />
         <Link className="text-sm font-medium text-teal-700 hover:text-teal-800" href="/projects">
           查看全部案件
         </Link>
@@ -777,7 +783,7 @@ function addDays(date: string, days: number) {
 }
 
 function isHighRiskAiDraft(task: AiTask) {
-  return getAiTaskRiskLevel(task.taskType, task.title) === "high";
+  return isHighOrCriticalRisk(getAiTaskRiskLevel(task.taskType, task.title));
 }
 
 function uniqueAiTasks(tasks: AiTask[]) {

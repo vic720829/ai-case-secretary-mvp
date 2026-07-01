@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:line-safety": "node scripts/line-reply-policy.test.mjs",
+    "test:line-notification-routing": "node scripts/line-notification-routing.test.mjs",
     "test:ai-review-safety": "node scripts/ai-review-policy.test.mjs"
   },
   "dependencies": {

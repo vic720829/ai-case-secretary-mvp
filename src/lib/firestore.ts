@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -23,12 +24,15 @@ import { canReviewAiDraft } from "./aiReviewPolicy";
 import type {
   AiTask,
   AiTaskDraftUpdateInput,
+  AiTaskType,
   AiFeedbackEvent,
   AiFeedbackEventInput,
   AuditActor,
   AuditLog,
   CalendarEvent,
   CalendarEventInput,
+  Incident,
+  IncidentType,
   LearnedRule,
   LearnedRuleInput,
   Milestone,
@@ -42,13 +46,17 @@ import type {
   Message,
   MessageAttachment,
   Project,
+  ProjectAiSummary,
   ProjectInput,
   ProjectMemo,
   ProjectMemoInput,
+  ProjectMemory,
+  ProjectMemoryInput,
   ProjectStage,
   ProjectStageInput,
   ReminderLog,
   ReminderLogInput,
+  RiskLevel,
   Task,
   TaskInput,
   UserProfile,
@@ -59,6 +67,8 @@ import type {
 const PROJECTS_COLLECTION = "projects";
 const TASKS_COLLECTION = "tasks";
 const PROJECT_MEMOS_COLLECTION = "project_memos";
+const PROJECT_MEMORIES_COLLECTION = "project_memories";
+const PROJECT_SUMMARIES_COLLECTION = "project_summaries";
 const PROJECT_STAGES_COLLECTION = "projectStages";
 const MILESTONES_COLLECTION = "milestones";
 const CALENDAR_EVENTS_COLLECTION = "calendar_events";
@@ -67,6 +77,7 @@ const LINE_PENDING_GROUPS_COLLECTION = "line_pending_groups";
 const LINE_MEMBERS_COLLECTION = "line_members";
 const MESSAGES_COLLECTION = "messages";
 const AI_TASKS_COLLECTION = "ai_tasks";
+const INCIDENTS_COLLECTION = "incidents";
 const REMINDER_LOGS_COLLECTION = "reminder_logs";
 const WEBHOOK_LOGS_COLLECTION = "webhook_logs";
 const USERS_COLLECTION = "users";
@@ -94,6 +105,31 @@ function readTimestamp(value: unknown) {
   }
 
   return null;
+}
+
+function normalizeRiskLevel(value: unknown, fallback: RiskLevel): RiskLevel {
+  return value === "low" || value === "medium" || value === "high" || value === "critical" ? value : fallback;
+}
+
+function normalizeAiTaskType(value: unknown, fallback: AiTaskType): AiTaskType {
+  return value === "promise" ||
+    value === "change" ||
+    value === "followup" ||
+    value === "payment" ||
+    value === "invoice" ||
+    value === "complaint" ||
+    value === "schedule" ||
+    value === "file"
+    ? value
+    : fallback;
+}
+
+function normalizeIncidentType(value: unknown): IncidentType {
+  return value === "unknown" ? "unknown" : normalizeAiTaskType(value, "followup");
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 }
 
 function readAttachments(value: unknown): MessageAttachment[] {
@@ -219,11 +255,17 @@ function learnedRuleFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Lear
       data.outcomeTaskType === "change" ||
       data.outcomeTaskType === "followup" ||
       data.outcomeTaskType === "payment" ||
-      data.outcomeTaskType === "invoice"
+      data.outcomeTaskType === "invoice" ||
+      data.outcomeTaskType === "complaint" ||
+      data.outcomeTaskType === "schedule" ||
+      data.outcomeTaskType === "file"
         ? data.outcomeTaskType
         : "",
     outcomeRiskLevel:
-      data.outcomeRiskLevel === "low" || data.outcomeRiskLevel === "medium" || data.outcomeRiskLevel === "high"
+      data.outcomeRiskLevel === "low" ||
+      data.outcomeRiskLevel === "medium" ||
+      data.outcomeRiskLevel === "high" ||
+      data.outcomeRiskLevel === "critical"
         ? data.outcomeRiskLevel
         : "",
     notifyPriority: data.notifyPriority === "high" ? "high" : "normal",
@@ -244,11 +286,12 @@ function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     title: data.title ?? "",
     description: data.description ?? "",
     projectId: data.projectId ?? "",
+    incidentId: data.incidentId ?? "",
     assignee: data.assignee ?? "",
     dueDate: data.dueDate ?? "",
     status: data.status ?? "todo",
     source: data.source ?? "manual",
-    riskLevel: data.riskLevel ?? "low",
+    riskLevel: normalizeRiskLevel(data.riskLevel, "low"),
     attachments,
     attachmentMessageIds: Array.isArray(data.attachmentMessageIds)
       ? data.attachmentMessageIds.map((id: unknown) => String(id)).filter(Boolean)
@@ -272,8 +315,56 @@ function projectMemoFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Proj
     sourceTaskTitle: data.sourceTaskTitle ?? "",
     sourceTaskStatus: sourceTaskId ? data.sourceTaskStatus ?? "todo" : undefined,
     sourceTaskDueDate: data.sourceTaskDueDate ?? "",
-    sourceTaskRiskLevel: sourceTaskId ? data.sourceTaskRiskLevel ?? "low" : undefined,
+    sourceTaskRiskLevel: sourceTaskId ? normalizeRiskLevel(data.sourceTaskRiskLevel, "low") : undefined,
     createdBy: data.createdBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function projectMemoryFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectMemory {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    projectId: data.projectId ?? "",
+    title: data.title ?? "",
+    content: data.content ?? "",
+    memoryType: data.memoryType === "temporary" ? "temporary" : "permanent",
+    status: data.status === "archived" ? "archived" : "active",
+    importance: data.importance === "high" ? "high" : "normal",
+    expiresAt: data.expiresAt ?? "",
+    sourceMemoId: data.sourceMemoId ?? "",
+    sourceTaskId: data.sourceTaskId ?? "",
+    sourceIncidentId: data.sourceIncidentId ?? "",
+    createdBy: data.createdBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function projectAiSummaryFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectAiSummary {
+  const data = snapshot.data();
+  const rawSections = Array.isArray(data.sections) ? data.sections : [];
+
+  return {
+    id: snapshot.id,
+    projectId: data.projectId ?? "",
+    summaryText: data.summaryText ?? "",
+    sections: rawSections
+      .map((section: unknown) => {
+        if (!section || typeof section !== "object") return null;
+        const record = section as Record<string, unknown>;
+
+        return {
+          title: String(record.title ?? ""),
+          items: Array.isArray(record.items) ? record.items.map((item) => String(item)).filter(Boolean) : []
+        };
+      })
+      .filter((section): section is { title: string; items: string[] } => Boolean(section?.title)),
+    source: data.source === "ai" ? "ai" : "system",
+    model: data.model ?? "",
+    refreshedBy: data.refreshedBy ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
@@ -307,7 +398,7 @@ function milestoneFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Milest
     description: data.description ?? "",
     dueDate: data.dueDate ?? "",
     completed: Boolean(data.completed ?? false),
-    riskLevel: data.riskLevel ?? "low",
+    riskLevel: normalizeRiskLevel(data.riskLevel, "low"),
     reminderDaysBefore: Number(data.reminderDaysBefore ?? 0),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
@@ -425,6 +516,7 @@ function messageFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Message 
     id: snapshot.id,
     projectId: data.projectId ?? "",
     groupId: data.groupId ?? "",
+    incidentId: data.incidentId ?? "",
     lineMessageId: data.lineMessageId ?? "",
     senderId: data.senderId ?? "",
     senderName: data.senderName ?? "",
@@ -445,6 +537,7 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
   return {
     id: snapshot.id,
     projectId: data.projectId ?? "",
+    incidentId: data.incidentId ?? "",
     sourceMessageId: data.sourceMessageId ?? "",
     sourceGroupId: data.sourceGroupId ?? "",
     sourceSenderId: data.sourceSenderId ?? "",
@@ -452,7 +545,7 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
     sourceSenderRole: data.sourceSenderRole ?? "unknown",
     title: data.title ?? "",
     description: data.description ?? "",
-    taskType: data.taskType ?? "followup",
+    taskType: normalizeAiTaskType(data.taskType, "followup"),
     status: data.status ?? "todo",
     assignedTo: data.assignedTo ?? "",
     dueDate: readTimestamp(data.dueDate),
@@ -471,6 +564,31 @@ function aiTaskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): AiTask {
       : attachments.map((attachment) => attachment.messageId),
     attachmentCount: Number(data.attachmentCount ?? attachments.length),
     createdAt: readTimestamp(data.createdAt)
+  };
+}
+
+function incidentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Incident {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    incidentKey: data.incidentKey ?? "",
+    projectId: data.projectId ?? "",
+    groupId: data.groupId ?? "",
+    title: data.title ?? "",
+    summary: data.summary ?? "",
+    incidentType: normalizeIncidentType(data.incidentType),
+    riskLevel: normalizeRiskLevel(data.riskLevel, "low"),
+    status: data.status === "resolved" || data.status === "ignored" ? data.status : "open",
+    source: data.source === "manual" || data.source === "ai" ? data.source : "line",
+    sourceMessageIds: readStringArray(data.sourceMessageIds),
+    lineMessageIds: readStringArray(data.lineMessageIds),
+    aiTaskIds: readStringArray(data.aiTaskIds),
+    taskIds: readStringArray(data.taskIds),
+    firstMessageAt: readTimestamp(data.firstMessageAt),
+    lastMessageAt: readTimestamp(data.lastMessageAt),
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
   };
 }
 
@@ -738,6 +856,8 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     projectSnapshot,
     linkedTasks,
     linkedProjectMemos,
+    linkedProjectMemories,
+    projectSummarySnapshot,
     linkedStages,
     linkedMilestones,
     linkedCalendarEvents,
@@ -745,12 +865,15 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     linkedMessages,
     linkedLineMembers,
     linkedAiTasks,
+    linkedIncidents,
     linkedReminderLogs,
     linkedWebhookLogs
   ] = await Promise.all([
     getDoc(doc(database, PROJECTS_COLLECTION, id)),
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_MEMOS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, PROJECT_MEMORIES_COLLECTION), where("projectId", "==", id))),
+    getDoc(doc(database, PROJECT_SUMMARIES_COLLECTION, id)),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, CALENDAR_EVENTS_COLLECTION), where("projectId", "==", id))),
@@ -758,6 +881,7 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     getDocs(query(collection(database, MESSAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, LINE_MEMBERS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, INCIDENTS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, WEBHOOK_LOGS_COLLECTION), where("projectId", "==", id)))
   ]);
@@ -770,6 +894,12 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   linkedProjectMemos.docs.forEach((memoSnapshot) => {
     batch.delete(memoSnapshot.ref);
   });
+  linkedProjectMemories.docs.forEach((memorySnapshot) => {
+    batch.delete(memorySnapshot.ref);
+  });
+  if (projectSummarySnapshot.exists()) {
+    batch.delete(projectSummarySnapshot.ref);
+  }
   linkedStages.docs.forEach((stageSnapshot) => {
     batch.delete(stageSnapshot.ref);
   });
@@ -790,6 +920,9 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   });
   linkedAiTasks.docs.forEach((aiTaskSnapshot) => {
     batch.delete(aiTaskSnapshot.ref);
+  });
+  linkedIncidents.docs.forEach((incidentSnapshot) => {
+    batch.delete(incidentSnapshot.ref);
   });
   linkedReminderLogs.docs.forEach((reminderLogSnapshot) => {
     batch.delete(reminderLogSnapshot.ref);
@@ -930,6 +1063,56 @@ export async function createProjectMemoFromTask(task: Task, createdBy = "") {
 export async function deleteProjectMemo(id: string) {
   const database = requireDb();
   await deleteDoc(doc(database, PROJECT_MEMOS_COLLECTION, id));
+}
+
+export async function listProjectMemoriesByProject(projectId: string) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, PROJECT_MEMORIES_COLLECTION), where("projectId", "==", projectId))
+  );
+
+  return snapshot.docs
+    .map(projectMemoryFromDoc)
+    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+}
+
+export async function createProjectMemory(input: ProjectMemoryInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, PROJECT_MEMORIES_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function updateProjectMemory(id: string, input: ProjectMemoryInput) {
+  const database = requireDb();
+  await updateDoc(doc(database, PROJECT_MEMORIES_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function archiveProjectMemory(id: string) {
+  const database = requireDb();
+  await updateDoc(doc(database, PROJECT_MEMORIES_COLLECTION, id), {
+    status: "archived",
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteProjectMemory(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, PROJECT_MEMORIES_COLLECTION, id));
+}
+
+export async function getProjectAiSummary(projectId: string) {
+  const database = requireDb();
+  const snapshot = await getDoc(doc(database, PROJECT_SUMMARIES_COLLECTION, projectId));
+
+  return snapshot.exists() ? projectAiSummaryFromDoc(snapshot as QueryDocumentSnapshot<DocumentData>) : null;
 }
 
 export async function listProjectStages() {
@@ -1241,6 +1424,26 @@ export async function listAiTasksByProject(projectId: string) {
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
+export async function listIncidents(maxItems = DEFAULT_RECENT_LIST_LIMIT) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, INCIDENTS_COLLECTION), orderBy("updatedAt", "desc"), queryLimit(maxItems))
+  );
+
+  return snapshot.docs.map(incidentFromDoc);
+}
+
+export async function listIncidentsByProject(projectId: string) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, INCIDENTS_COLLECTION), where("projectId", "==", projectId))
+  );
+
+  return snapshot.docs
+    .map(incidentFromDoc)
+    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+}
+
 export async function updateAiTaskDraft(id: string, input: AiTaskDraftUpdateInput) {
   const database = requireDb();
 
@@ -1276,9 +1479,11 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
     const attachments = readAttachments(aiTaskData.attachments).length
       ? readAttachments(aiTaskData.attachments)
       : readAttachments(input.attachments);
+    const incidentId = String(aiTaskData.incidentId ?? input.incidentId ?? "");
 
     transaction.set(taskRef, {
       ...input,
+      incidentId,
       attachments,
       attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
       attachmentCount: attachments.length,
@@ -1306,6 +1511,17 @@ export async function approveAiTask(id: string, input: TaskInput, reviewedBy: st
       },
       { merge: true }
     );
+    if (incidentId) {
+      transaction.set(
+        doc(database, INCIDENTS_COLLECTION, incidentId),
+        {
+          aiTaskIds: arrayUnion(id),
+          taskIds: arrayUnion(taskRef.id),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
   });
 
   return taskRef.id;

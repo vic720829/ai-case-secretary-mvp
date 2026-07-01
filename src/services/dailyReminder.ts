@@ -3,6 +3,7 @@ import { getAdminDb } from "../lib/firebaseAdmin";
 import { createReminderKey, dateMinusDays } from "../lib/reminders";
 import type { ReminderPriority, ReminderSourceType, ReminderType } from "../lib/types";
 import { buildAiDraftReviewTemplateMessage } from "./aiDraftReviewLineMessages";
+import { listAdminNotificationGroups } from "./lineAdminGroups";
 import { pushLineMessages, type LinePushMessage } from "./line";
 
 type ReminderItem = {
@@ -28,15 +29,7 @@ type ProjectSummary = {
 
 export async function sendDailyAdminReminder() {
   const db = getAdminDb();
-  const adminGroupSnapshot = await db.collection("line_groups").where("groupType", "==", "admin").get();
-  const adminGroups = adminGroupSnapshot.docs
-    .map((doc) => doc.data())
-    .filter((group) => group.allowAssistantReplies !== false)
-    .map((group) => ({
-      groupId: String(group.groupId ?? ""),
-      groupName: String(group.groupName ?? "")
-    }))
-    .filter((group) => group.groupId);
+  const adminGroups = await listAdminNotificationGroups(db, "daily");
 
   if (!adminGroups.length) {
     return { ok: true, sent: 0, failed: 0, reason: "No admin LINE groups configured" };
@@ -104,8 +97,21 @@ async function buildDailyReminderContent() {
     if (dueDate && dueDate < today) {
       candidates.push(toReminderItem("task", doc.id, "overdue", projectId, "待辦已逾期", title, dueDate, today));
     }
-    if (task.riskLevel === "high") {
-      candidates.push(toReminderItem("task", doc.id, "high_risk", projectId, "高風險待辦", title, dueDate, today));
+    const riskLevel = String(task.riskLevel ?? "low");
+    if (riskLevel === "high" || riskLevel === "critical") {
+      candidates.push(
+        toReminderItem(
+          "task",
+          doc.id,
+          "high_risk",
+          projectId,
+          riskLevel === "critical" ? "重大風險待辦" : "高風險待辦",
+          title,
+          dueDate,
+          today,
+          "high"
+        )
+      );
     }
   });
 
@@ -138,8 +144,21 @@ async function buildDailyReminderContent() {
     if (dueDate && dueDate < today) {
       candidates.push(toReminderItem("milestone", doc.id, "overdue", projectId, "關鍵節點已逾期", title, dueDate, today));
     }
-    if (milestone.riskLevel === "high") {
-      candidates.push(toReminderItem("milestone", doc.id, "high_risk", projectId, "高風險關鍵節點", title, dueDate, today));
+    const riskLevel = String(milestone.riskLevel ?? "low");
+    if (riskLevel === "high" || riskLevel === "critical") {
+      candidates.push(
+        toReminderItem(
+          "milestone",
+          doc.id,
+          "high_risk",
+          projectId,
+          riskLevel === "critical" ? "重大風險關鍵節點" : "高風險關鍵節點",
+          title,
+          dueDate,
+          today,
+          "high"
+        )
+      );
     }
   });
 
@@ -223,7 +242,7 @@ async function buildDailyReminderContent() {
     formatSection("關鍵節點提醒", dailyPendingItems.filter((item) => item.reminderType === "milestone_before_due"), projects),
     formatSection("今天到期", dailyPendingItems.filter((item) => item.reminderType === "due_today"), projects),
     formatSection("已逾期", dailyPendingItems.filter((item) => item.reminderType === "overdue"), projects),
-    formatSection("高風險", dailyPendingItems.filter((item) => item.reminderType === "high_risk"), projects)
+    formatSection("高/重大風險", dailyPendingItems.filter((item) => item.reminderType === "high_risk"), projects)
   ].filter(Boolean);
 
   return {

@@ -8,7 +8,10 @@ const riskByAiTaskType: Record<AiTaskType, RiskLevel> = {
   change: "high",
   followup: "medium",
   payment: "high",
-  invoice: "high"
+  invoice: "high",
+  complaint: "critical",
+  schedule: "high",
+  file: "medium"
 };
 
 export function hasComplaintOrRepairRisk(title = "") {
@@ -16,7 +19,11 @@ export function hasComplaintOrRepairRisk(title = "") {
 }
 
 export function getAiTaskRiskLevel(taskType: AiTaskType, title = ""): RiskLevel {
-  if (hasComplaintOrRepairRisk(title)) return "high";
+  if (hasComplaintOrRepairRisk(title)) return "critical";
 
   return riskByAiTaskType[taskType];
+}
+
+export function isHighOrCriticalRisk(riskLevel: RiskLevel) {
+  return riskLevel === "high" || riskLevel === "critical";
 }
