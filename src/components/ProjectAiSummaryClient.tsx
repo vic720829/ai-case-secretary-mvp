@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, FileDown, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
@@ -70,6 +70,25 @@ export function ProjectAiSummaryClient({ projectId }: { projectId: string }) {
     }
   }
 
+  function handleExportPdf() {
+    if (!project || !summary) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setError("瀏覽器封鎖了 PDF 匯出視窗，請允許彈出式視窗後再試一次。");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildSummaryPrintHtml(project, summary));
+    printWindow.document.close();
+    printWindow.focus();
+
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  }
+
   if (loading) {
     return <LoadingState label="讀取案件摘要中" />;
   }
@@ -104,6 +123,12 @@ export function ProjectAiSummaryClient({ projectId }: { projectId: string }) {
               <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden />
               {refreshing ? "整理中" : "重新整理摘要"}
             </Button>
+            {summary ? (
+              <Button type="button" onClick={handleExportPdf}>
+                <FileDown className="h-4 w-4" aria-hidden />
+                匯出 PDF
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -177,4 +202,127 @@ export function ProjectAiSummaryClient({ projectId }: { projectId: string }) {
       )}
     </div>
   );
+}
+
+function buildSummaryPrintHtml(project: Project, summary: ProjectAiSummary) {
+  const title = `${project.name} AI 案件摘要`;
+  const projectMeta = [project.clientName, project.currentStage, project.status].filter(Boolean).join(" / ");
+  const updatedAt = formatDateTime(summary.updatedAt ?? summary.createdAt);
+  const sections = summary.sections
+    .map(
+      (section) => `
+        <section class="section">
+          <h2>${escapeHtml(section.title)}</h2>
+          ${
+            section.items.length
+              ? `<ul>${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+              : `<p class="muted">目前沒有整理到相關內容。</p>`
+          }
+        </section>
+      `
+    )
+    .join("");
+
+  return `<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @page { size: A4; margin: 16mm; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: #0f172a;
+        background: #ffffff;
+        font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif;
+        line-height: 1.75;
+      }
+      .cover {
+        border-bottom: 3px solid #0f766e;
+        padding-bottom: 18px;
+        margin-bottom: 22px;
+      }
+      .eyebrow {
+        color: #0f766e;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 8px 0;
+        font-size: 28px;
+        line-height: 1.3;
+      }
+      .meta {
+        color: #64748b;
+        font-size: 12px;
+      }
+      .summary {
+        border: 1px solid #ccfbf1;
+        border-radius: 10px;
+        background: #f0fdfa;
+        padding: 16px 18px;
+        margin-bottom: 18px;
+        white-space: pre-wrap;
+      }
+      .section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 16px 18px;
+        margin: 0 0 14px;
+      }
+      .section h2 {
+        margin: 0 0 10px;
+        color: #0f766e;
+        font-size: 17px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li {
+        margin-bottom: 7px;
+      }
+      .muted {
+        color: #64748b;
+        margin: 0;
+      }
+      .footer {
+        margin-top: 22px;
+        color: #94a3b8;
+        font-size: 11px;
+        text-align: right;
+      }
+      @media print {
+        body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="cover">
+      <div class="eyebrow">AI Case Secretary</div>
+      <h1>${escapeHtml(title)}</h1>
+      <div class="meta">${escapeHtml(projectMeta || "案件摘要")} · 更新時間：${escapeHtml(updatedAt || "未記錄")}</div>
+      ${summary.refreshedBy ? `<div class="meta">更新者：${escapeHtml(summary.refreshedBy)}</div>` : ""}
+    </header>
+    <main>
+      <section class="summary">${escapeHtml(summary.summaryText)}</section>
+      ${sections}
+    </main>
+    <footer class="footer">由 AI 案件秘書產生，請以實際合約、圖面、現場紀錄為準。</footer>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
