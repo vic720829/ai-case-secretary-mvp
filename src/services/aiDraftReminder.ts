@@ -6,6 +6,7 @@ import type { AiTaskType } from "../lib/types";
 import { buildAiDraftReviewLineMessages } from "./aiDraftReviewLineMessages";
 import { listAdminNotificationGroups } from "./lineAdminGroups";
 import { pushLineMessages } from "./line";
+import { claimNotificationCooldown } from "./notificationCooldown";
 
 const pendingReviewMinutes = 30;
 const highPriorityMinutes = 180;
@@ -74,6 +75,20 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
     const isHighPriority = ageMinutes >= highPriorityMinutes;
     const wasHighPriority = reminder.priority === "high";
     const shouldNotify30m = !reminder.notified30mAt;
+    const notificationResult = shouldNotify30m
+      ? await notifyAdminGroups(db, {
+          draftId: doc.id,
+          projectId,
+          title,
+          projectName: getProjectName(projects.get(projectId)),
+          sourceSenderName,
+          taskType: String(aiTask.taskType ?? ""),
+          dueDate: timestampToTaipeiDate(aiTask.dueDate),
+          createdAt,
+          ageMinutes
+        })
+      : { sent: 0, failed: 0, skippedCooldown: false };
+    const notifiedNow = shouldNotify30m && !notificationResult.skippedCooldown;
 
     await reminderRef.set(
       {
@@ -89,9 +104,13 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
         priority: isHighPriority ? "high" : "normal",
         firstTriggeredOn: reminder.firstTriggeredOn ?? today,
         lastRemindedOn: reminder.lastRemindedOn ?? today,
-        ...(shouldNotify30m ? { notified30mAt: FieldValue.serverTimestamp() } : {}),
+        ...(notifiedNow ? { notified30mAt: FieldValue.serverTimestamp() } : {}),
         ...(isHighPriority && !wasHighPriority ? { highPriorityAt: FieldValue.serverTimestamp() } : {}),
-        lastAction: isHighPriority && !wasHighPriority ? "marked_high_priority" : reminder.lastAction ?? "pending_review",
+        lastAction: notificationResult.skippedCooldown
+          ? "skipped_by_cooldown"
+          : isHighPriority && !wasHighPriority
+            ? "marked_high_priority"
+            : reminder.lastAction ?? "pending_review",
         createdAt: reminder.createdAt ?? FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       },
@@ -101,17 +120,7 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
     result.createdOrUpdated += 1;
     if (isHighPriority && !wasHighPriority) result.markedHighPriority += 1;
 
-    if (shouldNotify30m) {
-      const notificationResult = await notifyAdminGroups(db, {
-        draftId: doc.id,
-        title,
-        projectName: getProjectName(projects.get(projectId)),
-        sourceSenderName,
-        taskType: String(aiTask.taskType ?? ""),
-        dueDate: timestampToTaipeiDate(aiTask.dueDate),
-        createdAt,
-        ageMinutes
-      });
+    if (notifiedNow) {
       result.notified30m += 1;
       result.sent += notificationResult.sent;
       result.failed += notificationResult.failed;
@@ -125,6 +134,7 @@ async function notifyAdminGroups(
   db: FirebaseFirestore.Firestore,
   input: {
     draftId: string;
+    projectId: string;
     title: string;
     projectName: string;
     sourceSenderName: string;
@@ -134,9 +144,19 @@ async function notifyAdminGroups(
     ageMinutes: number;
   }
 ) {
-  const riskLevel = getAiTaskRiskLevel(normalizeAiTaskType(input.taskType), input.title);
+  const taskType = normalizeAiTaskType(input.taskType);
+  const riskLevel = getAiTaskRiskLevel(taskType, input.title);
   const adminGroups = await listAdminNotificationGroups(db, riskLevel === "critical" ? "critical" : "primary");
-  if (!adminGroups.length) return { sent: 0, failed: 0 };
+  if (!adminGroups.length) return { sent: 0, failed: 0, skippedCooldown: false };
+
+  const canSendNow = await claimNotificationCooldown(db, {
+    projectId: input.projectId,
+    notificationType: `ai_task_${taskType}`,
+    cooldownMinutes: 60,
+    title: input.title
+  });
+
+  if (!canSendNow) return { sent: 0, failed: 0, skippedCooldown: true };
 
   const reviewUrl = getSiteUrl() ? `${getSiteUrl()}/ai-tasks` : "";
   const text = [
@@ -170,7 +190,8 @@ async function notifyAdminGroups(
 
   return {
     sent: results.filter((item) => item.status === "fulfilled").length,
-    failed: results.filter((item) => item.status === "rejected").length
+    failed: results.filter((item) => item.status === "rejected").length,
+    skippedCooldown: false
   };
 }
 

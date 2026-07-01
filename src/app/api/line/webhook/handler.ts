@@ -15,6 +15,7 @@ import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/service
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
+import { claimNotificationCooldown } from "@/services/notificationCooldown";
 import { buildIncidentKey, getPrimaryIncidentType, maxRiskLevel } from "@/lib/incidentRules";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
 import {
@@ -276,7 +277,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           createdDraftIds
         }).catch(() => [])
       : [];
-    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, pendingImageDraft?.data);
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, suggestions, pendingImageDraft?.data);
     const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
@@ -433,7 +434,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       reusableDraftId: pendingImageDraft?.id ?? ""
     });
     const createdDraftIds = draftResult.draftIds;
-    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, pendingImageDraft?.data);
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, suggestions, pendingImageDraft?.data);
     const adminNotification = shouldNotifyAiDraft
       ? await notifyAdminGroupsAboutAiDrafts(db, {
           projectId,
@@ -1480,8 +1481,13 @@ function buildMergedAiTaskItem(input: {
   };
 }
 
-function shouldNotifyAiDrafts(result: AiTaskDraftCreateResult, reusableDraftData?: FirebaseFirestore.DocumentData) {
+function shouldNotifyAiDrafts(
+  result: AiTaskDraftCreateResult,
+  suggestions: AiTaskSuggestion[],
+  reusableDraftData?: FirebaseFirestore.DocumentData
+) {
   if (!result.draftIds.length) return false;
+  if (!hasCriticalAiSuggestion(suggestions)) return false;
   if (result.newDraftIds.length) return true;
   if (!reusableDraftData) return false;
 
@@ -1665,6 +1671,15 @@ async function notifyAdminGroupsAboutAiDrafts(
     const adminGroups = await listAssistantAdminGroupIds(db, getAiDraftNotificationAudience(input.suggestions));
 
     if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+    const primaryTaskType = getPrimarySuggestionTaskType(input.suggestions);
+    const canSendNow = await claimNotificationCooldown(db, {
+      projectId: input.projectId,
+      notificationType: `ai_task_${primaryTaskType}`,
+      cooldownMinutes: 60,
+      title: input.suggestions[0]?.title ?? "AI 待審草稿"
+    });
+
+    if (!canSendNow) return { sent: 0, failed: 0, groups: adminGroups.length };
 
     const projectSnapshot = input.projectId ? await db.collection("projects").doc(input.projectId).get() : null;
     const project = projectSnapshot?.exists ? projectSnapshot.data() ?? {} : {};
@@ -1735,6 +1750,15 @@ async function notifyAdminGroupsAboutMergedAiTasks(
 
     const adminGroups = await listAssistantAdminGroupIds(db, getMergedAiTaskNotificationAudience(input.mergedItems));
     if (!adminGroups.length) return { sent: 0, failed: 0, groups: 0 };
+    const primaryTaskType = input.mergedItems[0]?.taskType ?? "followup";
+    const canSendNow = await claimNotificationCooldown(db, {
+      projectId: input.projectId,
+      notificationType: `ai_task_${primaryTaskType}`,
+      cooldownMinutes: 60,
+      title: input.mergedItems[0]?.title ?? "AI 已合併相似訊息"
+    });
+
+    if (!canSendNow) return { sent: 0, failed: 0, groups: adminGroups.length };
 
     const projectSnapshot = input.projectId ? await db.collection("projects").doc(input.projectId).get() : null;
     const project = projectSnapshot?.exists ? projectSnapshot.data() ?? {} : {};
@@ -1866,6 +1890,14 @@ function getAiDraftNotificationAudience(suggestions: AiTaskSuggestion[]): AdminN
 
 function getMergedAiTaskNotificationAudience(items: AiTaskMergedItem[]): AdminNotificationAudience {
   return items.some((item) => getAiTaskRiskLevel(item.taskType, item.title) === "critical") ? "critical" : "primary";
+}
+
+function hasCriticalAiSuggestion(suggestions: AiTaskSuggestion[]) {
+  return suggestions.some((suggestion) => getAiTaskRiskLevel(suggestion.taskType, suggestion.title) === "critical");
+}
+
+function getPrimarySuggestionTaskType(suggestions: AiTaskSuggestion[]): AiTaskType {
+  return suggestions[0]?.taskType ?? "followup";
 }
 
 async function isAssistantAdminGroup(db: FirebaseFirestore.Firestore, groupId: string) {

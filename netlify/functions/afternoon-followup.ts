@@ -1,4 +1,3 @@
-import type { Config } from "@netlify/functions";
 import { sendAfternoonFollowupReminder } from "../../src/services/workflowReminders";
 
 const handler = async () => {
@@ -14,7 +13,3 @@ const handler = async () => {
 };
 
 export default handler;
-
-export const config: Config = {
-  schedule: "0 6 * * *"
-};
