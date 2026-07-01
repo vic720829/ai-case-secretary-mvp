@@ -124,7 +124,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
     }
 
     printWindow.document.open();
-    printWindow.document.write(buildProgressPrintHtml({ project, stages, milestones, progress, currentStage }));
+    printWindow.document.write(buildProgressPrintHtml({ project, stages, milestones }));
     printWindow.document.close();
     printWindow.focus();
 
@@ -168,7 +168,7 @@ export function ProjectProgressClient({ projectId }: { projectId: string }) {
       <div className="flex justify-end">
         <Button type="button" onClick={handleExportPdf}>
           <FileDown className="h-4 w-4" aria-hidden />
-          匯出 PDF
+          匯出甘特圖 PDF
         </Button>
       </div>
 
@@ -319,15 +319,11 @@ function ProgressCard({
 function buildProgressPrintHtml({
   project,
   stages,
-  milestones,
-  progress,
-  currentStage
+  milestones
 }: {
   project: Project;
   stages: ProjectStage[];
   milestones: Milestone[];
-  progress: number;
-  currentStage: string;
 }) {
   const datedStages = stages.filter((stage) => stage.startDate);
   const orderedStages = [...datedStages].sort(
@@ -350,19 +346,6 @@ function buildProgressPrintHtml({
   const unlinkedRow = unlinkedMilestones.length
     ? buildUnlinkedMilestonePrintRow(unlinkedMilestones, timeline, totalDays)
     : "";
-  const milestoneRows = [...milestones]
-    .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
-    .map(
-      (milestone) => `
-        <tr>
-          <td>${escapeHtmlForPrint(milestone.title)}</td>
-          <td>${escapeHtmlForPrint(formatDateForPrint(milestone.dueDate))}</td>
-          <td>${escapeHtmlForPrint(milestone.completed ? "已完成" : "未完成")}</td>
-          <td>${escapeHtmlForPrint(milestone.riskLevel)}</td>
-        </tr>
-      `
-    )
-    .join("");
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -404,26 +387,6 @@ function buildProgressPrintHtml({
       .meta {
         color: #64748b;
         font-size: 12px;
-      }
-      .metrics {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        margin-bottom: 16px;
-      }
-      .metric {
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 10px 12px;
-      }
-      .metric-label {
-        color: #64748b;
-        font-size: 11px;
-      }
-      .metric-value {
-        margin-top: 4px;
-        font-size: 18px;
-        font-weight: 700;
       }
       .gantt {
         border: 1px solid #e2e8f0;
@@ -500,20 +463,6 @@ function buildProgressPrintHtml({
         font-size: 10px;
         margin: 6px 0 8px 190px;
       }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 11px;
-      }
-      th, td {
-        border: 1px solid #e2e8f0;
-        padding: 7px 8px;
-        text-align: left;
-      }
-      th {
-        background: #0f3f3a;
-        color: #ffffff;
-      }
       .empty {
         border: 1px solid #e2e8f0;
         border-radius: 10px;
@@ -536,14 +485,8 @@ function buildProgressPrintHtml({
     <header class="cover">
       <div class="eyebrow">Project Schedule Report</div>
       <h1>${escapeHtmlForPrint(project.name)} 工程進度甘特圖</h1>
-      <div class="meta">${escapeHtmlForPrint(project.clientName || "未填客戶")} · 產生時間：${escapeHtmlForPrint(generatedAt)}</div>
+      <div class="meta">${escapeHtmlForPrint(project.clientName || "未填客戶")} · 工期範圍：${escapeHtmlForPrint(formatDateForPrint(timeline.startDate))} - ${escapeHtmlForPrint(formatDateForPrint(timeline.endDate))} · 產生時間：${escapeHtmlForPrint(generatedAt)}</div>
     </header>
-    <section class="metrics">
-      <div class="metric"><div class="metric-label">目前階段</div><div class="metric-value">${escapeHtmlForPrint(currentStage)}</div></div>
-      <div class="metric"><div class="metric-label">完成百分比</div><div class="metric-value">${progress}%</div></div>
-      <div class="metric"><div class="metric-label">工程節點</div><div class="metric-value">${stages.length} 個</div></div>
-      <div class="metric"><div class="metric-label">預計完工</div><div class="metric-value">${escapeHtmlForPrint(formatDateForPrint(project.expectedFinishDate))}</div></div>
-    </section>
     <h2>工程甘特圖</h2>
     ${
       orderedStages.length
@@ -557,19 +500,6 @@ function buildProgressPrintHtml({
           <div class="gantt">${stageRows}${unlinkedRow}</div>
         `
         : `<div class="empty">目前沒有可匯出的工程節點。</div>`
-    }
-    <h2>關鍵節點</h2>
-    ${
-      milestones.length
-        ? `
-          <table>
-            <thead>
-              <tr><th>節點</th><th>日期</th><th>完成</th><th>風險</th></tr>
-            </thead>
-            <tbody>${milestoneRows}</tbody>
-          </table>
-        `
-        : `<div class="empty">目前沒有關鍵節點。</div>`
     }
     <footer class="footer">由 AI 案件秘書產生，請以實際合約、圖面與現場紀錄為準。</footer>
   </body>
