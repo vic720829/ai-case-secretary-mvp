@@ -144,7 +144,10 @@ function readAttachments(value: unknown): MessageAttachment[] {
         messageId: String(attachment.messageId ?? ""),
         fileUrl: String(attachment.fileUrl ?? ""),
         fileType:
-          attachment.fileType === "audio" || attachment.fileType === "image" || attachment.fileType === "text"
+          attachment.fileType === "audio" ||
+          attachment.fileType === "image" ||
+          attachment.fileType === "text" ||
+          attachment.fileType === "file"
             ? attachment.fileType
             : "image",
         senderName: String(attachment.senderName ?? ""),

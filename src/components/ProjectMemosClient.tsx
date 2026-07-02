@@ -21,6 +21,8 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [memoTitle, setMemoTitle] = useState("");
   const [memoContent, setMemoContent] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -76,14 +78,21 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
       if (!title) throw new Error("請輸入備忘錄標題。");
       if (!content) throw new Error("請輸入備忘錄內容。");
 
+      const attachments = selectedFiles.length ? await uploadManualMemoAttachments(selectedFiles) : [];
+
       await createProjectMemo({
         projectId,
         title,
         content,
+        attachments,
+        attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
+        attachmentCount: attachments.length,
         createdBy: profile?.displayName || user?.email || ""
       });
       setMemoTitle("");
       setMemoContent("");
+      setSelectedFiles([]);
+      setFileInputKey((current) => current + 1);
       setSuccessMessage(`已新增備忘錄：${title}`);
       await loadData();
     } catch (caught) {
@@ -91,6 +100,33 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function uploadManualMemoAttachments(files: File[]) {
+    if (!user) throw new Error("請先登入後再上傳附件。");
+
+    const token = await user.getIdToken();
+    const formData = new FormData();
+    formData.append("projectId", projectId);
+    files.forEach((file) => formData.append("files", file));
+
+    const response = await fetch("/api/project-memos/attachments", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    });
+    const result = (await response.json()) as MemoAttachmentUploadResponse;
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || "附件上傳失敗。");
+    }
+
+    return (result.attachments ?? []).map((attachment) => ({
+      ...attachment,
+      createdAt: attachment.createdAt ? new Date(attachment.createdAt) : null
+    }));
   }
 
   function handleExportMemoPdf(memo: ProjectMemo, attachments: MessageAttachment[]) {
@@ -233,10 +269,39 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
             />
           </label>
 
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">附件 / 照片</span>
+            <input
+              key={fileInputKey}
+              className={inputClassName}
+              type="file"
+              accept="image/*,application/pdf,.pdf"
+              multiple
+              onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              可上傳圖片或 PDF，一次最多 8 個，每個 10MB 以內。圖片會出現在備忘錄 PDF 的縮圖區。
+            </span>
+          </label>
+
+          {selectedFiles.length ? (
+            <div className="rounded-md border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
+              <div className="font-medium text-slate-900">已選擇 {selectedFiles.length} 個附件</div>
+              <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                {selectedFiles.map((file) => (
+                  <li key={`${file.name}-${file.size}`} className="flex justify-between gap-3">
+                    <span className="truncate">{file.name}</span>
+                    <span className="shrink-0">{formatFileSize(file.size)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="flex justify-end">
             <Button type="submit" disabled={submitting || !memoTitle.trim() || !memoContent.trim()}>
               <Plus className="h-4 w-4" aria-hidden />
-              {submitting ? "儲存中" : "新增備忘錄"}
+              {submitting ? "上傳並儲存中" : "新增備忘錄"}
             </Button>
           </div>
         </form>
@@ -298,6 +363,12 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
 const inputClassName =
   "mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20";
 
+type MemoAttachmentUploadResponse = {
+  ok?: boolean;
+  error?: string;
+  attachments?: Array<Omit<MessageAttachment, "createdAt"> & { createdAt?: string | null }>;
+};
+
 function MemoAttachmentPreview({ attachments }: { attachments: MessageAttachment[] }) {
   if (!attachments.length) return null;
 
@@ -317,14 +388,20 @@ function MemoAttachmentPreview({ attachments }: { attachments: MessageAttachment
             rel="noreferrer"
             title="開啟原圖"
           >
-            <Image
-              className="aspect-square w-full object-cover"
-              src={attachment.fileUrl}
-              alt="備忘錄附件"
-              width={96}
-              height={96}
-              unoptimized
-            />
+            {attachment.fileType === "image" ? (
+              <Image
+                className="aspect-square w-full object-cover"
+                src={attachment.fileUrl}
+                alt="備忘錄附件"
+                width={96}
+                height={96}
+                unoptimized
+              />
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center bg-white px-1 text-center text-[10px] font-semibold text-slate-600">
+                PDF
+              </div>
+            )}
           </a>
         ))}
       </div>
@@ -335,6 +412,8 @@ function MemoAttachmentPreview({ attachments }: { attachments: MessageAttachment
 
 function buildMemoPrintHtml(project: Project, memo: ProjectMemo, attachments: MessageAttachment[]) {
   const title = `${project.name} 備忘錄`;
+  const imageAttachments = attachments.filter((attachment) => attachment.fileType === "image");
+  const fileAttachments = attachments.filter((attachment) => attachment.fileType !== "image");
   const generatedAt = new Intl.DateTimeFormat("zh-TW", {
     year: "numeric",
     month: "2-digit",
@@ -351,12 +430,12 @@ function buildMemoPrintHtml(project: Project, memo: ProjectMemo, attachments: Me
     `建立時間：${formatDateTime(memo.createdAt) || "未記錄"}`,
     memo.updatedAt ? `更新時間：${formatDateTime(memo.updatedAt)}` : ""
   ].filter(Boolean);
-  const attachmentHtml = attachments.length
+  const imageAttachmentHtml = imageAttachments.length
     ? `
       <section class="section">
         <h2>附件縮圖</h2>
         <div class="attachments">
-          ${attachments
+          ${imageAttachments
             .map(
               (attachment, index) => `
                 <figure>
@@ -367,6 +446,21 @@ function buildMemoPrintHtml(project: Project, memo: ProjectMemo, attachments: Me
             )
             .join("")}
         </div>
+      </section>
+    `
+    : "";
+  const fileAttachmentHtml = fileAttachments.length
+    ? `
+      <section class="section">
+        <h2>其他附件</h2>
+        <ul class="source-list">
+          ${fileAttachments
+            .map(
+              (attachment) =>
+                `<li><a href="${escapeAttribute(attachment.fileUrl)}">${escapeHtml(attachment.text || "附件")}</a></li>`
+            )
+            .join("")}
+        </ul>
       </section>
     `
     : "";
@@ -482,7 +576,8 @@ function buildMemoPrintHtml(project: Project, memo: ProjectMemo, attachments: Me
         <h2>來源資訊</h2>
         <ul class="source-list">${sourceRows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>
       </section>
-      ${attachmentHtml}
+      ${imageAttachmentHtml}
+      ${fileAttachmentHtml}
     </main>
     <footer class="footer">由 AI 案件秘書產生，請以實際合約、圖面、現場紀錄與 LINE 原始訊息為準。</footer>
   </body>
@@ -500,4 +595,10 @@ function escapeHtml(value: string) {
 
 function escapeAttribute(value: string) {
   return escapeHtml(value);
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }

@@ -3,6 +3,7 @@ export type TaskSource = "manual" | "line" | "ai" | "voice";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type ProjectStageStatus = "todo" | "doing" | "done";
 export type LineMessageType = "text" | "image" | "audio";
+export type AttachmentFileType = LineMessageType | "file";
 export type LineMemberRole = "internal" | "client" | "vendor";
 export type LineSenderRole = LineMemberRole | "unknown";
 export type LineNotificationLevel = "primary" | "secondary" | "critical_only" | "test" | "none";
@@ -288,7 +289,7 @@ export type Message = Omit<MessageInput, "timestamp"> & {
 export type MessageAttachment = {
   messageId: string;
   fileUrl: string;
-  fileType: LineMessageType;
+  fileType: AttachmentFileType;
   senderName: string;
   senderRole: LineSenderRole;
   text: string;
