@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, FileDown, ImageIcon, NotebookText, Plus } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, FileAudio, FileDown, ImageIcon, Mic, NotebookText, Plus, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -19,10 +19,16 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [memos, setMemos] = useState<ProjectMemo[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [audioDrafts, setAudioDrafts] = useState<AudioMemoDraft[]>([]);
   const [memoTitle, setMemoTitle] = useState("");
   const [memoContent, setMemoContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioInputKey, setAudioInputKey] = useState(0);
+  const [audioSubmitting, setAudioSubmitting] = useState(false);
+  const [audioDraftActionId, setAudioDraftActionId] = useState("");
+  const [audioDraftEdits, setAudioDraftEdits] = useState<Record<string, { title: string; content: string }>>({});
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,6 +56,45 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const loadAudioDrafts = useCallback(async () => {
+    if (!user) return;
+
+    const token = await user.getIdToken();
+    const response = await fetch(`/api/project-memos/audio-drafts?projectId=${encodeURIComponent(projectId)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    const result = (await response.json()) as AudioMemoDraftListResponse;
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || "讀取語音備忘錄草稿失敗。");
+    }
+
+    const drafts = result.drafts ?? [];
+    setAudioDrafts(drafts);
+    setAudioDraftEdits((current) => {
+      const next = { ...current };
+      drafts.forEach((draft) => {
+        if (!next[draft.id]) {
+          next[draft.id] = {
+            title: draft.title,
+            content: draft.content
+          };
+        }
+      });
+      return next;
+    });
+  }, [projectId, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    void loadAudioDrafts().catch((caught) => {
+      setError(getReadableError(caught));
+    });
+  }, [loadAudioDrafts, user]);
 
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
 
@@ -127,6 +172,95 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
       ...attachment,
       createdAt: attachment.createdAt ? new Date(attachment.createdAt) : null
     }));
+  }
+
+  async function handleCreateAudioDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setAudioSubmitting(true);
+
+    try {
+      if (!user) throw new Error("請先登入後再上傳語音。");
+      if (!audioFile) throw new Error("請選擇要轉文字的語音檔。");
+
+      const token = await user.getIdToken();
+      const formData = new FormData();
+      formData.append("projectId", projectId);
+      formData.append("file", audioFile);
+
+      const response = await fetch("/api/project-memos/audio-drafts", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+      const result = (await response.json()) as AudioMemoDraftCreateResponse;
+
+      if (!response.ok || !result.ok || !result.draft) {
+        throw new Error(result.error || "語音轉備忘錄草稿失敗。");
+      }
+
+      setAudioDrafts((current) => [result.draft as AudioMemoDraft, ...current.filter((draft) => draft.id !== result.draft?.id)]);
+      setAudioDraftEdits((current) => ({
+        ...current,
+        [result.draft!.id]: {
+          title: result.draft!.title,
+          content: result.draft!.content
+        }
+      }));
+      setAudioFile(null);
+      setAudioInputKey((current) => current + 1);
+      setSuccessMessage("已建立 AI 語音備忘錄草稿，請確認後再存成正式備忘錄。");
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setAudioSubmitting(false);
+    }
+  }
+
+  async function handleAudioDraftAction(draft: AudioMemoDraft, action: "approve" | "reject") {
+    setError("");
+    setSuccessMessage("");
+    setAudioDraftActionId(draft.id);
+
+    try {
+      if (!user) throw new Error("請先登入。");
+
+      const token = await user.getIdToken();
+      const edit = audioDraftEdits[draft.id] ?? { title: draft.title, content: draft.content };
+      const response = await fetch(`/api/project-memos/audio-drafts/${draft.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action,
+          title: edit.title,
+          content: edit.content
+        })
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string; memoId?: string };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "處理語音草稿失敗。");
+      }
+
+      setAudioDrafts((current) => current.filter((item) => item.id !== draft.id));
+      if (action === "approve") {
+        setSuccessMessage(`已確認並建立正式備忘錄：${edit.title}`);
+        await loadData();
+      } else {
+        setSuccessMessage(`已拒絕語音草稿：${draft.title}`);
+      }
+      await loadAudioDrafts();
+    } catch (caught) {
+      setError(getReadableError(caught));
+    } finally {
+      setAudioDraftActionId("");
+    }
   }
 
   function handleExportMemoPdf(memo: ProjectMemo, attachments: MessageAttachment[]) {
@@ -231,6 +365,143 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+            <Mic className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold text-slate-950">AI 語音轉備忘錄草稿</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              上傳會議錄音後，AI 會先產生逐字稿與摘要草稿。草稿必須人工確認後，才會進入正式備忘錄。
+            </p>
+          </div>
+        </div>
+
+        <form className="mt-5 grid gap-4" onSubmit={(event) => void handleCreateAudioDraft(event)}>
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">語音檔</span>
+            <input
+              key={audioInputKey}
+              className={inputClassName}
+              type="file"
+              accept="audio/*,video/mp4,video/webm,.mp3,.m4a,.wav,.webm,.mp4,.ogg,.flac"
+              onChange={(event) => setAudioFile(event.target.files?.[0] ?? null)}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              支援 mp3、m4a、wav、webm、mp4 等格式；建議 25MB 以內。內容只會產生待確認草稿，不會自動回覆客戶群。
+            </span>
+          </label>
+
+          {audioFile ? (
+            <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              已選擇：{audioFile.name}（{formatFileSize(audioFile.size)}）
+            </div>
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button type="submit" disabled={audioSubmitting || !audioFile}>
+              <FileAudio className="h-4 w-4" aria-hidden />
+              {audioSubmitting ? "轉文字中" : "產生語音草稿"}
+            </Button>
+          </div>
+        </form>
+
+        {audioDrafts.filter((draft) => draft.reviewStatus === "pending").length ? (
+          <div className="mt-5 space-y-3">
+            {audioDrafts
+              .filter((draft) => draft.reviewStatus === "pending")
+              .map((draft) => {
+                const edit = audioDraftEdits[draft.id] ?? { title: draft.title, content: draft.content };
+
+                return (
+                  <article key={draft.id} className="rounded-lg border border-sky-100 bg-sky-50 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                            AI 產生，待確認
+                          </span>
+                          {draft.sourceAttachment?.fileUrl ? (
+                            <a
+                              className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:text-sky-800"
+                              href={draft.sourceAttachment.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <FileAudio className="h-3.5 w-3.5" aria-hidden />
+                              原始語音
+                            </a>
+                          ) : null}
+                        </div>
+
+                        <label className="mt-3 block">
+                          <span className="text-xs font-medium text-slate-600">草稿標題</span>
+                          <input
+                            className={inputClassName}
+                            value={edit.title}
+                            onChange={(event) =>
+                              setAudioDraftEdits((current) => ({
+                                ...current,
+                                [draft.id]: {
+                                  ...edit,
+                                  title: event.target.value
+                                }
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <label className="mt-3 block">
+                          <span className="text-xs font-medium text-slate-600">草稿內容</span>
+                          <textarea
+                            className={`${inputClassName} min-h-52 resize-y`}
+                            value={edit.content}
+                            onChange={(event) =>
+                              setAudioDraftEdits((current) => ({
+                                ...current,
+                                [draft.id]: {
+                                  ...edit,
+                                  content: event.target.value
+                                }
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <details className="mt-3 rounded-md border border-sky-100 bg-white px-3 py-2 text-sm text-slate-700">
+                          <summary className="cursor-pointer font-medium text-slate-900">查看逐字稿</summary>
+                          <p className="mt-2 whitespace-pre-wrap leading-6">{draft.transcript}</p>
+                        </details>
+                      </div>
+
+                      <div className="flex shrink-0 flex-wrap gap-2 lg:flex-col">
+                        <Button
+                          type="button"
+                          onClick={() => void handleAudioDraftAction(draft, "approve")}
+                          disabled={audioDraftActionId === draft.id || !edit.title.trim() || !edit.content.trim()}
+                        >
+                          <Check className="h-4 w-4" aria-hidden />
+                          確認存入
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          onClick={() => void handleAudioDraftAction(draft, "reject")}
+                          disabled={audioDraftActionId === draft.id}
+                        >
+                          <X className="h-4 w-4" aria-hidden />
+                          拒絕草稿
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
@@ -399,7 +670,7 @@ function MemoAttachmentPreview({ attachments }: { attachments: MessageAttachment
               />
             ) : (
               <div className="flex aspect-square w-full items-center justify-center bg-white px-1 text-center text-[10px] font-semibold text-slate-600">
-                PDF
+                {attachmentTypeLabel(attachment)}
               </div>
             )}
           </a>
@@ -602,3 +873,44 @@ function formatFileSize(size: number) {
 
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
+
+function attachmentTypeLabel(attachment: MessageAttachment) {
+  if (attachment.fileType === "audio") return "語音";
+  if (attachment.fileType === "file") return "PDF";
+  return "附件";
+}
+
+type AudioMemoDraft = {
+  id: string;
+  projectId: string;
+  title: string;
+  transcript: string;
+  summary: string;
+  content: string;
+  decisions: string[];
+  changes: string[];
+  actionItems: string[];
+  payments: string[];
+  invoices: string[];
+  risks: string[];
+  reviewStatus: "pending" | "approved" | "rejected" | string;
+  sourceAttachment: (Omit<MessageAttachment, "createdAt"> & { createdAt?: string | null }) | null;
+  approvedMemoId: string;
+  createdBy: string;
+  reviewedBy: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reviewedAt: string | null;
+};
+
+type AudioMemoDraftListResponse = {
+  ok?: boolean;
+  error?: string;
+  drafts?: AudioMemoDraft[];
+};
+
+type AudioMemoDraftCreateResponse = {
+  ok?: boolean;
+  error?: string;
+  draft?: AudioMemoDraft;
+};
