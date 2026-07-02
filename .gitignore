@@ -15,3 +15,5 @@ dev-server.log
 dev-server-error.log
 .dev-server.pid
 .dev-server-*.pid
+start-local-preview.cmd
+start-preview-3020.ps1
