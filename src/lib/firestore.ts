@@ -305,6 +305,7 @@ function taskFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
 function projectMemoFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectMemo {
   const data = snapshot.data();
   const sourceTaskId = data.sourceTaskId ?? "";
+  const attachments = readAttachments(data.attachments);
 
   return {
     id: snapshot.id,
@@ -316,6 +317,11 @@ function projectMemoFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Proj
     sourceTaskStatus: sourceTaskId ? data.sourceTaskStatus ?? "todo" : undefined,
     sourceTaskDueDate: data.sourceTaskDueDate ?? "",
     sourceTaskRiskLevel: sourceTaskId ? normalizeRiskLevel(data.sourceTaskRiskLevel, "low") : undefined,
+    attachments,
+    attachmentMessageIds: Array.isArray(data.attachmentMessageIds)
+      ? data.attachmentMessageIds.map((id: unknown) => String(id)).filter(Boolean)
+      : attachments.map((attachment) => attachment.messageId),
+    attachmentCount: Number(data.attachmentCount ?? attachments.length),
     createdBy: data.createdBy ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
@@ -1033,6 +1039,7 @@ export async function createProjectMemoFromTask(task: Task, createdBy = "") {
 
   const database = requireDb();
   const ref = doc(database, PROJECT_MEMOS_COLLECTION, `task_${task.id}`);
+  const attachments = task.attachments ?? [];
 
   await runTransaction(database, async (transaction) => {
     const snapshot = await transaction.get(ref);
@@ -1049,6 +1056,9 @@ export async function createProjectMemoFromTask(task: Task, createdBy = "") {
         sourceTaskStatus: task.status,
         sourceTaskDueDate: task.dueDate,
         sourceTaskRiskLevel: task.riskLevel,
+        attachments,
+        attachmentMessageIds: attachments.map((attachment) => attachment.messageId),
+        attachmentCount: attachments.length,
         createdBy: existing?.createdBy || createdBy,
         createdAt: existing?.createdAt ?? serverTimestamp(),
         updatedAt: serverTimestamp()

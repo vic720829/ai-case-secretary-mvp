@@ -112,6 +112,9 @@ export type ProjectMemoInput = {
   sourceTaskStatus?: TaskStatus;
   sourceTaskDueDate?: string;
   sourceTaskRiskLevel?: RiskLevel;
+  attachments?: MessageAttachment[];
+  attachmentMessageIds?: string[];
+  attachmentCount?: number;
   createdBy?: string;
 };
 
