@@ -4,7 +4,6 @@ import { ArrowLeft, BrainCircuit, Edit3, FolderOpen, Gauge, ImageIcon, MessageSq
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
-import { PageHeader } from "./PageHeader";
 import { ProjectForm } from "./ProjectForm";
 import { TaskTable } from "./TaskTable";
 import { Button, EmptyState, ErrorMessage, LoadingState, PrimaryLink, SecondaryLink } from "./Ui";
@@ -115,64 +114,68 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={project.name}
-        description={`${project.clientName} / ${project.currentStage}`}
-        action={
-          <>
-            <SecondaryLink href="/projects">
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              回案件列表
+      <div className="space-y-4 border-b border-stone-200 pb-5">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold leading-tight tracking-normal text-slate-950">
+            {project.name}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {project.clientName} / {project.currentStage}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SecondaryLink href="/projects">
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            回案件列表
+          </SecondaryLink>
+          {canEditProject ? (
+            <Button type="button" variant="secondary" onClick={() => setProjectEditorOpen(true)}>
+              <Edit3 className="h-4 w-4" aria-hidden />
+              編輯案件
+            </Button>
+          ) : null}
+          <SecondaryLink href={`/projects/${projectId}/progress`}>
+            <Gauge className="h-4 w-4" aria-hidden />
+            工程進度
+          </SecondaryLink>
+          {canViewLineMessages ? (
+            <SecondaryLink href={`/projects/${projectId}/messages`}>
+              <MessageSquareText className="h-4 w-4" aria-hidden />
+              LINE 對話
             </SecondaryLink>
-            {canEditProject ? (
-              <Button type="button" variant="secondary" onClick={() => setProjectEditorOpen(true)}>
-                <Edit3 className="h-4 w-4" aria-hidden />
-                編輯案件
-              </Button>
-            ) : null}
-            <SecondaryLink href={`/projects/${projectId}/progress`}>
-              <Gauge className="h-4 w-4" aria-hidden />
-              工程進度
-            </SecondaryLink>
-            {canViewLineMessages ? (
-              <SecondaryLink href={`/projects/${projectId}/messages`}>
-                <MessageSquareText className="h-4 w-4" aria-hidden />
-                LINE 對話
+          ) : null}
+          <SecondaryLink href={`/projects/${projectId}/attachments`}>
+            <ImageIcon className="h-4 w-4" aria-hidden />
+            案件附件
+          </SecondaryLink>
+          <SecondaryLink href={`/projects/${projectId}/documents`}>
+            <FolderOpen className="h-4 w-4" aria-hidden />
+            案件文件
+          </SecondaryLink>
+          <SecondaryLink href={`/projects/${projectId}/memos`}>
+            <NotebookText className="h-4 w-4" aria-hidden />
+            案件備忘錄
+          </SecondaryLink>
+          {canViewAiKnowledge ? (
+            <>
+              <SecondaryLink href={`/projects/${projectId}/memory`}>
+                <BrainCircuit className="h-4 w-4" aria-hidden />
+                案件記憶
               </SecondaryLink>
-            ) : null}
-            <SecondaryLink href={`/projects/${projectId}/attachments`}>
-              <ImageIcon className="h-4 w-4" aria-hidden />
-              案件附件
-            </SecondaryLink>
-            <SecondaryLink href={`/projects/${projectId}/documents`}>
-              <FolderOpen className="h-4 w-4" aria-hidden />
-              案件文件
-            </SecondaryLink>
-            <SecondaryLink href={`/projects/${projectId}/memos`}>
-              <NotebookText className="h-4 w-4" aria-hidden />
-              案件備忘錄
-            </SecondaryLink>
-            {canViewAiKnowledge ? (
-              <>
-                <SecondaryLink href={`/projects/${projectId}/memory`}>
-                  <BrainCircuit className="h-4 w-4" aria-hidden />
-                  案件記憶
-                </SecondaryLink>
-                <SecondaryLink href={`/projects/${projectId}/summary`}>
-                  <Sparkles className="h-4 w-4" aria-hidden />
-                  AI 案件摘要
-                </SecondaryLink>
-              </>
-            ) : null}
-            {canEditProject ? (
-              <ConfirmDeleteButton
-                confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
-                onConfirm={handleDeleteProject}
-              />
-            ) : null}
-          </>
-        }
-      />
+              <SecondaryLink href={`/projects/${projectId}/summary`}>
+                <Sparkles className="h-4 w-4" aria-hidden />
+                AI 案件摘要
+              </SecondaryLink>
+            </>
+          ) : null}
+          {canEditProject ? (
+            <ConfirmDeleteButton
+              confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
+              onConfirm={handleDeleteProject}
+            />
+          ) : null}
+        </div>
+      </div>
       <ErrorMessage message={error} />
       {memoMessage ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
