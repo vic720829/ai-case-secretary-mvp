@@ -276,7 +276,7 @@ function getFirebaseApiKey() {
 }
 
 function normalizeRole(value: unknown): UserRole | null {
-  if (value === "owner" || value === "admin" || value === "staff" || value === "viewer") {
+  if (value === "owner" || value === "admin" || value === "manager" || value === "staff" || value === "viewer") {
     return value;
   }
 

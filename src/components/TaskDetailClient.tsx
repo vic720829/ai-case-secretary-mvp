@@ -8,21 +8,23 @@ import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
 import { PageHeader } from "./PageHeader";
 import { TaskForm } from "./TaskForm";
 import { EmptyState, LoadingState, SecondaryLink } from "./Ui";
-import { deleteTask, getTask, listProjects, updateTask } from "@/lib/firestore";
+import { useAuth } from "@/components/AuthProvider";
+import { deleteTask, getTask, listProjectsForProfile, updateTask } from "@/lib/firestore";
 import type { Project, Task, TaskInput } from "@/lib/types";
 
 export function TaskDetailClient({ taskId }: { taskId: string }) {
   const router = useRouter();
+  const { profile } = useAuth();
   const [task, setTask] = useState<Task | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
-    const [nextProjects, nextTask] = await Promise.all([listProjects(), getTask(taskId)]);
+    const [nextProjects, nextTask] = await Promise.all([listProjectsForProfile(profile), getTask(taskId)]);
     setProjects(nextProjects);
     setTask(nextTask);
     setLoading(false);
-  }, [taskId]);
+  }, [profile, taskId]);
 
   useEffect(() => {
     void loadData();

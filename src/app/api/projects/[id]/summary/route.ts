@@ -42,7 +42,7 @@ async function verifyProjectSummaryCaller(request: Request): Promise<
     const role = String(user?.role ?? "");
     const active = user?.active !== false;
 
-    if (!userSnapshot.exists || !active || !["owner", "admin", "staff"].includes(role)) {
+    if (!userSnapshot.exists || !active || !["owner", "admin", "manager"].includes(role)) {
       return { ok: false, status: 403, error: "沒有更新案件摘要的權限。" };
     }
 

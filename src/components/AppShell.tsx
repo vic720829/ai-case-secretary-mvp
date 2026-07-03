@@ -25,32 +25,49 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
+import {
+  canAccessFeature,
+  canAccessPath,
+  getDefaultPathForRole,
+  getFeatureByPath,
+  type FeatureKey
+} from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
 const navItems = [
-  { href: "/risk-center", label: "今日風險", icon: AlertTriangle },
-  { href: "/ai-tasks", label: "待辦審核", icon: Bot },
-  { href: "/incidents", label: "事件中心", icon: GitBranch },
-  { href: "/reminders", label: "提醒中心", icon: Bell },
-  { href: "/projects", label: "案件列表", icon: BriefcaseBusiness },
-  { href: "/calendar", label: "共享月曆", icon: CalendarDays },
-  { href: "/schedule", label: "工期總表", icon: CalendarDays },
-  { href: "/tasks", label: "待辦列表", icon: ClipboardList },
-  { href: "/line-groups", label: "LINE群組", icon: Link2 },
-  { href: "/line-members", label: "LINE成員", icon: UsersRound },
-  { href: "/messages", label: "LINE對話", icon: MessageSquareText },
-  { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText, ownerOnly: true },
-  { href: "/users", label: "員工管理", icon: UserCog },
-  { href: "/learning", label: "AI學習", icon: BrainCircuit, ownerOnly: true },
-  { href: "/audit-logs", label: "操作紀錄", icon: History, ownerOnly: true },
-  { href: "/milestones", label: "關鍵節點", icon: Flag }
-];
+  { href: "/risk-center", label: "今日風險", icon: AlertTriangle, feature: "riskCenter" },
+  { href: "/ai-tasks", label: "待辦審核", icon: Bot, feature: "aiTasks" },
+  { href: "/incidents", label: "事件中心", icon: GitBranch, feature: "incidents" },
+  { href: "/reminders", label: "提醒中心", icon: Bell, feature: "reminders" },
+  { href: "/projects", label: "案件列表", icon: BriefcaseBusiness, feature: "projects" },
+  { href: "/calendar", label: "共享月曆", icon: CalendarDays, feature: "calendar" },
+  { href: "/schedule", label: "工期總表", icon: CalendarDays, feature: "schedule" },
+  { href: "/tasks", label: "待辦列表", icon: ClipboardList, feature: "tasks" },
+  { href: "/line-groups", label: "LINE群組", icon: Link2, feature: "lineGroups" },
+  { href: "/line-members", label: "LINE成員", icon: UsersRound, feature: "lineMembers" },
+  { href: "/messages", label: "LINE對話", icon: MessageSquareText, feature: "messages" },
+  { href: "/webhook-logs", label: "Webhook紀錄", icon: ScrollText, feature: "webhookLogs" },
+  { href: "/users", label: "員工管理", icon: UserCog, feature: "users" },
+  { href: "/learning", label: "AI學習", icon: BrainCircuit, feature: "learning" },
+  { href: "/audit-logs", label: "操作紀錄", icon: History, feature: "auditLogs" },
+  { href: "/milestones", label: "關鍵節點", icon: Flag, feature: "milestones" }
+] satisfies Array<{
+  href: string;
+  label: string;
+  icon: typeof AlertTriangle;
+  feature: FeatureKey;
+}>;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { changePassword, profile, user, signOutUser } = useAuth();
-  const visibleNavItems = navItems.filter((item) => !item.ownerOnly || profile?.role === "owner");
+  const role = profile?.role ?? "";
+  const visibleNavItems = navItems.filter((item) => canAccessFeature(role, item.feature));
+  const canCreateProject = canAccessFeature(role, "createProject");
+  const canCreateTask = canAccessFeature(role, "createTask");
+  const canAccessCurrentPath = canAccessPath(role, pathname);
+  const blockedFeature = getFeatureByPath(pathname);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -87,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-stone-100 text-slate-900">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white px-4 py-5 lg:block">
-        <Link className="flex items-center gap-3 rounded-md px-2" href="/risk-center">
+        <Link className="flex items-center gap-3 rounded-md px-2" href={getDefaultPathForRole(role)}>
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-teal-700 text-white">
             <LayoutDashboard className="h-5 w-5" aria-hidden />
           </div>
@@ -97,22 +114,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </Link>
 
-        <div className="mt-5 grid gap-2">
-          <Link
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
-            href="/projects/new"
-          >
-            <BriefcaseBusiness className="h-4 w-4" aria-hidden />
-            建立案件
-          </Link>
-          <Link
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-50"
-            href="/tasks/new"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            建立待辦
-          </Link>
-        </div>
+        {canCreateProject || canCreateTask ? (
+          <div className="mt-5 grid gap-2">
+            {canCreateProject ? (
+              <Link
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
+                href="/projects/new"
+              >
+                <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+                建立案件
+              </Link>
+            ) : null}
+            {canCreateTask ? (
+              <Link
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700 transition hover:bg-teal-50"
+                href="/tasks/new"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                建立待辦
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
 
         <nav className="mt-6 space-y-1">
           {visibleNavItems.map((item) => {
@@ -164,7 +187,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between gap-3">
-          <Link className="text-sm font-semibold text-slate-950" href="/risk-center">
+          <Link className="text-sm font-semibold text-slate-950" href={getDefaultPathForRole(role)}>
             AI 案件秘書
           </Link>
           <div className="flex items-center gap-2">
@@ -192,22 +215,28 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Link
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
-            href="/projects/new"
-          >
-            <BriefcaseBusiness className="h-4 w-4" aria-hidden />
-            建立案件
-          </Link>
-          <Link
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700"
-            href="/tasks/new"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            建立待辦
-          </Link>
-        </div>
+        {canCreateProject || canCreateTask ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {canCreateProject ? (
+              <Link
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+                href="/projects/new"
+              >
+                <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+                建立案件
+              </Link>
+            ) : null}
+            {canCreateTask ? (
+              <Link
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-700"
+                href="/tasks/new"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                建立待辦
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
         <nav className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
@@ -231,29 +260,45 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="lg:pl-64">
-        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          {canAccessCurrentPath ? (
+            children
+          ) : (
+            <AccessDenied
+              featureLabel={blockedFeature?.label ?? "此功能"}
+              featureDescription={blockedFeature?.description ?? "目前角色沒有使用此功能的權限。"}
+              fallbackHref={getDefaultPathForRole(role)}
+            />
+          )}
+        </div>
       </main>
 
-      <div className="fixed bottom-5 right-5 z-30 flex flex-col items-end gap-2 lg:hidden">
-        <Link
-          className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-700 shadow-panel transition hover:bg-teal-50"
-          href="/projects/new"
-          aria-label="建立案件"
-          title="建立案件"
-        >
-          <BriefcaseBusiness className="h-4 w-4" aria-hidden />
-          建立案件
-        </Link>
-        <Link
-          className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-teal-700 px-4 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
-          href="/tasks/new"
-          aria-label="建立待辦"
-          title="建立待辦"
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          建立待辦
-        </Link>
-      </div>
+      {canCreateProject || canCreateTask ? (
+        <div className="fixed bottom-5 right-5 z-30 flex flex-col items-end gap-2 lg:hidden">
+          {canCreateProject ? (
+            <Link
+              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-700 shadow-panel transition hover:bg-teal-50"
+              href="/projects/new"
+              aria-label="建立案件"
+              title="建立案件"
+            >
+              <BriefcaseBusiness className="h-4 w-4" aria-hidden />
+              建立案件
+            </Link>
+          ) : null}
+          {canCreateTask ? (
+            <Link
+              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-teal-700 px-4 text-sm font-semibold text-white shadow-panel transition hover:bg-teal-800"
+              href="/tasks/new"
+              aria-label="建立待辦"
+              title="建立待辦"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              建立待辦
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       {passwordModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
@@ -353,6 +398,39 @@ function PasswordField({
         required
       />
     </label>
+  );
+}
+
+function AccessDenied({
+  featureLabel,
+  featureDescription,
+  fallbackHref
+}: {
+  featureLabel: string;
+  featureDescription: string;
+  fallbackHref: string;
+}) {
+  return (
+    <section className="mx-auto max-w-2xl rounded-lg border border-amber-200 bg-white p-6 shadow-panel">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-amber-100 p-2 text-amber-700">
+          <AlertTriangle className="h-5 w-5" aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold text-slate-950">沒有權限使用「{featureLabel}」</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{featureDescription}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            如果這是你需要處理的工作，請 Owner 或管理者調整你的角色或案件權限。
+          </p>
+          <Link
+            className="mt-5 inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800"
+            href={fallbackHref}
+          >
+            回到可使用頁面
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
 

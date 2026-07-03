@@ -9,6 +9,7 @@ import type {
   TaskStatus,
   UserRole
 } from "./types";
+import { roleDefinitions } from "./permissions";
 
 export const taskStatusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: "todo", label: "待辦" },
@@ -91,12 +92,13 @@ export const aiTaskTypeOptions: Array<{ value: AiTaskType; label: string }> = [
   { value: "file", label: "圖面 / 檔案" }
 ];
 
-export const userRoleOptions: Array<{ value: UserRole; label: string; description: string }> = [
-  { value: "owner", label: "Owner", description: "最高權限，可管理員工與系統設定。" },
-  { value: "admin", label: "管理者", description: "可管理員工、LINE 設定與後台資料。" },
-  { value: "staff", label: "員工", description: "可管理案件、待辦、工期與提醒。" },
-  { value: "viewer", label: "檢視者", description: "只能查看資料，不能修改。" }
-];
+export const userRoleOptions: Array<{ value: UserRole; label: string; description: string }> = roleDefinitions.map(
+  (definition) => ({
+    value: definition.role,
+    label: definition.label,
+    description: definition.description
+  })
+);
 
 export const projectStageOptions = [
   "初談",

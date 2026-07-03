@@ -47,6 +47,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "找不到案件。" }, { status: 404 });
     }
 
+    if (!canAccessProject(caller, projectSnapshot.data())) {
+      return NextResponse.json({ ok: false, error: "沒有存取此案件附件的權限。" }, { status: 403 });
+    }
+
     const uploaded: MessageAttachment[] = [];
 
     for (const file of files) {
@@ -97,7 +101,7 @@ export async function POST(request: Request) {
 }
 
 async function verifyMemoUploadCaller(request: Request): Promise<
-  | { ok: true; uid: string; email: string; displayName: string }
+  | { ok: true; uid: string; email: string; displayName: string; role: string }
   | { ok: false; status: number; error: string }
 > {
   const authorization = request.headers.get("authorization") ?? "";
@@ -114,7 +118,7 @@ async function verifyMemoUploadCaller(request: Request): Promise<
     const role = String(user?.role ?? "");
     const active = user?.active !== false;
 
-    if (!userSnapshot.exists || !active || !["owner", "admin", "staff"].includes(role)) {
+    if (!userSnapshot.exists || !active || !["owner", "admin", "manager", "staff"].includes(role)) {
       return { ok: false, status: 403, error: "沒有上傳備忘錄附件的權限。" };
     }
 
@@ -122,11 +126,19 @@ async function verifyMemoUploadCaller(request: Request): Promise<
       ok: true,
       uid: decoded.uid,
       email: String(user?.email ?? decoded.email ?? ""),
-      displayName: String(user?.displayName ?? decoded.displayName ?? "")
+      displayName: String(user?.displayName ?? decoded.displayName ?? ""),
+      role
     };
   } catch {
     return { ok: false, status: 401, error: "登入狀態已失效，請重新登入。" };
   }
+}
+
+function canAccessProject(caller: { uid: string; role: string }, project: Record<string, unknown> | undefined) {
+  if (!project) return false;
+  if (caller.role === "owner" || caller.role === "admin" || caller.role === "manager") return true;
+
+  return Array.isArray(project.memberUserIds) && project.memberUserIds.includes(caller.uid);
 }
 
 type FirebaseLookupResponse = {

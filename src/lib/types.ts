@@ -15,6 +15,7 @@ export type IncidentStatus = "open" | "resolved" | "ignored";
 export type ProjectMemoryType = "permanent" | "temporary";
 export type ProjectMemoryStatus = "active" | "archived";
 export type ProjectMemoryImportance = "normal" | "high";
+export type ProjectDocumentType = "folder" | "drawing" | "contract" | "quote" | "photo" | "file" | "other";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task" | "message";
 export type ReminderPriority = "normal" | "high";
 export type ReminderType =
@@ -39,7 +40,7 @@ export type CalendarEventType =
 export type CalendarEventStatus = "scheduled" | "done" | "cancelled";
 export type CalendarEventSource = "manual" | "line" | "ai";
 export type CalendarEventCounterpartyType = "customer" | "vendor" | "internal" | "other";
-export type UserRole = "owner" | "admin" | "staff" | "viewer";
+export type UserRole = "owner" | "admin" | "manager" | "staff" | "viewer";
 export type AuditAction = "create" | "update" | "delete";
 export type AiFeedbackSource = "website" | "line";
 export type AiFeedbackAction =
@@ -62,6 +63,7 @@ export type ProjectInput = {
   assistant: string;
   status: string;
   expectedFinishDate: string;
+  memberUserIds: string[];
 };
 
 export type Project = ProjectInput & {
@@ -160,6 +162,21 @@ export type ProjectAiSummaryInput = {
 };
 
 export type ProjectAiSummary = ProjectAiSummaryInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type ProjectDocumentInput = {
+  projectId: string;
+  title: string;
+  url: string;
+  documentType: ProjectDocumentType;
+  description: string;
+  updatedBy?: string;
+};
+
+export type ProjectDocument = ProjectDocumentInput & {
   id: string;
   createdAt: Date | null;
   updatedAt: Date | null;

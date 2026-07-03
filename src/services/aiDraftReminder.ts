@@ -64,6 +64,20 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
 
     const projectId = String(aiTask.projectId ?? "");
     const title = String(aiTask.title ?? "未命名 AI 草稿");
+    const answeredByInternal = await hasInternalReplyAfterCustomerFollowup(db, aiTask, createdAt);
+    if (answeredByInternal) {
+      await doc.ref.set(
+        {
+          resolutionStatus: "maybe_answered",
+          resolutionHint: "系統偵測到內部人員已在同一個客戶群回覆，因此取消 30 分鐘未回覆提醒。",
+          autoSuppressedReminderAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+      continue;
+    }
+
     const sourceSenderName = String(aiTask.sourceSenderName ?? "");
     const key = createReminderKey("ai_task", doc.id, "ai_task_pending_review");
     const reminderRef = db.collection("reminder_logs").doc(key);
@@ -128,6 +142,44 @@ export async function sendPendingAiDraftReviewReminders(): Promise<PendingDraftR
   }
 
   return result;
+}
+
+async function hasInternalReplyAfterCustomerFollowup(
+  db: FirebaseFirestore.Firestore,
+  aiTask: FirebaseFirestore.DocumentData,
+  createdAt: Date | null
+) {
+  const taskType = normalizeAiTaskType(String(aiTask.taskType ?? ""));
+  const sourceSenderRole = String(aiTask.sourceSenderRole ?? "");
+  const projectId = String(aiTask.projectId ?? "");
+  const groupId = String(aiTask.sourceGroupId ?? "");
+
+  if (taskType !== "followup") return false;
+  if (sourceSenderRole !== "client" && sourceSenderRole !== "unknown") return false;
+  if (!projectId || !groupId || !createdAt) return false;
+
+  try {
+    const snapshot = await db.collection("messages").where("groupId", "==", groupId).get();
+    const createdAtMillis = createdAt.getTime();
+
+    return snapshot.docs.some((doc) => {
+      const message = doc.data();
+      const messageProjectId = String(message.projectId ?? "");
+      const senderRole = String(message.senderRole ?? "");
+      const text = String(message.text ?? "").trim();
+      const timestamp = timestampToDate(message.timestamp) ?? timestampToDate(message.createdAt);
+
+      return (
+        messageProjectId === projectId &&
+        senderRole === "internal" &&
+        Boolean(text) &&
+        Boolean(timestamp) &&
+        timestamp!.getTime() > createdAtMillis
+      );
+    });
+  } catch {
+    return false;
+  }
 }
 
 async function notifyAdminGroups(

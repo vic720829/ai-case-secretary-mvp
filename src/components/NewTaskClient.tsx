@@ -6,23 +6,25 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "./PageHeader";
 import { TaskForm } from "./TaskForm";
 import { LoadingState, SecondaryLink } from "./Ui";
-import { createTask, listProjects } from "@/lib/firestore";
+import { useAuth } from "@/components/AuthProvider";
+import { createTask, listProjectsForProfile } from "@/lib/firestore";
 import type { Project, TaskInput } from "@/lib/types";
 
 export function NewTaskClient({ initialProjectId }: { initialProjectId?: string }) {
   const router = useRouter();
+  const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadProjects() {
-      const nextProjects = await listProjects();
+      const nextProjects = await listProjectsForProfile(profile);
       setProjects(nextProjects);
       setLoading(false);
     }
 
     void loadProjects();
-  }, []);
+  }, [profile]);
 
   async function handleSubmit(value: TaskInput) {
     const id = await createTask(value);

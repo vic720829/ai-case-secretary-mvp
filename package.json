@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test:line-safety": "node scripts/line-reply-policy.test.mjs",
     "test:line-notification-routing": "node scripts/line-notification-routing.test.mjs",
-    "test:ai-review-safety": "node scripts/ai-review-policy.test.mjs"
+    "test:ai-review-safety": "node scripts/ai-review-policy.test.mjs",
+    "test:audio-memos": "node scripts/audio-memo-drafts.test.mjs",
+    "test:line-notification-policy": "node scripts/line-notification-policy.test.mjs"
   },
   "dependencies": {
     "firebase": "^11.1.0",

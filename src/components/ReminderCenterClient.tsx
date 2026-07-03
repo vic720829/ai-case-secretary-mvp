@@ -11,19 +11,24 @@ import {
   confirmReminderLog,
   listAiTasks,
   listMilestones,
+  listMilestonesForProjects,
   listProjectStages,
-  listProjects,
+  listProjectStagesForProjects,
+  listProjectsForProfile,
   listReminderLogs,
+  listReminderLogsForProjects,
   listTasks,
+  listTasksForProjects,
   upsertPendingReminderLog
 } from "@/lib/firestore";
+import { hasFullProjectAccess } from "@/lib/projectAccess";
 import { buildReminderCandidates } from "@/lib/reminders";
 import type { Project, ReminderLog, ReminderLogInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
 export function ReminderCenterClient() {
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [reminders, setReminders] = useState<ReminderLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,13 +39,15 @@ export function ReminderCenterClient() {
     setError("");
 
     try {
-      const [nextProjects, tasks, stages, milestones, aiTasks, logs] = await Promise.all([
-        listProjects(),
-        listTasks(),
-        listProjectStages(),
-        listMilestones(),
-        listAiTasks(),
-        listReminderLogs()
+      const nextProjects = await listProjectsForProfile(profile);
+      const projectIds = nextProjects.map((project) => project.id);
+      const fullAccess = hasFullProjectAccess(profile?.role);
+      const [tasks, stages, milestones, aiTasks, logs] = await Promise.all([
+        fullAccess ? listTasks() : listTasksForProjects(projectIds),
+        fullAccess ? listProjectStages() : listProjectStagesForProjects(projectIds),
+        fullAccess ? listMilestones() : listMilestonesForProjects(projectIds),
+        fullAccess ? listAiTasks() : Promise.resolve([]),
+        fullAccess ? listReminderLogs() : listReminderLogsForProjects(projectIds)
       ]);
       const logByKey = new Map(logs.map((log) => [log.key, log]));
       const candidates = buildReminderCandidates({
@@ -56,13 +63,13 @@ export function ReminderCenterClient() {
       );
 
       setProjects(nextProjects);
-      setReminders(await listReminderLogs());
+      setReminders(fullAccess ? await listReminderLogs() : await listReminderLogsForProjects(projectIds));
     } catch (caught) {
       setError(getReadableError(caught));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     void loadData();

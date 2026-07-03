@@ -5,13 +5,22 @@ import { useEffect, useMemo, useState } from "react";
 import { MilestoneTable } from "@/components/MilestoneTable";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
+import { useAuth } from "@/components/AuthProvider";
 import { isDateDueSoon, isDateOverdue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import {
+  listMilestones,
+  listMilestonesForProjects,
+  listProjectStages,
+  listProjectStagesForProjects,
+  listProjectsForProfile
+} from "@/lib/firestore";
+import { hasFullProjectAccess } from "@/lib/projectAccess";
 import { isHighOrCriticalRisk } from "@/lib/riskRules";
 import type { Milestone, Project, ProjectStage } from "@/lib/types";
 
 export default function MilestonesPage() {
+  const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -24,13 +33,14 @@ export default function MilestonesPage() {
 
       try {
         const [nextProjects, nextStages, nextMilestones] = await Promise.all([
-          listProjects(),
-          listProjectStages(),
-          listMilestones()
+          listProjectsForProfile(profile),
+          hasFullProjectAccess(profile?.role) ? listProjectStages() : Promise.resolve([]),
+          hasFullProjectAccess(profile?.role) ? listMilestones() : Promise.resolve([])
         ]);
+        const projectIds = nextProjects.map((project) => project.id);
         setProjects(nextProjects);
-        setStages(nextStages);
-        setMilestones(nextMilestones);
+        setStages(hasFullProjectAccess(profile?.role) ? nextStages : await listProjectStagesForProjects(projectIds));
+        setMilestones(hasFullProjectAccess(profile?.role) ? nextMilestones : await listMilestonesForProjects(projectIds));
       } catch (caught) {
         setError(getReadableError(caught));
       } finally {
@@ -39,7 +49,7 @@ export default function MilestonesPage() {
     }
 
     void loadData();
-  }, []);
+  }, [profile]);
 
   const activeMilestones = useMemo(
     () => milestones.filter((milestone) => !milestone.completed),

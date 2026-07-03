@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { Button, EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
@@ -22,11 +23,15 @@ import {
   createCalendarEvent,
   deleteCalendarEvent,
   listCalendarEvents,
+  listCalendarEventsForProjects,
   listMilestones,
+  listMilestonesForProjects,
   listProjectStages,
-  listProjects,
+  listProjectStagesForProjects,
+  listProjectsForProfile,
   updateCalendarEvent
 } from "@/lib/firestore";
+import { hasFullProjectAccess } from "@/lib/projectAccess";
 import type {
   CalendarEvent,
   CalendarEventCounterpartyType,
@@ -101,6 +106,7 @@ const sourceLabels: Record<CalendarItemSource, string> = {
 };
 
 export function SharedCalendarClient() {
+  const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -118,22 +124,23 @@ export function SharedCalendarClient() {
 
     try {
       const [nextProjects, nextStages, nextMilestones, nextEvents] = await Promise.all([
-        listProjects(),
-        listProjectStages(),
-        listMilestones(),
-        listCalendarEvents()
+        listProjectsForProfile(profile),
+        hasFullProjectAccess(profile?.role) ? listProjectStages() : Promise.resolve([]),
+        hasFullProjectAccess(profile?.role) ? listMilestones() : Promise.resolve([]),
+        hasFullProjectAccess(profile?.role) ? listCalendarEvents() : Promise.resolve([])
       ]);
+      const projectIds = nextProjects.map((project) => project.id);
 
       setProjects(nextProjects);
-      setStages(nextStages);
-      setMilestones(nextMilestones);
-      setEvents(nextEvents);
+      setStages(hasFullProjectAccess(profile?.role) ? nextStages : await listProjectStagesForProjects(projectIds));
+      setMilestones(hasFullProjectAccess(profile?.role) ? nextMilestones : await listMilestonesForProjects(projectIds));
+      setEvents(hasFullProjectAccess(profile?.role) ? nextEvents : await listCalendarEventsForProjects(projectIds));
     } catch (caught) {
       setError(getReadableError(caught));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     void loadData();

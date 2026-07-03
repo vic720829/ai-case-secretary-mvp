@@ -32,7 +32,7 @@ export default function NewProjectPage() {
         }
       />
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-        <ProjectForm submitLabel="建立案件" onSubmit={handleSubmit} />
+        <ProjectForm currentUserId={user?.uid} submitLabel="建立案件" onSubmit={handleSubmit} />
       </section>
     </div>
   );

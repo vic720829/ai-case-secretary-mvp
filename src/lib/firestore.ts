@@ -47,6 +47,8 @@ import type {
   MessageAttachment,
   Project,
   ProjectAiSummary,
+  ProjectDocument,
+  ProjectDocumentInput,
   ProjectInput,
   ProjectMemo,
   ProjectMemoInput,
@@ -69,6 +71,7 @@ const TASKS_COLLECTION = "tasks";
 const PROJECT_MEMOS_COLLECTION = "project_memos";
 const PROJECT_MEMORIES_COLLECTION = "project_memories";
 const PROJECT_SUMMARIES_COLLECTION = "project_summaries";
+const PROJECT_DOCUMENTS_COLLECTION = "project_documents";
 const PROJECT_STAGES_COLLECTION = "projectStages";
 const MILESTONES_COLLECTION = "milestones";
 const CALENDAR_EVENTS_COLLECTION = "calendar_events";
@@ -132,6 +135,20 @@ function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 }
 
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function hasFullProjectAccessRole(role: string | undefined) {
+  return role === "owner" || role === "admin" || role === "manager";
+}
+
 function readAttachments(value: unknown): MessageAttachment[] {
   if (!Array.isArray(value)) return [];
 
@@ -174,6 +191,7 @@ function projectFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Project 
     assistant: data.assistant ?? "",
     status: data.status ?? "",
     expectedFinishDate: data.expectedFinishDate ?? "",
+    memberUserIds: readStringArray(data.memberUserIds),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
@@ -374,6 +392,30 @@ function projectAiSummaryFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>):
     source: data.source === "ai" ? "ai" : "system",
     model: data.model ?? "",
     refreshedBy: data.refreshedBy ?? "",
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt)
+  };
+}
+
+function projectDocumentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): ProjectDocument {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    projectId: data.projectId ?? "",
+    title: data.title ?? "",
+    url: data.url ?? "",
+    documentType:
+      data.documentType === "folder" ||
+      data.documentType === "drawing" ||
+      data.documentType === "contract" ||
+      data.documentType === "quote" ||
+      data.documentType === "photo" ||
+      data.documentType === "file"
+        ? data.documentType
+        : "other",
+    description: data.description ?? "",
+    updatedBy: data.updatedBy ?? "",
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
@@ -697,16 +739,23 @@ function diffProjectInput(before: ProjectInput | null, after: ProjectInput | nul
     { key: "designer", label: "負責設計師" },
     { key: "assistant", label: "設計助理" },
     { key: "status", label: "狀態" },
-    { key: "expectedFinishDate", label: "預計完工日" }
+    { key: "expectedFinishDate", label: "預計完工日" },
+    { key: "memberUserIds", label: "案件成員" }
   ];
 
   return fields
     .map(({ key, label }) => ({
       field: label,
-      before: before?.[key] ?? "",
-      after: after?.[key] ?? ""
+      before: formatProjectChangeValue(before?.[key]),
+      after: formatProjectChangeValue(after?.[key])
     }))
     .filter((change) => change.before !== change.after);
+}
+
+function formatProjectChangeValue(value: ProjectInput[keyof ProjectInput] | undefined) {
+  if (Array.isArray(value)) return value.join(", ");
+
+  return value ?? "";
 }
 
 export async function listProjects() {
@@ -716,6 +765,20 @@ export async function listProjects() {
   );
 
   return snapshot.docs.map(projectFromDoc);
+}
+
+export async function listProjectsForProfile(profile: Pick<UserProfile, "id" | "role"> | null | undefined) {
+  if (!profile) return [];
+  if (hasFullProjectAccessRole(profile.role)) return listProjects();
+
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, PROJECTS_COLLECTION), where("memberUserIds", "array-contains", profile.id))
+  );
+
+  return snapshot.docs
+    .map(projectFromDoc)
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
 export async function listUserProfiles() {
@@ -866,6 +929,7 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     linkedTasks,
     linkedProjectMemos,
     linkedProjectMemories,
+    linkedProjectDocuments,
     projectSummarySnapshot,
     linkedStages,
     linkedMilestones,
@@ -882,6 +946,7 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_MEMOS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, PROJECT_MEMORIES_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, PROJECT_DOCUMENTS_COLLECTION), where("projectId", "==", id))),
     getDoc(doc(database, PROJECT_SUMMARIES_COLLECTION, id)),
     getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "==", id))),
@@ -905,6 +970,9 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   });
   linkedProjectMemories.docs.forEach((memorySnapshot) => {
     batch.delete(memorySnapshot.ref);
+  });
+  linkedProjectDocuments.docs.forEach((documentSnapshot) => {
+    batch.delete(documentSnapshot.ref);
   });
   if (projectSummarySnapshot.exists()) {
     batch.delete(projectSummarySnapshot.ref);
@@ -961,6 +1029,22 @@ export async function listTasks() {
   return snapshot.docs.map(taskFromDoc);
 }
 
+export async function listTasksForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(taskFromDoc))
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
 export async function listRecentTasks(maxItems = DEFAULT_RECENT_LIST_LIMIT) {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -968,6 +1052,23 @@ export async function listRecentTasks(maxItems = DEFAULT_RECENT_LIST_LIMIT) {
   );
 
   return snapshot.docs.map(taskFromDoc);
+}
+
+export async function listRecentTasksForProjects(projectIds: string[], maxItems = DEFAULT_RECENT_LIST_LIMIT) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(taskFromDoc))
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
+    .slice(0, maxItems);
 }
 
 export async function listTasksByProject(projectId: string) {
@@ -1128,12 +1229,63 @@ export async function getProjectAiSummary(projectId: string) {
   return snapshot.exists() ? projectAiSummaryFromDoc(snapshot as QueryDocumentSnapshot<DocumentData>) : null;
 }
 
+export async function listProjectDocumentsByProject(projectId: string) {
+  const database = requireDb();
+  const snapshot = await getDocs(
+    query(collection(database, PROJECT_DOCUMENTS_COLLECTION), where("projectId", "==", projectId))
+  );
+
+  return snapshot.docs
+    .map(projectDocumentFromDoc)
+    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+}
+
+export async function createProjectDocument(input: ProjectDocumentInput) {
+  const database = requireDb();
+  const ref = await addDoc(collection(database, PROJECT_DOCUMENTS_COLLECTION), {
+    ...input,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  return ref.id;
+}
+
+export async function updateProjectDocument(id: string, input: ProjectDocumentInput) {
+  const database = requireDb();
+  await updateDoc(doc(database, PROJECT_DOCUMENTS_COLLECTION, id), {
+    ...input,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteProjectDocument(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, PROJECT_DOCUMENTS_COLLECTION, id));
+}
+
 export async function listProjectStages() {
   const database = requireDb();
   const snapshot = await getDocs(collection(database, PROJECT_STAGES_COLLECTION));
 
   return snapshot.docs
     .map(projectStageFromDoc)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.startDate.localeCompare(b.startDate));
+}
+
+export async function listProjectStagesForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, PROJECT_STAGES_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(projectStageFromDoc))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.startDate.localeCompare(b.startDate));
 }
 
@@ -1194,6 +1346,22 @@ export async function listMilestones() {
     .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"));
 }
 
+export async function listMilestonesForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, MILESTONES_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(milestoneFromDoc))
+    .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"));
+}
+
 export async function listMilestonesByProject(projectId: string) {
   const database = requireDb();
   const snapshot = await getDocs(
@@ -1235,6 +1403,27 @@ export async function listCalendarEvents() {
 
   return snapshot.docs
     .map(calendarEventFromDoc)
+    .sort((a, b) => {
+      const dateOrder = (a.startDate || "9999-99-99").localeCompare(b.startDate || "9999-99-99");
+      if (dateOrder) return dateOrder;
+
+      return (a.startTime || "99:99").localeCompare(b.startTime || "99:99");
+    });
+}
+
+export async function listCalendarEventsForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, CALENDAR_EVENTS_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(calendarEventFromDoc))
     .sort((a, b) => {
       const dateOrder = (a.startDate || "9999-99-99").localeCompare(b.startDate || "9999-99-99");
       if (dateOrder) return dateOrder;
@@ -1402,6 +1591,22 @@ export async function listAiTasks() {
 
   return snapshot.docs
     .map(aiTaskFromDoc)
+    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export async function listAiTasksForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(aiTaskFromDoc))
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
@@ -1582,6 +1787,27 @@ export async function listReminderLogs() {
 
   return snapshot.docs
     .map(reminderLogFromDoc)
+    .sort((a, b) => {
+      const statusOrder = a.status.localeCompare(b.status);
+      if (statusOrder) return statusOrder;
+      if (a.priority !== b.priority) return a.priority === "high" ? -1 : 1;
+      return (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99");
+    });
+}
+
+export async function listReminderLogsForProjects(projectIds: string[]) {
+  const database = requireDb();
+  const normalizedProjectIds = projectIds.filter(Boolean);
+  if (!normalizedProjectIds.length) return [];
+
+  const snapshots = await Promise.all(
+    chunkArray(normalizedProjectIds, 10).map((chunk) =>
+      getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "in", chunk)))
+    )
+  );
+
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map(reminderLogFromDoc))
     .sort((a, b) => {
       const statusOrder = a.status.localeCompare(b.status);
       if (statusOrder) return statusOrder;

@@ -1,16 +1,17 @@
 "use client";
 
-import { ArrowLeft, Check, ExternalLink, FileAudio, FileDown, ImageIcon, Mic, NotebookText, Plus, X } from "lucide-react";
-import Image from "next/image";
+import { ArrowLeft, Check, ExternalLink, FileAudio, FileDown, Mic, NotebookText, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { PageHeader } from "@/components/PageHeader";
+import { MemoAttachmentPreview as ProjectMemoAttachmentPreview } from "@/components/project-memos/MemoAttachmentPreview";
 import { Button, EmptyState, ErrorMessage, LoadingState, SecondaryLink } from "@/components/Ui";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { createProjectMemo, deleteProjectMemo, getProject, listProjectMemosByProject, listTasksByProject } from "@/lib/firestore";
+import { buildProjectMemoPrintHtml } from "@/lib/projectMemoPdf";
 import type { MessageAttachment, Project, ProjectMemo, Task } from "@/lib/types";
 import { RiskBadge, TaskStatusBadge } from "./StatusBadges";
 
@@ -24,7 +25,7 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
   const [memoContent, setMemoContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioFiles, setAudioFiles] = useState<File[]>([]);
   const [audioInputKey, setAudioInputKey] = useState(0);
   const [audioSubmitting, setAudioSubmitting] = useState(false);
   const [audioDraftActionId, setAudioDraftActionId] = useState("");
@@ -182,12 +183,12 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
 
     try {
       if (!user) throw new Error("請先登入後再上傳語音。");
-      if (!audioFile) throw new Error("請選擇要轉文字的語音檔。");
+      if (!audioFiles.length) throw new Error("請選擇要轉文字的語音檔。");
 
       const token = await user.getIdToken();
       const formData = new FormData();
       formData.append("projectId", projectId);
-      formData.append("file", audioFile);
+      audioFiles.forEach((file) => formData.append("files", file));
 
       const response = await fetch("/api/project-memos/audio-drafts", {
         method: "POST",
@@ -210,7 +211,7 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
           content: result.draft!.content
         }
       }));
-      setAudioFile(null);
+      setAudioFiles([]);
       setAudioInputKey((current) => current + 1);
       setSuccessMessage("已建立 AI 語音備忘錄草稿，請確認後再存成正式備忘錄。");
     } catch (caught) {
@@ -273,7 +274,7 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
     }
 
     printWindow.document.open();
-    printWindow.document.write(buildMemoPrintHtml(project, memo, attachments));
+    printWindow.document.write(buildProjectMemoPrintHtml(project, memo, attachments));
     printWindow.document.close();
 
     const print = () => {
@@ -387,22 +388,30 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
               key={audioInputKey}
               className={inputClassName}
               type="file"
+              multiple
               accept="audio/*,video/mp4,video/webm,.mp3,.m4a,.wav,.webm,.mp4,.ogg,.flac"
-              onChange={(event) => setAudioFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => setAudioFiles(Array.from(event.target.files ?? []))}
             />
             <span className="mt-1 block text-xs text-slate-500">
-              支援 mp3、m4a、wav、webm、mp4 等格式；建議 25MB 以內。內容只會產生待確認草稿，不會自動回覆客戶群。
+              支援 mp3、m4a、wav、webm、mp4 等格式；每段建議 25MB 以內，最多 8 段。內容只會產生待確認草稿，不會自動回覆客戶群。
             </span>
           </label>
 
-          {audioFile ? (
+          {audioFiles.length ? (
             <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-              已選擇：{audioFile.name}（{formatFileSize(audioFile.size)}）
+              <p className="font-medium">已選擇 {audioFiles.length} 段語音</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
+                {audioFiles.map((file) => (
+                  <li key={`${file.name}-${file.size}`}>
+                    {file.name}（{formatFileSize(file.size)}）
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={audioSubmitting || !audioFile}>
+            <Button type="submit" disabled={audioSubmitting || !audioFiles.length}>
               <FileAudio className="h-4 w-4" aria-hidden />
               {audioSubmitting ? "轉文字中" : "產生語音草稿"}
             </Button>
@@ -424,15 +433,15 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
                           <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
                             AI 產生，待確認
                           </span>
-                          {draft.sourceAttachment?.fileUrl ? (
+                          {(draft.sourceAttachments?.length ? draft.sourceAttachments[0] : draft.sourceAttachment)?.fileUrl ? (
                             <a
                               className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:text-sky-800"
-                              href={draft.sourceAttachment.fileUrl}
+                              href={(draft.sourceAttachments?.length ? draft.sourceAttachments[0] : draft.sourceAttachment)?.fileUrl ?? ""}
                               target="_blank"
                               rel="noreferrer"
                             >
                               <FileAudio className="h-3.5 w-3.5" aria-hidden />
-                              原始語音
+                              {draft.audioSegmentCount > 1 ? `原始語音 ${draft.audioSegmentCount} 段` : "原始語音"}
                             </a>
                           ) : null}
                         </div>
@@ -605,7 +614,7 @@ export function ProjectMemosClient({ projectId }: { projectId: string }) {
                     <span>建立時間：{formatDateTime(memo.createdAt)}</span>
                   </div>
                 </div>
-                <MemoAttachmentPreview attachments={getMemoAttachments(memo)} />
+                <ProjectMemoAttachmentPreview attachments={getMemoAttachments(memo)} />
                 <div className="flex shrink-0 flex-wrap gap-2 lg:flex-col">
                   <Button type="button" variant="secondary" onClick={() => handleExportMemoPdf(memo, getMemoAttachments(memo))}>
                     <FileDown className="h-4 w-4" aria-hidden />
@@ -640,244 +649,10 @@ type MemoAttachmentUploadResponse = {
   attachments?: Array<Omit<MessageAttachment, "createdAt"> & { createdAt?: string | null }>;
 };
 
-function MemoAttachmentPreview({ attachments }: { attachments: MessageAttachment[] }) {
-  if (!attachments.length) return null;
-
-  return (
-    <div className="rounded-md border border-stone-200 bg-stone-50 p-3 lg:w-56">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
-        <ImageIcon className="h-3.5 w-3.5 text-teal-700" aria-hidden />
-        附件縮圖 {attachments.length} 張
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {attachments.slice(0, 6).map((attachment) => (
-          <a
-            key={attachment.messageId}
-            className="block overflow-hidden rounded-md border border-stone-200 bg-white"
-            href={attachment.fileUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="開啟原圖"
-          >
-            {attachment.fileType === "image" ? (
-              <Image
-                className="aspect-square w-full object-cover"
-                src={attachment.fileUrl}
-                alt="備忘錄附件"
-                width={96}
-                height={96}
-                unoptimized
-              />
-            ) : (
-              <div className="flex aspect-square w-full items-center justify-center bg-white px-1 text-center text-[10px] font-semibold text-slate-600">
-                {attachmentTypeLabel(attachment)}
-              </div>
-            )}
-          </a>
-        ))}
-      </div>
-      {attachments.length > 6 ? <div className="mt-2 text-xs text-slate-500">另有 {attachments.length - 6} 張</div> : null}
-    </div>
-  );
-}
-
-function buildMemoPrintHtml(project: Project, memo: ProjectMemo, attachments: MessageAttachment[]) {
-  const title = `${project.name} 備忘錄`;
-  const imageAttachments = attachments.filter((attachment) => attachment.fileType === "image");
-  const fileAttachments = attachments.filter((attachment) => attachment.fileType !== "image");
-  const generatedAt = new Intl.DateTimeFormat("zh-TW", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date());
-  const sourceRows = [
-    memo.sourceTaskTitle ? `原待辦：${memo.sourceTaskTitle}` : "",
-    memo.sourceTaskDueDate ? `原截止日：${formatDate(memo.sourceTaskDueDate)}` : "",
-    memo.sourceTaskStatus ? `原狀態：${memo.sourceTaskStatus}` : "",
-    memo.sourceTaskRiskLevel ? `原風險：${memo.sourceTaskRiskLevel}` : "",
-    memo.createdBy ? `建立者：${memo.createdBy}` : "",
-    `建立時間：${formatDateTime(memo.createdAt) || "未記錄"}`,
-    memo.updatedAt ? `更新時間：${formatDateTime(memo.updatedAt)}` : ""
-  ].filter(Boolean);
-  const imageAttachmentHtml = imageAttachments.length
-    ? `
-      <section class="section">
-        <h2>附件縮圖</h2>
-        <div class="attachments">
-          ${imageAttachments
-            .map(
-              (attachment, index) => `
-                <figure>
-                  <img src="${escapeAttribute(attachment.fileUrl)}" alt="附件 ${index + 1}" />
-                  <figcaption>${escapeHtml(attachment.senderName || "LINE 附件")} · ${escapeHtml(formatDateTime(attachment.createdAt) || "未記錄")}</figcaption>
-                </figure>
-              `
-            )
-            .join("")}
-        </div>
-      </section>
-    `
-    : "";
-  const fileAttachmentHtml = fileAttachments.length
-    ? `
-      <section class="section">
-        <h2>其他附件</h2>
-        <ul class="source-list">
-          ${fileAttachments
-            .map(
-              (attachment) =>
-                `<li><a href="${escapeAttribute(attachment.fileUrl)}">${escapeHtml(attachment.text || "附件")}</a></li>`
-            )
-            .join("")}
-        </ul>
-      </section>
-    `
-    : "";
-
-  return `<!doctype html>
-<html lang="zh-Hant">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(memo.title)} - ${escapeHtml(title)}</title>
-    <style>
-      @page { size: A4; margin: 16mm; }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        color: #0f172a;
-        background: #ffffff;
-        font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif;
-        line-height: 1.75;
-      }
-      .cover {
-        border-bottom: 3px solid #0f766e;
-        padding-bottom: 16px;
-        margin-bottom: 18px;
-      }
-      .eyebrow {
-        color: #0f766e;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      h1 {
-        margin: 8px 0;
-        font-size: 26px;
-        line-height: 1.3;
-      }
-      h2 {
-        margin: 0 0 10px;
-        color: #0f766e;
-        font-size: 17px;
-      }
-      .meta {
-        color: #64748b;
-        font-size: 12px;
-      }
-      .section {
-        break-inside: avoid;
-        page-break-inside: avoid;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 16px 18px;
-        margin-bottom: 14px;
-      }
-      .content {
-        white-space: pre-wrap;
-        font-size: 14px;
-      }
-      .source-list {
-        margin: 0;
-        padding-left: 18px;
-        color: #475569;
-        font-size: 12px;
-      }
-      .attachments {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      figure {
-        break-inside: avoid;
-        page-break-inside: avoid;
-        margin: 0;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #f8fafc;
-      }
-      img {
-        display: block;
-        width: 100%;
-        height: 190px;
-        object-fit: cover;
-        background: #f1f5f9;
-      }
-      figcaption {
-        padding: 8px 10px;
-        color: #64748b;
-        font-size: 11px;
-      }
-      .footer {
-        margin-top: 20px;
-        color: #94a3b8;
-        font-size: 11px;
-        text-align: right;
-      }
-      @media print {
-        body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      }
-    </style>
-  </head>
-  <body>
-    <header class="cover">
-      <div class="eyebrow">Project Memo</div>
-      <h1>${escapeHtml(memo.title)}</h1>
-      <div class="meta">${escapeHtml(project.name)} · ${escapeHtml(project.clientName || "未填客戶")} · 產生時間：${escapeHtml(generatedAt)}</div>
-    </header>
-    <main>
-      <section class="section">
-        <h2>備忘錄內容</h2>
-        <div class="content">${escapeHtml(memo.content)}</div>
-      </section>
-      <section class="section">
-        <h2>來源資訊</h2>
-        <ul class="source-list">${sourceRows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>
-      </section>
-      ${imageAttachmentHtml}
-      ${fileAttachmentHtml}
-    </main>
-    <footer class="footer">由 AI 案件秘書產生，請以實際合約、圖面、現場紀錄與 LINE 原始訊息為準。</footer>
-  </body>
-</html>`;
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function escapeAttribute(value: string) {
-  return escapeHtml(value);
-}
-
 function formatFileSize(size: number) {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
 
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function attachmentTypeLabel(attachment: MessageAttachment) {
-  if (attachment.fileType === "audio") return "語音";
-  if (attachment.fileType === "file") return "PDF";
-  return "附件";
 }
 
 type AudioMemoDraft = {
@@ -893,8 +668,11 @@ type AudioMemoDraft = {
   payments: string[];
   invoices: string[];
   risks: string[];
+  speakerNotes: string[];
   reviewStatus: "pending" | "approved" | "rejected" | string;
   sourceAttachment: (Omit<MessageAttachment, "createdAt"> & { createdAt?: string | null }) | null;
+  sourceAttachments?: Array<Omit<MessageAttachment, "createdAt"> & { createdAt?: string | null }>;
+  audioSegmentCount: number;
   approvedMemoId: string;
   createdBy: string;
   reviewedBy: string;

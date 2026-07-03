@@ -4,9 +4,17 @@ import { AlertCircle, CalendarDays, Flag, Filter, Gauge } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
+import { useAuth } from "@/components/AuthProvider";
 import { formatDate, isDateOverdue, todayInputValue } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
-import { listMilestones, listProjectStages, listProjects } from "@/lib/firestore";
+import {
+  listMilestones,
+  listMilestonesForProjects,
+  listProjectStages,
+  listProjectStagesForProjects,
+  listProjectsForProfile
+} from "@/lib/firestore";
+import { hasFullProjectAccess } from "@/lib/projectAccess";
 import { getCurrentStage, getProjectProgress } from "@/lib/progress";
 import type { Milestone, Project, ProjectStage, ProjectStageStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -16,6 +24,7 @@ import { ProjectStageStatusBadge } from "./StatusBadges";
 type StageFilter = "all" | "overdue" | ProjectStageStatus;
 
 export function ScheduleClient() {
+  const { profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<ProjectStage[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -31,19 +40,20 @@ export function ScheduleClient() {
 
     try {
       const [nextProjects, nextStages, nextMilestones] = await Promise.all([
-        listProjects(),
-        listProjectStages(),
-        listMilestones()
+        listProjectsForProfile(profile),
+        hasFullProjectAccess(profile?.role) ? listProjectStages() : Promise.resolve([]),
+        hasFullProjectAccess(profile?.role) ? listMilestones() : Promise.resolve([])
       ]);
+      const projectIds = nextProjects.map((project) => project.id);
       setProjects(nextProjects);
-      setStages(nextStages);
-      setMilestones(nextMilestones);
+      setStages(hasFullProjectAccess(profile?.role) ? nextStages : await listProjectStagesForProjects(projectIds));
+      setMilestones(hasFullProjectAccess(profile?.role) ? nextMilestones : await listMilestonesForProjects(projectIds));
     } catch (caught) {
       setError(getReadableError(caught));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     void loadData();

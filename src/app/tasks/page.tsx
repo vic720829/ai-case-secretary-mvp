@@ -1,19 +1,20 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { TaskTable } from "@/components/TaskTable";
 import { EmptyState, ErrorMessage, LoadingState, PrimaryLink } from "@/components/Ui";
 import { getReadableError } from "@/lib/errors";
-import { createProjectMemoFromTask, deleteTask, listProjects, listRecentTasks } from "@/lib/firestore";
+import { createProjectMemoFromTask, deleteTask, listProjectsForProfile, listRecentTasksForProjects, listRecentTasks } from "@/lib/firestore";
+import { hasFullProjectAccess } from "@/lib/projectAccess";
 import type { Project, Task } from "@/lib/types";
 
 const visibleTaskLimit = 150;
 
 export default function TasksPage() {
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [memoTaskIds, setMemoTaskIds] = useState<Set<string>>(new Set());
@@ -21,11 +22,14 @@ export default function TasksPage() {
   const [error, setError] = useState("");
   const [memoMessage, setMemoMessage] = useState("");
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setError("");
 
     try {
-      const [nextProjects, nextTasks] = await Promise.all([listProjects(), listRecentTasks(visibleTaskLimit)]);
+      const nextProjects = await listProjectsForProfile(profile);
+      const nextTasks = hasFullProjectAccess(profile?.role)
+        ? await listRecentTasks(visibleTaskLimit)
+        : await listRecentTasksForProjects(nextProjects.map((project) => project.id), visibleTaskLimit);
       setProjects(nextProjects);
       setTasks(nextTasks);
     } catch (caught) {
@@ -33,11 +37,11 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [profile]);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   async function handleDelete(task: Task) {
     const confirmed = window.confirm(`確定刪除待辦「${task.title}」？`);

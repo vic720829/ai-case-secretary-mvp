@@ -1,38 +1,29 @@
 import { randomUUID } from "crypto";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import {
+  DEFAULT_ANALYSIS_TIMEOUT_MS,
+  MAX_AUDIO_SIZE_BYTES,
+  buildFallbackAudioDraftAnalysis as buildFallbackAnalysisForAudioDraft,
+  buildMemoContentFromAudioDraftAnalysis as buildMemoContentFromAudioDraft,
+  getAudioExtension as getAudioDraftExtension,
+  getConfiguredTimeoutMs,
+  inferAudioContentType as inferAudioDraftContentType,
+  isAllowedAudioContentType,
+  normalizeStringList as normalizeAudioDraftStringList,
+  sanitizePathSegment as sanitizeAudioDraftPathSegment,
+  stripJsonFence as stripAudioDraftJsonFence,
+  type AudioDraftAnalysis
+} from "@/lib/audioMemoDrafts";
 import { getAdminDb, getAdminStorageBucket } from "@/lib/firebaseAdmin";
 import type { MessageAttachment } from "@/lib/types";
+import { transcribeAudioSegments, type AudioTranscriptionInput } from "@/services/audioTranscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const AUDIO_DRAFTS_COLLECTION = "project_memo_audio_drafts";
-const MAX_AUDIO_SIZE_BYTES = 25 * 1024 * 1024;
-const ALLOWED_AUDIO_TYPES = new Set([
-  "audio/aac",
-  "audio/flac",
-  "audio/m4a",
-  "audio/mp3",
-  "audio/mp4",
-  "audio/mpeg",
-  "audio/ogg",
-  "audio/wav",
-  "audio/webm",
-  "video/mp4",
-  "video/webm"
-]);
-
-type AudioDraftAnalysis = {
-  title: string;
-  summary: string;
-  decisions: string[];
-  changes: string[];
-  actionItems: string[];
-  payments: string[];
-  invoices: string[];
-  risks: string[];
-};
+const MAX_AUDIO_SEGMENTS = 8;
 
 export async function GET(request: Request) {
   const caller = await verifyAudioDraftCaller(request);
@@ -46,6 +37,15 @@ export async function GET(request: Request) {
 
   if (!projectId) {
     return NextResponse.json({ ok: false, error: "缺少案件 ID。" }, { status: 400 });
+  }
+
+  const projectSnapshot = await getAdminDb().collection("projects").doc(projectId).get();
+  if (!projectSnapshot.exists) {
+    return NextResponse.json({ ok: false, error: "找不到案件。" }, { status: 404 });
+  }
+
+  if (!canAccessProject(caller, projectSnapshot.data())) {
+    return NextResponse.json({ ok: false, error: "沒有讀取此案件語音備忘錄的權限。" }, { status: 403 });
   }
 
   const snapshot = await getAdminDb()
@@ -70,49 +70,80 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const projectId = String(formData.get("projectId") ?? "");
-    const file = formData.get("file");
+    const audioFiles = getAudioFilesFromFormData(formData);
 
     if (!projectId) {
       return NextResponse.json({ ok: false, error: "缺少案件 ID。" }, { status: 400 });
     }
 
-    if (!(file instanceof File) || !file.size) {
-      return NextResponse.json({ ok: false, error: "請選擇要轉文字的語音檔。" }, { status: 400 });
+    if (!audioFiles.length) {
+      return NextResponse.json({ ok: false, error: "Please choose at least one audio file." }, { status: 400 });
     }
 
-    if (file.size > MAX_AUDIO_SIZE_BYTES) {
-      return NextResponse.json({ ok: false, error: "語音檔超過 25MB，請壓縮或剪短後再上傳。" }, { status: 400 });
-    }
-
-    const contentType = file.type || inferAudioContentType(file.name);
-    if (!ALLOWED_AUDIO_TYPES.has(contentType)) {
-      return NextResponse.json({ ok: false, error: "語音格式不支援，請上傳 mp3、m4a、wav、webm 或 mp4。" }, { status: 400 });
+    if (audioFiles.length > MAX_AUDIO_SEGMENTS) {
+      return NextResponse.json({ ok: false, error: `You can upload up to ${MAX_AUDIO_SEGMENTS} audio segments at once.` }, { status: 400 });
     }
 
     const projectSnapshot = await getAdminDb().collection("projects").doc(projectId).get();
     if (!projectSnapshot.exists) {
-      return NextResponse.json({ ok: false, error: "找不到案件。" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Project not found." }, { status: 404 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const sourceAttachment = await saveAudioFile({
-      projectId,
-      fileName: file.name || "audio",
-      contentType,
-      buffer,
-      senderName: caller.displayName || caller.email
-    });
-    const transcript = await transcribeAudioFile({
-      fileName: file.name || `audio.${getAudioExtension(file.name, contentType)}`,
-      contentType,
-      buffer
-    });
+    if (!canAccessProject(caller, projectSnapshot.data())) {
+      return NextResponse.json({ ok: false, error: "沒有建立此案件語音備忘錄的權限。" }, { status: 403 });
+    }
+
+    const preparedFiles = await Promise.all(
+      audioFiles.map(async (audioFile, index) => {
+        if (audioFile.size > MAX_AUDIO_SIZE_BYTES) {
+          throw new Error(`${audioFile.name || `audio segment ${index + 1}`} exceeds 25MB.`);
+        }
+
+        const contentType = audioFile.type || inferAudioDraftContentType(audioFile.name);
+        if (!isAllowedAudioContentType(contentType)) {
+          throw new Error(`${audioFile.name || `audio segment ${index + 1}`} is not a supported audio format.`);
+        }
+
+        const buffer = Buffer.from(await audioFile.arrayBuffer());
+        const fileName = audioFile.name || `audio-${index + 1}.${getAudioDraftExtension(audioFile.name, contentType)}`;
+        const sourceAttachment = await saveAudioFile({
+          projectId,
+          fileName,
+          contentType,
+          buffer,
+          senderName: caller.displayName || caller.email
+        });
+
+        return {
+          fileName,
+          contentType,
+          buffer,
+          sourceAttachment
+        };
+      })
+    );
+
+    const transcription = await transcribeAudioSegments(
+      preparedFiles.map(
+        (item): AudioTranscriptionInput => ({
+          fileName: item.fileName,
+          contentType: item.contentType,
+          buffer: item.buffer
+        })
+      )
+    );
+    const transcript = transcription.transcript;
+    const sourceAttachments = preparedFiles.map((item) => item.sourceAttachment);
+    const sourceAttachment = sourceAttachments[0];
+    if (!sourceAttachment) {
+      return NextResponse.json({ ok: false, error: "No audio attachment was saved." }, { status: 500 });
+    }
     const analysis = await analyzeTranscript({
       transcript,
       projectName: String(projectSnapshot.data()?.name ?? ""),
       clientName: String(projectSnapshot.data()?.clientName ?? "")
     });
-    const content = buildMemoContentFromAnalysis(analysis, transcript);
+    const content = buildMemoContentFromAudioDraft(analysis, transcript);
     const draftRef = await getAdminDb().collection(AUDIO_DRAFTS_COLLECTION).add({
       projectId,
       title: analysis.title || "語音會議紀錄",
@@ -125,8 +156,16 @@ export async function POST(request: Request) {
       payments: analysis.payments,
       invoices: analysis.invoices,
       risks: analysis.risks,
+      speakerNotes: analysis.speakerNotes,
       sourceType: "audio",
       sourceAttachment: toFirestoreAttachment(sourceAttachment),
+      sourceAttachments: sourceAttachments.map(toFirestoreAttachment),
+      audioSegmentCount: sourceAttachments.length,
+      transcriptionSegments: transcription.segments.map((segment) => ({
+        index: segment.index,
+        fileName: segment.fileName,
+        transcript: segment.transcript
+      })),
       reviewStatus: "pending",
       createdBy: caller.displayName || caller.email,
       createdByUid: caller.uid,
@@ -142,6 +181,14 @@ export async function POST(request: Request) {
   }
 }
 
+function getAudioFilesFromFormData(formData: FormData) {
+  const files = formData.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
+  const legacyFile = formData.get("file");
+
+  if (files.length) return files;
+  return legacyFile instanceof File && legacyFile.size > 0 ? [legacyFile] : [];
+}
+
 async function saveAudioFile(input: {
   projectId: string;
   fileName: string;
@@ -151,8 +198,8 @@ async function saveAudioFile(input: {
 }): Promise<MessageAttachment> {
   const messageId = randomUUID();
   const token = randomUUID();
-  const extension = getAudioExtension(input.fileName, input.contentType);
-  const storagePath = `project-memo-audio/${sanitizePathSegment(input.projectId)}/${Date.now()}-${messageId}.${extension}`;
+  const extension = getAudioDraftExtension(input.fileName, input.contentType);
+  const storagePath = `project-memo-audio/${sanitizeAudioDraftPathSegment(input.projectId)}/${Date.now()}-${messageId}.${extension}`;
   const bucket = getAdminStorageBucket();
 
   await bucket.file(storagePath).save(input.buffer, {
@@ -177,135 +224,89 @@ async function saveAudioFile(input: {
   };
 }
 
-async function transcribeAudioFile(input: { fileName: string; contentType: string; buffer: Buffer }) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY 尚未設定，無法進行語音轉文字。");
-
-  const preferredModel = process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe";
-  const models = preferredModel === "whisper-1" ? ["whisper-1"] : [preferredModel, "whisper-1"];
-  let lastError = "語音轉文字失敗。";
-
-  for (const model of models) {
-    const body = new FormData();
-    const bytes = Uint8Array.from(input.buffer);
-    body.append("model", model);
-    body.append("language", "zh");
-    body.append("file", new Blob([bytes], { type: input.contentType }), input.fileName);
-
-    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      },
-      body
-    });
-    const result = (await response.json()) as { text?: string; error?: { message?: string } };
-
-    if (response.ok && result.text?.trim()) return result.text.trim();
-
-    lastError = result.error?.message || `語音轉文字失敗（${response.status}）。`;
-  }
-
-  throw new Error(lastError);
-}
-
 async function analyzeTranscript(input: { transcript: string; projectName: string; clientName: string }): Promise<AudioDraftAnalysis> {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-  if (!apiKey) return buildFallbackAnalysis(input.transcript);
+  if (!apiKey) return buildFallbackAnalysisForAudioDraft(input.transcript);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          "你是室內設計公司的會議紀錄秘書。",
-          "請根據語音逐字稿整理成內部備忘錄草稿，只回 JSON，不要 markdown。",
-          "不要替公司承諾，不要編造逐字稿沒有出現的資訊。",
-          "若沒有相關內容，陣列留空。",
-          "JSON 格式：",
-          '{"title":"30字內標題","summary":"120字內摘要","decisions":["客戶決議"],"changes":["變更事項"],"actionItems":["待辦建議"],"payments":["付款事項"],"invoices":["發票事項"],"risks":["風險提醒"]}',
-          `案件：${input.projectName || "未命名案件"}`,
-          `客戶：${input.clientName || "未填客戶"}`,
-          "",
-          "逐字稿：",
-          input.transcript
-        ].join("\n")
-      })
-    });
-
-    if (!response.ok) return buildFallbackAnalysis(input.transcript);
-
-    const result = (await response.json()) as {
+    const timeoutMs = getConfiguredTimeoutMs(process.env.OPENAI_ANALYSIS_TIMEOUT_MS, DEFAULT_ANALYSIS_TIMEOUT_MS);
+    const { response, result } = await fetchJsonWithTimeout<{
       output_text?: string;
       output?: Array<{ content?: Array<{ text?: string }> }>;
-    };
+    }>(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          input: [
+            "你是室內設計公司的會議紀錄秘書。",
+            "請根據語音逐字稿整理成內部備忘錄草稿，只回 JSON，不要 markdown。",
+            "不要替公司承諾，不要編造逐字稿沒有出現的資訊。",
+            "speakerNotes 是依照逐字稿內容推論的發言角色整理，不是真正聲紋辨識；若角色不明，用「未判斷」。",
+            "若沒有相關內容，陣列留空。",
+            "JSON 格式：",
+            '{"title":"30字內標題","summary":"120字內摘要","decisions":["客戶決議"],"changes":["變更事項"],"actionItems":["待辦建議"],"payments":["付款事項"],"invoices":["發票事項"],"risks":["風險提醒"],"speakerNotes":["客戶：希望改尺寸","設計師：承諾明天提供圖面","工務：提醒木工進場前確認材料"]}',
+            `案件：${input.projectName || "未命名案件"}`,
+            `客戶：${input.clientName || "未填客戶"}`,
+            "",
+            "逐字稿：",
+            input.transcript
+          ].join("\n")
+        })
+      },
+      timeoutMs
+    );
+
+    if (!response.ok) return buildFallbackAnalysisForAudioDraft(input.transcript);
+
     const outputText =
       result.output_text ??
       result.output?.flatMap((item) => item.content ?? []).map((content) => content.text ?? "").join("\n") ??
       "";
-    const parsed = JSON.parse(stripJsonFence(outputText)) as Partial<AudioDraftAnalysis>;
+    const parsed = JSON.parse(stripAudioDraftJsonFence(outputText)) as Partial<AudioDraftAnalysis>;
 
     return {
       title: String(parsed.title ?? "").trim() || "語音會議紀錄",
       summary: String(parsed.summary ?? "").trim() || input.transcript.slice(0, 120),
-      decisions: normalizeStringList(parsed.decisions),
-      changes: normalizeStringList(parsed.changes),
-      actionItems: normalizeStringList(parsed.actionItems),
-      payments: normalizeStringList(parsed.payments),
-      invoices: normalizeStringList(parsed.invoices),
-      risks: normalizeStringList(parsed.risks)
+      decisions: normalizeAudioDraftStringList(parsed.decisions),
+      changes: normalizeAudioDraftStringList(parsed.changes),
+      actionItems: normalizeAudioDraftStringList(parsed.actionItems),
+      payments: normalizeAudioDraftStringList(parsed.payments),
+      invoices: normalizeAudioDraftStringList(parsed.invoices),
+      risks: normalizeAudioDraftStringList(parsed.risks),
+      speakerNotes: normalizeAudioDraftStringList(parsed.speakerNotes)
     };
   } catch {
-    return buildFallbackAnalysis(input.transcript);
+    return buildFallbackAnalysisForAudioDraft(input.transcript);
   }
 }
 
-function buildMemoContentFromAnalysis(analysis: AudioDraftAnalysis, transcript: string) {
-  return [
-    "【AI 會議摘要】",
-    analysis.summary || "目前沒有明確摘要。",
-    "",
-    formatSection("客戶決議", analysis.decisions),
-    formatSection("變更事項", analysis.changes),
-    formatSection("待辦建議", analysis.actionItems),
-    formatSection("付款事項", analysis.payments),
-    formatSection("發票事項", analysis.invoices),
-    formatSection("風險提醒", analysis.risks),
-    "【逐字稿】",
-    transcript
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
+async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-function formatSection(title: string, items: string[]) {
-  if (!items.length) return "";
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+    const result = (await response.json()) as T;
 
-  return [`【${title}】`, ...items.map((item) => `- ${item}`), ""].join("\n");
-}
-
-function buildFallbackAnalysis(transcript: string): AudioDraftAnalysis {
-  return {
-    title: "語音會議紀錄",
-    summary: transcript.slice(0, 120),
-    decisions: [],
-    changes: [],
-    actionItems: [],
-    payments: [],
-    invoices: [],
-    risks: []
-  };
+    return { response, result };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function verifyAudioDraftCaller(request: Request): Promise<
-  | { ok: true; uid: string; email: string; displayName: string }
+  | { ok: true; uid: string; email: string; displayName: string; role: string }
   | { ok: false; status: number; error: string }
 > {
   const authorization = request.headers.get("authorization") ?? "";
@@ -322,7 +323,7 @@ async function verifyAudioDraftCaller(request: Request): Promise<
     const role = String(user?.role ?? "");
     const active = user?.active !== false;
 
-    if (!userSnapshot.exists || !active || !["owner", "admin", "staff"].includes(role)) {
+    if (!userSnapshot.exists || !active || !["owner", "admin", "manager", "staff"].includes(role)) {
       return { ok: false, status: 403, error: "沒有使用語音備忘錄草稿的權限。" };
     }
 
@@ -330,11 +331,19 @@ async function verifyAudioDraftCaller(request: Request): Promise<
       ok: true,
       uid: decoded.uid,
       email: String(user?.email ?? decoded.email ?? ""),
-      displayName: String(user?.displayName ?? decoded.displayName ?? "")
+      displayName: String(user?.displayName ?? decoded.displayName ?? ""),
+      role
     };
   } catch {
     return { ok: false, status: 401, error: "登入狀態已失效，請重新登入。" };
   }
+}
+
+function canAccessProject(caller: { uid: string; role: string }, project: Record<string, unknown> | undefined) {
+  if (!project) return false;
+  if (caller.role === "owner" || caller.role === "admin" || caller.role === "manager") return true;
+
+  return Array.isArray(project.memberUserIds) && project.memberUserIds.includes(caller.uid);
 }
 
 type FirebaseLookupResponse = {
@@ -396,14 +405,17 @@ function serializeAudioDraft(id: string, data: FirebaseFirestore.DocumentData) {
     transcript: String(data.transcript ?? ""),
     summary: String(data.summary ?? ""),
     content: String(data.content ?? ""),
-    decisions: normalizeStringList(data.decisions),
-    changes: normalizeStringList(data.changes),
-    actionItems: normalizeStringList(data.actionItems),
-    payments: normalizeStringList(data.payments),
-    invoices: normalizeStringList(data.invoices),
-    risks: normalizeStringList(data.risks),
+    decisions: normalizeAudioDraftStringList(data.decisions),
+    changes: normalizeAudioDraftStringList(data.changes),
+    actionItems: normalizeAudioDraftStringList(data.actionItems),
+    payments: normalizeAudioDraftStringList(data.payments),
+    invoices: normalizeAudioDraftStringList(data.invoices),
+    risks: normalizeAudioDraftStringList(data.risks),
+    speakerNotes: normalizeAudioDraftStringList(data.speakerNotes),
     reviewStatus: String(data.reviewStatus ?? "pending"),
     sourceAttachment: serializeAttachment(data.sourceAttachment),
+    sourceAttachments: serializeAttachments(data.sourceAttachments),
+    audioSegmentCount: Number(data.audioSegmentCount ?? 0),
     approvedMemoId: String(data.approvedMemoId ?? ""),
     createdBy: String(data.createdBy ?? ""),
     reviewedBy: String(data.reviewedBy ?? ""),
@@ -432,6 +444,12 @@ function serializeAttachment(value: unknown): MessageAttachment | null {
   };
 }
 
+function serializeAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value.map(serializeAttachment).filter((attachment): attachment is MessageAttachment => Boolean(attachment));
+}
+
 function toFirestoreAttachment(attachment: MessageAttachment) {
   return {
     ...attachment,
@@ -454,18 +472,6 @@ function timestampToDate(value: unknown) {
   return null;
 }
 
-function normalizeStringList(value: unknown) {
-  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean).slice(0, 12) : [];
-}
-
-function stripJsonFence(value: string) {
-  return value
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
-
 function getFirebaseApiKey() {
   const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "";
 
@@ -474,31 +480,4 @@ function getFirebaseApiKey() {
   }
 
   return apiKey;
-}
-
-function inferAudioContentType(fileName: string) {
-  const extension = fileName.split(".").pop()?.toLowerCase();
-  if (extension === "mp3") return "audio/mpeg";
-  if (extension === "m4a") return "audio/m4a";
-  if (extension === "wav") return "audio/wav";
-  if (extension === "webm") return "audio/webm";
-  if (extension === "mp4") return "video/mp4";
-  if (extension === "ogg") return "audio/ogg";
-  if (extension === "flac") return "audio/flac";
-  return "audio/mpeg";
-}
-
-function getAudioExtension(fileName: string, contentType: string) {
-  const extension = fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (extension) return extension.slice(0, 8);
-  if (contentType.includes("wav")) return "wav";
-  if (contentType.includes("webm")) return "webm";
-  if (contentType.includes("mp4")) return "m4a";
-  if (contentType.includes("ogg")) return "ogg";
-  if (contentType.includes("flac")) return "flac";
-  return "mp3";
-}
-
-function sanitizePathSegment(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120) || "unknown";
 }

@@ -9,6 +9,7 @@ import { userRoleOptions } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { listUserProfiles } from "@/lib/firestore";
+import { getRoleDefinition, roleDefinitions } from "@/lib/permissions";
 import type { UserProfile, UserProfileInput, UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,7 @@ export function UsersClient() {
 
   const activeCount = useMemo(() => users.filter((item) => item.active).length, [users]);
   const adminCount = useMemo(
-    () => users.filter((item) => item.role === "owner" || item.role === "admin").length,
+    () => users.filter((item) => item.role === "owner" || item.role === "admin" || item.role === "manager").length,
     [users]
   );
 
@@ -215,8 +216,10 @@ export function UsersClient() {
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="員工總數" value={users.length} tone="slate" />
         <MetricCard label="啟用中" value={activeCount} tone="teal" />
-        <MetricCard label="管理權限" value={adminCount} tone="indigo" />
+        <MetricCard label="管理 / 主管角色" value={adminCount} tone="indigo" />
       </div>
+
+      <RolePermissionGuide />
 
       <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
         <form className="space-y-4" onSubmit={(event) => void handleCreateUser(event)}>
@@ -258,6 +261,7 @@ export function UsersClient() {
                 value={draft.role}
                 onChange={(role) => setDraft((current) => ({ ...current, role }))}
               />
+              <RoleHelp role={draft.role} />
             </Field>
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -326,10 +330,13 @@ export function UsersClient() {
                       </td>
                       <td className="px-4 py-4">
                         {isEditing ? (
-                          <RoleSelect
-                            value={value.role}
-                            onChange={(role) => setEditValue((current) => current ? { ...current, role } : current)}
-                          />
+                          <div className="min-w-72 space-y-2">
+                            <RoleSelect
+                              value={value.role}
+                              onChange={(role) => setEditValue((current) => current ? { ...current, role } : current)}
+                            />
+                            <RoleHelp role={value.role} compact />
+                          </div>
                         ) : (
                           <RoleBadge role={profile.role} />
                         )}
@@ -460,6 +467,51 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+function RolePermissionGuide() {
+  return (
+    <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+            <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden />
+            角色權限說明
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            設定員工前先看這裡。角色越高，可看到的全公司資料與設定越多；一般員工與檢視者會隱藏敏感選單。
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-5">
+        {roleDefinitions.map((definition) => (
+          <article key={definition.role} className="rounded-lg border border-stone-200 bg-stone-50 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <RoleBadge role={definition.role} />
+              <span className="text-xs text-slate-500">{definition.shortLabel}</span>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">{definition.description}</p>
+            <p className="mt-3 text-xs font-semibold text-slate-500">適合</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">{definition.bestFor}</p>
+            <p className="mt-3 text-xs font-semibold text-emerald-700">可以使用</p>
+            <ul className="mt-1 space-y-1 text-sm leading-6 text-slate-700">
+              {definition.canDo.slice(0, 5).map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs font-semibold text-red-700">不能使用</p>
+            <p className="mt-1 text-sm leading-6 text-slate-600">{definition.cannotDo.join("、")}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
+        目前這是功能權限：會控制選單與頁面能不能進入。下一階段若要管「某員工只能看自己負責的案件檔案」，
+        需要再加案件成員權限。
+      </div>
+    </section>
+  );
+}
+
 function RoleSelect({
   value,
   onChange
@@ -482,11 +534,32 @@ function RoleSelect({
   );
 }
 
+function RoleHelp({ role, compact = false }: { role: UserRole; compact?: boolean }) {
+  const definition = getRoleDefinition(role);
+
+  if (compact) {
+    return (
+      <p className="text-xs leading-5 text-slate-500">
+        {definition.shortLabel}：{definition.description}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm leading-6 text-slate-600">
+      <div className="font-semibold text-slate-800">{definition.shortLabel}</div>
+      <div>{definition.description}</div>
+      <div className="mt-1 text-xs text-slate-500">適合：{definition.bestFor}</div>
+    </div>
+  );
+}
+
 function RoleBadge({ role }: { role: UserRole }) {
   const option = userRoleOptions.find((item) => item.value === role);
   const className = {
     owner: "bg-purple-50 text-purple-700 ring-purple-200",
     admin: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    manager: "bg-amber-50 text-amber-700 ring-amber-200",
     staff: "bg-teal-50 text-teal-700 ring-teal-200",
     viewer: "bg-slate-50 text-slate-700 ring-slate-200"
   }[role];

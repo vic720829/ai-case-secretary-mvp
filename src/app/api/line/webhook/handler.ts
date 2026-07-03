@@ -17,7 +17,14 @@ import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
 import { claimNotificationCooldown } from "@/services/notificationCooldown";
 import { buildIncidentKey, getPrimaryIncidentType, maxRiskLevel } from "@/lib/incidentRules";
+import {
+  getAiDraftImmediateNotificationAudience,
+  getMergedAiTaskImmediateNotificationAudience,
+  shouldNotifyAiDraftsImmediately,
+  shouldNotifyMergedAiTasksImmediately
+} from "@/lib/lineNotificationPolicy";
 import { getAiTaskRiskLevel } from "@/lib/riskRules";
+import { transcribeAudioBuffer } from "@/services/audioTranscription";
 import {
   downloadLineMessageContent,
   getEventGroupId,
@@ -50,6 +57,9 @@ type LineAttachmentForWrite = {
 type SavedLineFile = {
   fileUrl: string;
   errorMessage: string;
+  buffer?: Buffer;
+  contentType?: string;
+  fileName?: string;
 };
 
 type AiTaskDraftCreateResult = {
@@ -293,7 +303,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     if (adminNotification.sent > 0) {
       await markAiDraftsAdminNotified(db, createdDraftIds);
     }
-    const mergedNotification = draftResult.mergedItems.length
+    const mergedNotification = shouldNotifyMergedAiTasksImmediately(draftResult.mergedItems)
       ? await notifyAdminGroupsAboutMergedAiTasks(db, {
           projectId,
           senderName,
@@ -350,6 +360,173 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderRole,
       messageText: event.message.text,
       assistantReply: didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
+      assistantReplyError,
+      fileUrlSaved: Boolean(fileUrl),
+      fileSaveError: savedFile.errorMessage,
+      aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+    };
+  }
+
+  if (messageType === "audio") {
+    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const currentTimestamp = event.timestamp ? Timestamp.fromMillis(event.timestamp) : null;
+    let transcript = "";
+    let audioTranscriptionError = "";
+
+    if (savedFile.buffer && savedFile.contentType) {
+      try {
+        transcript = await transcribeAudioBuffer({
+          fileName: savedFile.fileName || `${lineMessageId || messageRef.id}.m4a`,
+          contentType: savedFile.contentType,
+          buffer: savedFile.buffer
+        });
+      } catch (caught) {
+        audioTranscriptionError = caught instanceof Error ? caught.message : "Unknown audio transcription error";
+      }
+    } else {
+      audioTranscriptionError = savedFile.errorMessage || "LINE audio content was not available for transcription.";
+    }
+
+    if (transcript || audioTranscriptionError) {
+      await messageRef.update({
+        ...(transcript
+          ? {
+              text: transcript,
+              audioTranscript: transcript,
+              audioTranscribedAt: FieldValue.serverTimestamp()
+            }
+          : {}),
+        ...(audioTranscriptionError ? { audioTranscriptionError } : {})
+      });
+    }
+
+    const audioAttachment =
+      fileUrl && transcript
+        ? buildLineAttachment({
+            messageId: messageRef.id,
+            fileUrl,
+            fileType: messageType,
+            senderName,
+            senderRole,
+            text: transcript,
+            createdAt: currentTimestamp
+          })
+        : null;
+    const recentMessages = shouldCreateAiDrafts && transcript ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
+    const suggestions =
+      shouldCreateAiDrafts && transcript ? await analyzeMessageForAiTasks(transcript, senderRole, { recentMessages }) : [];
+    const incidentId =
+      shouldCreateAiDrafts && transcript
+        ? await upsertLineIncident(db, {
+            projectId,
+            groupId,
+            messageId: messageRef.id,
+            lineMessageId,
+            messageType,
+            messageText: transcript,
+            messageTimestamp: currentTimestamp,
+            senderName,
+            senderRole,
+            contextText: getLatestCustomerContextText(recentMessages),
+            suggestions,
+            attachmentMessageIds: audioAttachment ? [audioAttachment.messageId] : []
+          })
+        : "";
+    const draftResult = await createAiTaskDrafts(db, {
+      projectId,
+      groupId,
+      sourceMessageId: messageRef.id,
+      sourceSenderId: event.source?.userId ?? "",
+      senderName,
+      senderRole,
+      suggestions,
+      attachments: audioAttachment ? [audioAttachment] : [],
+      incidentId
+    });
+    const createdDraftIds = draftResult.draftIds;
+    const relationHints = suggestions.length
+      ? await linkPossibleAnsweredFollowups(db, {
+          projectId,
+          groupId,
+          senderName,
+          senderRole,
+          suggestions,
+          createdDraftIds
+        }).catch(() => [])
+      : [];
+    const shouldNotifyAiDraft = shouldNotifyAiDrafts(draftResult, suggestions);
+    const adminNotification = shouldNotifyAiDraft
+      ? await notifyAdminGroupsAboutAiDrafts(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: transcript,
+          suggestions,
+          createdDraftIds,
+          relationHints,
+          attachmentCount: audioAttachment ? 1 : 0
+        })
+      : { sent: 0, failed: 0, groups: 0 };
+    if (adminNotification.sent > 0) {
+      await markAiDraftsAdminNotified(db, createdDraftIds);
+    }
+    const mergedNotification = shouldNotifyMergedAiTasksImmediately(draftResult.mergedItems)
+      ? await notifyAdminGroupsAboutMergedAiTasks(db, {
+          projectId,
+          senderName,
+          senderRole,
+          text: transcript,
+          mergedItems: draftResult.mergedItems
+        })
+      : { sent: 0, failed: 0, groups: 0 };
+    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup && transcript
+      ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
+          groupId,
+          senderName,
+          senderRole,
+          text: transcript,
+          reason: getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+        })
+      : { sent: 0, failed: 0, groups: 0 };
+
+    const canReplyInChat = canReplyInLineChat({
+      groupType: String(lineGroup?.groupType ?? ""),
+      allowAssistantReplies: lineGroup?.allowAssistantReplies,
+      sourceType: event.source?.type
+    });
+    const didReplyQuestion = Boolean(transcript && canReplyInChat && shouldAnswerLineQuestion(transcript));
+    let assistantReplyError = "";
+
+    if (didReplyQuestion) {
+      try {
+        const answer = await answerQuestionFromFirestore(transcript, projectId);
+        const replyResult = await replyLineText(event.replyToken, answer);
+        assistantReplyError = replyResult.ok ? "" : replyResult.errorMessage;
+      } catch (caught) {
+        assistantReplyError = caught instanceof Error ? caught.message : "Unknown LINE assistant reply error";
+      }
+    }
+
+    if (shouldCreateAiDrafts && transcript) {
+      await messageRef.update({ isProcessed: true });
+    }
+
+    return {
+      messageId: messageRef.id,
+      lineMessageId,
+      aiTaskDrafts: suggestions.length,
+      adminNotifications: adminNotification.sent + unboundNotification.sent + mergedNotification.sent,
+      adminNotificationFailures: adminNotification.failed + unboundNotification.failed + mergedNotification.failed,
+      aiDraftsMerged: draftResult.mergedItems.length,
+      aiDraftMergedNotifications: mergedNotification.sent,
+      aiDraftRelations: relationHints.length,
+      projectId,
+      senderName,
+      senderRole,
+      messageText: transcript,
+      audioTranscribed: Boolean(transcript),
+      audioTranscriptionError,
+      assistantReply: didReplyQuestion ? "answer" : "",
       assistantReplyError,
       fileUrlSaved: Boolean(fileUrl),
       fileSaveError: savedFile.errorMessage,
@@ -450,7 +627,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
     if (adminNotification.sent > 0) {
       await markAiDraftsAdminNotified(db, createdDraftIds);
     }
-    const mergedNotification = draftResult.mergedItems.length
+    const mergedNotification = shouldNotifyMergedAiTasksImmediately(draftResult.mergedItems)
       ? await notifyAdminGroupsAboutMergedAiTasks(db, {
           projectId,
           senderName,
@@ -1486,12 +1663,11 @@ function shouldNotifyAiDrafts(
   suggestions: AiTaskSuggestion[],
   reusableDraftData?: FirebaseFirestore.DocumentData
 ) {
-  if (!result.draftIds.length) return false;
-  if (!hasCriticalAiSuggestion(suggestions)) return false;
-  if (result.newDraftIds.length) return true;
-  if (!reusableDraftData) return false;
-
-  return !reusableDraftData.adminNotifiedAt;
+  return shouldNotifyAiDraftsImmediately({
+    result,
+    suggestions,
+    reusableDraftAlreadyNotified: Boolean(reusableDraftData?.adminNotifiedAt)
+  });
 }
 
 async function markAiDraftsAdminNotified(db: FirebaseFirestore.Firestore, draftIds: string[]) {
@@ -1883,17 +2059,11 @@ async function listAssistantAdminGroupIds(
 }
 
 function getAiDraftNotificationAudience(suggestions: AiTaskSuggestion[]): AdminNotificationAudience {
-  return suggestions.some((suggestion) => getAiTaskRiskLevel(suggestion.taskType, suggestion.title) === "critical")
-    ? "critical"
-    : "primary";
+  return getAiDraftImmediateNotificationAudience(suggestions) ?? "primary";
 }
 
 function getMergedAiTaskNotificationAudience(items: AiTaskMergedItem[]): AdminNotificationAudience {
-  return items.some((item) => getAiTaskRiskLevel(item.taskType, item.title) === "critical") ? "critical" : "primary";
-}
-
-function hasCriticalAiSuggestion(suggestions: AiTaskSuggestion[]) {
-  return suggestions.some((suggestion) => getAiTaskRiskLevel(suggestion.taskType, suggestion.title) === "critical");
+  return getMergedAiTaskImmediateNotificationAudience(items) ?? "primary";
 }
 
 function getPrimarySuggestionTaskType(suggestions: AiTaskSuggestion[]): AiTaskType {
@@ -2346,16 +2516,35 @@ async function saveLineMessageFile(
       storagePath
     )}?alt=media&token=${token}`;
 
-    if (!storageError) return { fileUrl: storageUrl, errorMessage: "" };
+    const fileName = `${event.message.id}.${extension}`;
+
+    if (!storageError) {
+      return {
+        fileUrl: storageUrl,
+        errorMessage: "",
+        buffer: content.buffer,
+        contentType: content.contentType,
+        fileName
+      };
+    }
 
     if (messageType === "image") {
       return {
         fileUrl: buildLineMessageContentProxyUrl(event.message.id),
-        errorMessage: `Firebase Storage save failed, using LINE proxy: ${storageError}`
+        errorMessage: `Firebase Storage save failed, using LINE proxy: ${storageError}`,
+        buffer: content.buffer,
+        contentType: content.contentType,
+        fileName
       };
     }
 
-    return { fileUrl: "", errorMessage: `Firebase Storage save failed: ${storageError}` };
+    return {
+      fileUrl: "",
+      errorMessage: `Firebase Storage save failed: ${storageError}`,
+      buffer: content.buffer,
+      contentType: content.contentType,
+      fileName
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown LINE file save error";
 

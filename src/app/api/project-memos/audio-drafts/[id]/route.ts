@@ -1,5 +1,6 @@
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+import { canReviewAudioMemoDraft } from "@/lib/audioMemoDrafts";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import type { MessageAttachment } from "@/lib/types";
 
@@ -38,8 +39,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const draft = draftSnapshot.data() ?? {};
-    if (String(draft.reviewStatus ?? "pending") !== "pending") {
+    if (!canReviewAudioMemoDraft(String(draft.reviewStatus ?? "pending"))) {
       return NextResponse.json({ ok: false, error: "這筆語音草稿已經處理過。" }, { status: 409 });
+    }
+    const projectId = String(draft.projectId ?? "");
+    const projectSnapshot = projectId ? await db.collection("projects").doc(projectId).get() : null;
+
+    if (!projectSnapshot?.exists || !canAccessProject(caller, projectSnapshot.data())) {
+      return NextResponse.json({ ok: false, error: "沒有處理此案件語音草稿的權限。" }, { status: 403 });
     }
 
     if (action === "reject") {
@@ -69,8 +76,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const sourceAttachment = readAttachment(draft.sourceAttachment);
-    const attachments = sourceAttachment ? [sourceAttachment] : [];
-    const memoRef = db.collection("project_memos").doc();
+    const sourceAttachments = readAttachments(draft.sourceAttachments);
+    const attachments = sourceAttachments.length ? sourceAttachments : sourceAttachment ? [sourceAttachment] : [];
+    const memoRef = db.collection("project_memos").doc(id);
     const batch = db.batch();
 
     batch.set(memoRef, {
@@ -111,7 +119,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 async function verifyAudioDraftActionCaller(request: Request): Promise<
-  | { ok: true; uid: string; email: string; displayName: string }
+  | { ok: true; uid: string; email: string; displayName: string; role: string }
   | { ok: false; status: number; error: string }
 > {
   const authorization = request.headers.get("authorization") ?? "";
@@ -128,7 +136,7 @@ async function verifyAudioDraftActionCaller(request: Request): Promise<
     const role = String(user?.role ?? "");
     const active = user?.active !== false;
 
-    if (!userSnapshot.exists || !active || !["owner", "admin", "staff"].includes(role)) {
+    if (!userSnapshot.exists || !active || !["owner", "admin", "manager", "staff"].includes(role)) {
       return { ok: false, status: 403, error: "沒有審核語音備忘錄草稿的權限。" };
     }
 
@@ -136,11 +144,19 @@ async function verifyAudioDraftActionCaller(request: Request): Promise<
       ok: true,
       uid: decoded.uid,
       email: String(user?.email ?? decoded.email ?? ""),
-      displayName: String(user?.displayName ?? decoded.displayName ?? "")
+      displayName: String(user?.displayName ?? decoded.displayName ?? ""),
+      role
     };
   } catch {
     return { ok: false, status: 401, error: "登入狀態已失效，請重新登入。" };
   }
+}
+
+function canAccessProject(caller: { uid: string; role: string }, project: Record<string, unknown> | undefined) {
+  if (!project) return false;
+  if (caller.role === "owner" || caller.role === "admin" || caller.role === "manager") return true;
+
+  return Array.isArray(project.memberUserIds) && project.memberUserIds.includes(caller.uid);
 }
 
 type FirebaseLookupResponse = {
@@ -219,13 +235,29 @@ function readAttachment(value: unknown): MessageAttachment | null {
     senderName: String(attachment.senderName ?? ""),
     senderRole: "internal",
     text: String(attachment.text ?? ""),
-    createdAt: null
+    createdAt: timestampToDate(attachment.createdAt)
   };
+}
+
+function readAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value.map(readAttachment).filter((attachment): attachment is MessageAttachment => Boolean(attachment));
 }
 
 function toFirestoreAttachment(attachment: MessageAttachment) {
   return {
     ...attachment,
-    createdAt: FieldValue.serverTimestamp()
+    createdAt: attachment.createdAt ? Timestamp.fromDate(attachment.createdAt) : FieldValue.serverTimestamp()
   };
+}
+
+function timestampToDate(value: unknown) {
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return value;
+  if (value && typeof value === "object" && "toDate" in value) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+
+  return null;
 }

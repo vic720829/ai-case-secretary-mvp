@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, BrainCircuit, Edit3, Gauge, ImageIcon, MessageSquareText, NotebookText, Plus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, BrainCircuit, Edit3, FolderOpen, Gauge, ImageIcon, MessageSquareText, NotebookText, Plus, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
@@ -19,11 +19,13 @@ import {
   listTasksByProject,
   updateProject
 } from "@/lib/firestore";
+import { canManageProjectMembers } from "@/lib/projectAccess";
+import { canAccessFeature } from "@/lib/permissions";
 import type { Project, ProjectInput, ProjectMemo, Task } from "@/lib/types";
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [memos, setMemos] = useState<ProjectMemo[]>([]);
@@ -55,6 +57,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     await loadData();
     setProjectEditorOpen(false);
   }
+
+  const canEditProject = canManageProjectMembers(profile?.role);
+  const canViewLineMessages = canAccessFeature(profile?.role ?? "", "messages");
+  const canViewAiKnowledge = canAccessFeature(profile?.role ?? "", "riskCenter");
 
   async function handleDeleteProject() {
     await deleteProject(projectId, toAuditActor(user));
@@ -118,38 +124,52 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
               <ArrowLeft className="h-4 w-4" aria-hidden />
               回案件列表
             </SecondaryLink>
-            <Button type="button" variant="secondary" onClick={() => setProjectEditorOpen(true)}>
-              <Edit3 className="h-4 w-4" aria-hidden />
-              編輯案件
-            </Button>
+            {canEditProject ? (
+              <Button type="button" variant="secondary" onClick={() => setProjectEditorOpen(true)}>
+                <Edit3 className="h-4 w-4" aria-hidden />
+                編輯案件
+              </Button>
+            ) : null}
             <SecondaryLink href={`/projects/${projectId}/progress`}>
               <Gauge className="h-4 w-4" aria-hidden />
               工程進度
             </SecondaryLink>
-            <SecondaryLink href={`/projects/${projectId}/messages`}>
-              <MessageSquareText className="h-4 w-4" aria-hidden />
-              LINE 對話
-            </SecondaryLink>
+            {canViewLineMessages ? (
+              <SecondaryLink href={`/projects/${projectId}/messages`}>
+                <MessageSquareText className="h-4 w-4" aria-hidden />
+                LINE 對話
+              </SecondaryLink>
+            ) : null}
             <SecondaryLink href={`/projects/${projectId}/attachments`}>
               <ImageIcon className="h-4 w-4" aria-hidden />
               案件附件
+            </SecondaryLink>
+            <SecondaryLink href={`/projects/${projectId}/documents`}>
+              <FolderOpen className="h-4 w-4" aria-hidden />
+              案件文件
             </SecondaryLink>
             <SecondaryLink href={`/projects/${projectId}/memos`}>
               <NotebookText className="h-4 w-4" aria-hidden />
               案件備忘錄
             </SecondaryLink>
-            <SecondaryLink href={`/projects/${projectId}/memory`}>
-              <BrainCircuit className="h-4 w-4" aria-hidden />
-              案件記憶
-            </SecondaryLink>
-            <SecondaryLink href={`/projects/${projectId}/summary`}>
-              <Sparkles className="h-4 w-4" aria-hidden />
-              AI 案件摘要
-            </SecondaryLink>
-            <ConfirmDeleteButton
-              confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
-              onConfirm={handleDeleteProject}
-            />
+            {canViewAiKnowledge ? (
+              <>
+                <SecondaryLink href={`/projects/${projectId}/memory`}>
+                  <BrainCircuit className="h-4 w-4" aria-hidden />
+                  案件記憶
+                </SecondaryLink>
+                <SecondaryLink href={`/projects/${projectId}/summary`}>
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                  AI 案件摘要
+                </SecondaryLink>
+              </>
+            ) : null}
+            {canEditProject ? (
+              <ConfirmDeleteButton
+                confirmMessage={`確定刪除「${project.name}」？相關待辦也會一起刪除。`}
+                onConfirm={handleDeleteProject}
+              />
+            ) : null}
           </>
         }
       />

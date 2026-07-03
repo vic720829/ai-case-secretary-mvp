@@ -147,7 +147,7 @@ async function assertActiveUser(uid: string) {
     id: snapshot.id,
     email: String(data.email ?? ""),
     displayName: String(data.displayName ?? ""),
-    role: data.role === "owner" || data.role === "admin" || data.role === "staff" || data.role === "viewer"
+    role: data.role === "owner" || data.role === "admin" || data.role === "manager" || data.role === "staff" || data.role === "viewer"
       ? data.role
       : "staff",
     active: data.active !== false,
