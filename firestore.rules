@@ -26,10 +26,6 @@ service cloud.firestore {
       return signedIn() && isActiveUser() && userRole() in roles;
     }
 
-    function canReadOps() {
-      return hasAnyRole(["owner", "admin", "manager", "staff", "viewer"]);
-    }
-
     function canWriteOps() {
       return hasAnyRole(["owner", "admin", "manager", "staff"]);
     }
@@ -66,14 +62,17 @@ service cloud.firestore {
       return projectId is string && projectId != "" && exists(projectPath(projectId));
     }
 
-    function isProjectMember(projectId) {
-      return projectExists(projectId) &&
-        "memberUserIds" in get(projectPath(projectId)).data &&
-        request.auth.uid in get(projectPath(projectId)).data.memberUserIds;
+    function isProjectMemberData(projectData) {
+      return "memberUserIds" in projectData &&
+        request.auth.uid in projectData.memberUserIds;
+    }
+
+    function canReadProjectData(projectData) {
+      return signedIn() && isActiveUser() && (canAccessAllProjects() || isProjectMemberData(projectData));
     }
 
     function canReadProject(projectId) {
-      return signedIn() && isActiveUser() && (canAccessAllProjects() || isProjectMember(projectId));
+      return projectExists(projectId) && canReadProjectData(get(projectPath(projectId)).data);
     }
 
     function canWriteProjectLinkedData(projectId) {
@@ -91,7 +90,7 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
-      allow read: if canReadProject(projectId);
+      allow read: if canReadProjectData(resource.data);
       allow create, update, delete: if canManageProjects();
     }
 
