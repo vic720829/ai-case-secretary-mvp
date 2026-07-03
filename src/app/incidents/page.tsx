@@ -167,6 +167,11 @@ export default function IncidentsPage() {
                       <td className="max-w-md px-4 py-4">
                         <div className="font-semibold text-slate-950">{incident.title || "未命名事件"}</div>
                         <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{incident.summary}</div>
+                        {incident.lastMessageText ? (
+                          <div className="mt-2 line-clamp-2 rounded-md bg-stone-50 px-2 py-1 text-xs leading-5 text-slate-500">
+                            最後 LINE：{incident.lastSenderName || "未知成員"}｜{incident.lastMessageText}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-4 text-slate-600">
                         {project ? (
@@ -183,7 +188,8 @@ export default function IncidentsPage() {
                         <RiskBadge risk={incident.riskLevel} />
                       </td>
                       <td className="px-4 py-4 text-xs leading-5 text-slate-500">
-                        LINE {incident.sourceMessageIds.length} 則
+                        LINE {incident.sourceMessageCount || incident.sourceMessageIds.length} 則
+                        {incident.attachmentMessageIds.length ? ` / 附件 ${incident.attachmentMessageIds.length} 則` : ""}
                         <br />
                         草稿 {incident.aiTaskIds.length} 張 / 待辦 {incident.taskIds.length} 件
                       </td>

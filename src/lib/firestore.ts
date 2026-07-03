@@ -634,6 +634,16 @@ function incidentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Inciden
     source: data.source === "manual" || data.source === "ai" ? data.source : "line",
     sourceMessageIds: readStringArray(data.sourceMessageIds),
     lineMessageIds: readStringArray(data.lineMessageIds),
+    sourceMessageCount: Number(data.sourceMessageCount ?? readStringArray(data.sourceMessageIds).length),
+    messageTypes: readStringArray(data.messageTypes)
+      .filter((type): type is Incident["messageTypes"][number] => type === "text" || type === "image" || type === "audio"),
+    attachmentMessageIds: readStringArray(data.attachmentMessageIds),
+    lastMessageText: data.lastMessageText ?? "",
+    lastSenderName: data.lastSenderName ?? "",
+    lastSenderRole:
+      data.lastSenderRole === "internal" || data.lastSenderRole === "client" || data.lastSenderRole === "vendor"
+        ? data.lastSenderRole
+        : "unknown",
     aiTaskIds: readStringArray(data.aiTaskIds),
     taskIds: readStringArray(data.taskIds),
     firstMessageAt: readTimestamp(data.firstMessageAt),

@@ -1311,10 +1311,13 @@ async function upsertLineIncident(
     status: existing.status === "resolved" || existing.status === "ignored" ? existing.status : "open",
     source: "line",
     sourceMessageIds: FieldValue.arrayUnion(input.messageId),
+    sourceMessageCount: FieldValue.increment(1),
     messageTypes: FieldValue.arrayUnion(input.messageType),
+    lastMessageText: shortText(input.messageText, 500),
     lastMessageAt: messageTime,
     lastSenderName: input.senderName,
     lastSenderRole: input.senderRole,
+    sourcePreservationPolicy: "messages_are_source_of_truth_incidents_are_append_only",
     updatedAt: FieldValue.serverTimestamp()
   };
 

@@ -362,6 +362,12 @@ export type Incident = {
   source: "line" | "manual" | "ai";
   sourceMessageIds: string[];
   lineMessageIds: string[];
+  sourceMessageCount: number;
+  messageTypes: LineMessageType[];
+  attachmentMessageIds: string[];
+  lastMessageText: string;
+  lastSenderName: string;
+  lastSenderRole: LineSenderRole;
   aiTaskIds: string[];
   taskIds: string[];
   firstMessageAt: Date | null;

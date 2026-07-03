@@ -125,6 +125,12 @@ async function generateProjectSummaryWithAi(projectId: string, data: SummarySour
         "JSON 格式：",
         '{"summaryText":"一段 120 字內總摘要","sections":[{"title":"客戶需求整理","items":["..."]}]}',
         `固定 sections title：${summarySectionTitles.join("、")}`,
+        "Source integrity rules:",
+        "- Keep LINE messages as the original source of truth.",
+        "- Incidents are an organizing layer only; never treat them as a replacement for original LINE messages.",
+        "- Use tasks, AI drafts, incidents, memos, project memories, stages, and milestones together.",
+        "- If an incident summarizes several LINE messages, mention the conclusion but preserve uncertainty when original messages are unclear.",
+        "- Write the final answer in Traditional Chinese.",
         "",
         JSON.stringify(compactSummaryData(data))
       ].join("\n")
@@ -233,10 +239,38 @@ function buildSystemProjectSummary(projectId: string, data: SummarySourceData): 
 
 function compactSummaryData(data: SummarySourceData) {
   return {
+    sourceInventory: {
+      lineMessages: data.messages.length,
+      tasks: data.tasks.length,
+      aiTaskDrafts: data.aiTasks.length,
+      incidents: data.incidents.length,
+      memos: data.memos.length,
+      memories: data.memories.length,
+      stages: data.stages.length,
+      milestones: data.milestones.length,
+      sourceRule: "LINE messages are preserved as original records. Incidents only organize and merge related messages."
+    },
     project: pickFields(data.project, ["name", "clientName", "currentStage", "designer", "assistant", "status", "expectedFinishDate"]),
     tasks: data.tasks.slice(0, 80).map((item) => pickFields(item, ["title", "description", "assignee", "dueDate", "status", "source", "riskLevel"])),
     aiTasks: data.aiTasks.slice(0, 80).map((item) => pickFields(item, ["title", "description", "taskType", "status", "assignedTo", "dueDate", "reviewStatus"])),
-    incidents: data.incidents.slice(0, 60).map((item) => pickFields(item, ["title", "summary", "incidentType", "riskLevel", "status", "lastSenderName", "lastSenderRole"])),
+    incidents: data.incidents.slice(0, 60).map((item) =>
+      pickFields(item, [
+        "title",
+        "summary",
+        "incidentType",
+        "riskLevel",
+        "status",
+        "sourceMessageCount",
+        "sourceMessageIds",
+        "lineMessageIds",
+        "lastMessageText",
+        "lastSenderName",
+        "lastSenderRole",
+        "aiTaskIds",
+        "taskIds",
+        "attachmentMessageIds"
+      ])
+    ),
     messages: data.messages.slice(0, 80).map((item) => pickFields(item, ["senderName", "senderRole", "messageType", "text", "timestamp"])),
     memos: data.memos.slice(0, 60).map((item) => pickFields(item, ["title", "content", "createdBy"])),
     memories: data.memories.slice(0, 60).map((item) => pickFields(item, ["title", "content", "memoryType", "importance", "status"])),
