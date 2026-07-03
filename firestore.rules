@@ -72,15 +72,20 @@ service cloud.firestore {
     }
 
     function canReadProject(projectId) {
-      return projectExists(projectId) && canReadProjectData(get(projectPath(projectId)).data);
+      return signedIn() && isActiveUser() && (
+        canAccessAllProjects() ||
+        (projectExists(projectId) && isProjectMemberData(get(projectPath(projectId)).data))
+      );
     }
 
     function canWriteProjectLinkedData(projectId) {
-      return canWriteOps() && canReadProject(projectId);
+      return canWriteOps() &&
+        projectExists(projectId) &&
+        canReadProjectData(get(projectPath(projectId)).data);
     }
 
-    function canReadProjectManagementData(projectId) {
-      return canAccessAllProjects() && canReadProject(projectId);
+    function canReadProjectManagementData() {
+      return canAccessAllProjects();
     }
 
     match /users/{userId} {
@@ -107,13 +112,13 @@ service cloud.firestore {
     }
 
     match /project_memories/{memoryId} {
-      allow read: if canReadProjectManagementData(resource.data.projectId);
+      allow read: if canReadProjectManagementData();
       allow create: if canAccessAllProjects() && canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canAccessAllProjects() && canWriteProjectLinkedData(resource.data.projectId);
     }
 
     match /project_summaries/{summaryId} {
-      allow read: if canReadProjectManagementData(resource.data.projectId);
+      allow read: if canReadProjectManagementData();
       allow create: if canAccessAllProjects() && canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canAccessAllProjects() && canWriteProjectLinkedData(resource.data.projectId);
     }
@@ -158,19 +163,19 @@ service cloud.firestore {
     }
 
     match /messages/{messageId} {
-      allow read: if canReadProjectManagementData(resource.data.projectId);
+      allow read: if canReadProjectManagementData();
       allow create: if canAccessAllProjects() && canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canAccessAllProjects() && canWriteProjectLinkedData(resource.data.projectId);
     }
 
     match /ai_tasks/{aiTaskId} {
-      allow read: if canReadProjectManagementData(resource.data.projectId);
+      allow read: if canReadProjectManagementData();
       allow create: if canAccessAllProjects() && canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canAccessAllProjects() && canWriteProjectLinkedData(resource.data.projectId);
     }
 
     match /incidents/{incidentId} {
-      allow read: if canReadProjectManagementData(resource.data.projectId);
+      allow read: if canReadProjectManagementData();
       allow create: if canAccessAllProjects() && canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canAccessAllProjects() && canWriteProjectLinkedData(resource.data.projectId);
     }
