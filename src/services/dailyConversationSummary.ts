@@ -1,4 +1,4 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebaseAdmin";
 import type { LinePushMessage } from "./line";
 
@@ -30,13 +30,58 @@ export async function buildDailyConversationSummaryMessages(now = new Date()): P
   const fallback = buildFallbackSummary(grouped, projects, yesterday);
   const aiSummary = await buildOpenAiSummary(grouped, projects, yesterday);
   const text = aiSummary || fallback;
+  const lineText = truncate(text, 4800);
+
+  await saveDailyConversationSummary(db, {
+    summaryDate: yesterday,
+    contextStartDate: datePlusDays(today, -7),
+    text: lineText,
+    source: aiSummary ? "ai" : "fallback",
+    projectIds: [...grouped.keys()],
+    messageCount: countMessagesOnDate(grouped, yesterday)
+  });
 
   return [
     {
       type: "text",
-      text: truncate(text, 4800)
+      text: lineText
     }
   ];
+}
+
+async function saveDailyConversationSummary(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    summaryDate: string;
+    contextStartDate: string;
+    text: string;
+    source: "ai" | "fallback";
+    projectIds: string[];
+    messageCount: number;
+  }
+) {
+  const ref = db.collection("daily_summaries").doc(input.summaryDate);
+  const snapshot = await ref.get();
+
+  await ref.set(
+    {
+      ...input,
+      title: "昨日 LINE 對話摘要",
+      projectCount: input.projectIds.length,
+      generatedAt: FieldValue.serverTimestamp(),
+      createdAt: snapshot.exists ? snapshot.data()?.createdAt ?? FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+function countMessagesOnDate(grouped: Map<string, MessageRow[]>, date: string) {
+  return [...grouped.values()].reduce(
+    (total, messages) =>
+      total + messages.filter((message) => message.timestamp && taipeiDateString(message.timestamp) === date).length,
+    0
+  );
 }
 
 async function loadProjects(db: FirebaseFirestore.Firestore) {

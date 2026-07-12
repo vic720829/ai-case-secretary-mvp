@@ -1,6 +1,7 @@
 import type { UserRole } from "./types";
 
 export type FeatureKey =
+  | "dailySummary"
   | "riskCenter"
   | "aiTasks"
   | "incidents"
@@ -87,6 +88,13 @@ export const roleDefinitions: RoleDefinition[] = [
 ];
 
 export const featureDefinitions: FeatureDefinition[] = [
+  {
+    key: "dailySummary",
+    label: "每日摘要",
+    description: "查看每天 08:30 產生的跨案件 LINE 對話摘要。",
+    roles: ["owner", "admin", "manager"],
+    paths: ["/daily-summary"]
+  },
   {
     key: "riskCenter",
     label: "今日風險",

@@ -30,13 +30,15 @@ type ProjectSummary = {
 
 export async function sendDailyAdminReminder() {
   const db = getAdminDb();
-  const adminGroups = await listAdminNotificationGroups(db, "daily");
+  const [adminGroups, messages] = await Promise.all([
+    listAdminNotificationGroups(db, "daily"),
+    buildDailyReminderMessages()
+  ]);
 
   if (!adminGroups.length) {
-    return { ok: true, sent: 0, failed: 0, reason: "No admin LINE groups configured" };
+    return { ok: true, sent: 0, failed: 0, reason: "No admin LINE groups configured; website summary saved" };
   }
 
-  const messages = await buildDailyReminderMessages();
   const results = await Promise.allSettled(adminGroups.map((group) => pushLineMessages(group.groupId, messages)));
 
   return {

@@ -16,6 +16,7 @@ import {
   Link2,
   LogOut,
   MessageSquareText,
+  Newspaper,
   Plus,
   ScrollText,
   UserCog,
@@ -36,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 
 const navItems = [
+  { href: "/daily-summary", label: "每日摘要", icon: Newspaper, feature: "dailySummary" },
   { href: "/risk-center", label: "今日風險", icon: AlertTriangle, feature: "riskCenter" },
   { href: "/ai-tasks", label: "待辦審核", icon: Bot, feature: "aiTasks" },
   { href: "/incidents", label: "事件中心", icon: GitBranch, feature: "incidents" },
