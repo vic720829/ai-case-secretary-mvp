@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import { buildDailyConversationSummaryMessages } from "@/services/dailyConversationSummary";
 
 export const runtime = "nodejs";
@@ -58,8 +58,7 @@ async function verifyCaller(request: Request): Promise<
   }
 
   try {
-    const auth = await getAdminAuth();
-    const decoded = await auth.verifyIdToken(token);
+    const decoded = await lookupFirebaseIdToken(token);
     const userSnapshot = await getAdminDb().collection("users").doc(decoded.uid).get();
     const user = userSnapshot.data();
     const role = String(user?.role ?? "");
@@ -72,6 +71,55 @@ async function verifyCaller(request: Request): Promise<
   } catch {
     return { ok: false, status: 401, error: "登入狀態已失效，請重新登入。" };
   }
+}
+
+type FirebaseLookupResponse = {
+  users?: Array<{
+    localId?: string;
+  }>;
+  error?: {
+    message?: string;
+  };
+};
+
+async function lookupFirebaseIdToken(idToken: string) {
+  const result = await callFirebaseIdentityToolkit<FirebaseLookupResponse>("accounts:lookup", { idToken });
+  const uid = String(result.users?.[0]?.localId ?? "");
+
+  if (!uid) {
+    throw new Error("INVALID_ID_TOKEN");
+  }
+
+  return { uid };
+}
+
+async function callFirebaseIdentityToolkit<T extends { error?: { message?: string } }>(
+  endpoint: string,
+  body: Record<string, unknown>
+) {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "";
+
+  if (!apiKey) {
+    throw new Error("FIREBASE_API_KEY_NOT_CONFIGURED");
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  );
+  const result = (await response.json()) as T;
+
+  if (!response.ok) {
+    throw new Error(result.error?.message || `FIREBASE_AUTH_${response.status}`);
+  }
+
+  return result;
 }
 
 function timestampToIso(value: unknown) {
