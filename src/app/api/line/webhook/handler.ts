@@ -14,6 +14,10 @@ import {
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
 import { trackCommitmentsFromLineMessage } from "@/services/commitmentTracking";
+import {
+  getDailyConversationSummaryText,
+  regenerateDailyConversationSummaryText
+} from "@/services/dailyConversationSummary";
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
 import { claimNotificationCooldown } from "@/services/notificationCooldown";
@@ -344,11 +348,27 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       allowAssistantReplies: lineGroup?.allowAssistantReplies,
       sourceType: event.source?.type
     });
-    const didReplyHelp = canReplyInChat && isLineAssistantHelpCommand(event.message.text);
-    const didReplyQuestion = !didReplyHelp && canReplyInChat && shouldAnswerLineQuestion(event.message.text);
+    const dailySummaryCommand = canReplyInChat ? getDailySummaryCommand(event.message.text) : "";
+    const didReplyDailySummary = Boolean(dailySummaryCommand);
+    const didReplyHelp = !didReplyDailySummary && canReplyInChat && isLineAssistantHelpCommand(event.message.text);
+    const didReplyQuestion =
+      !didReplyDailySummary && !didReplyHelp && canReplyInChat && shouldAnswerLineQuestion(event.message.text);
     let assistantReplyError = "";
 
-    if (didReplyHelp) {
+    if (didReplyDailySummary) {
+      try {
+        const answer =
+          dailySummaryCommand === "regenerate"
+            ? senderRole === "internal"
+              ? await regenerateDailyConversationSummaryText()
+              : "重新產生每日摘要只開放已登記的內部人員使用。"
+            : await getDailyConversationSummaryText();
+        const replyResult = await replyLineText(event.replyToken, answer);
+        assistantReplyError = replyResult.ok ? "" : replyResult.errorMessage;
+      } catch (caught) {
+        assistantReplyError = caught instanceof Error ? caught.message : "Unknown daily summary command error";
+      }
+    } else if (didReplyHelp) {
       const replyResult = await replyLineText(event.replyToken, buildLineAdminHelpText());
       assistantReplyError = replyResult.ok ? "" : replyResult.errorMessage;
     } else if (didReplyQuestion) {
@@ -376,7 +396,7 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       senderName,
       senderRole,
       messageText: event.message.text,
-      assistantReply: didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
+      assistantReply: didReplyDailySummary ? "daily_summary" : didReplyHelp ? "help" : didReplyQuestion ? "answer" : "",
       assistantReplyError,
       fileUrlSaved: Boolean(fileUrl),
       fileSaveError: savedFile.errorMessage,
@@ -2503,6 +2523,20 @@ function normalizeMessageType(type: string): "text" | "image" | "audio" {
   return "text";
 }
 
+function getDailySummaryCommand(text: string): "latest" | "regenerate" | "" {
+  const normalized = text.trim().toLowerCase().replaceAll(" ", "");
+
+  if (["重新產生每日摘要", "重做每日摘要", "更新每日摘要"].includes(normalized)) {
+    return "regenerate";
+  }
+
+  if (["每日摘要", "昨日摘要", "昨天摘要"].includes(normalized)) {
+    return "latest";
+  }
+
+  return "";
+}
+
 function isLineAssistantHelpCommand(text: string) {
   const normalized = text.trim().toLowerCase();
   if (!normalized) return false;
@@ -2540,12 +2574,11 @@ function buildLineAdminHelpText() {
     "我是 AI案件秘書，這個群組是公司後台群，我只會在後台群回覆與發提醒。",
     "",
     "我會幫你注意：",
-    "1. 客戶訊息超過 2 小時未回覆",
-    "2. AI 偵測到的待辦草稿",
-    "3. 今天到期與已逾期待辦",
-    "4. 工程進場提醒",
-    "5. 關鍵節點提醒",
-    "6. 高風險案件、變更、收款、發票事項",
+    "1. 客戶訊息超過 3 小時未回覆",
+    "2. 每天 08:30 的案件對話摘要",
+    "3. 公司對客戶做出的承諾",
+    "4. 工程進場與關鍵節點提醒",
+    "5. 高風險案件與逾期承諾",
     "",
     "看到提醒時可以直接按：",
     "- 已回覆 / 已處理",
@@ -2560,6 +2593,8 @@ function buildLineAdminHelpText() {
     "- 有哪些案件有風險？",
     "- 有哪些款項要收？",
     "- 有哪些發票還沒開？",
+    "- 每日摘要 / 昨日摘要",
+    "- 重新產生每日摘要（限已登記內部人員）",
     "",
     links.length ? links.join("\n") : "",
     "",

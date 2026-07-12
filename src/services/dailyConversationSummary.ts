@@ -49,6 +49,33 @@ export async function buildDailyConversationSummaryMessages(now = new Date()): P
   ];
 }
 
+export async function getDailyConversationSummaryText(now = new Date()) {
+  const summaryDate = datePlusDays(taipeiDateString(now), -1);
+
+  return (
+    (await readDailyConversationSummary(summaryDate)) ||
+    `AI案件秘書｜昨日 LINE 對話摘要\n日期：${summaryDate.replaceAll("-", "/")}\n\n昨日沒有已保存的摘要。若昨日有新對話，可輸入「重新產生每日摘要」。`
+  );
+}
+
+export async function regenerateDailyConversationSummaryText(now = new Date()) {
+  const summaryDate = datePlusDays(taipeiDateString(now), -1);
+
+  await buildDailyConversationSummaryMessages(now);
+
+  return (
+    (await readDailyConversationSummary(summaryDate)) ||
+    `AI案件秘書｜昨日 LINE 對話摘要\n日期：${summaryDate.replaceAll("-", "/")}\n\n昨日沒有新對話，因此沒有摘要可重新產生。`
+  );
+}
+
+async function readDailyConversationSummary(summaryDate: string) {
+  const snapshot = await getAdminDb().collection("daily_summaries").doc(summaryDate).get();
+  if (!snapshot.exists) return "";
+
+  return String(snapshot.data()?.text ?? "").trim();
+}
+
 async function saveDailyConversationSummary(
   db: FirebaseFirestore.Firestore,
   input: {
