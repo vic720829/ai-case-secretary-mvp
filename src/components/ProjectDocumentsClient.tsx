@@ -127,7 +127,7 @@ export function ProjectDocumentsClient({ projectId }: { projectId: string }) {
   }
 
   if (loading) {
-    return <LoadingState label="正在讀取案件文件" />;
+    return <LoadingState label="正在讀取文件入口" />;
   }
 
   if (!project) {
@@ -148,7 +148,7 @@ export function ProjectDocumentsClient({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${project.name} 案件文件`}
+        title={`${project.name} 文件入口`}
         description="集中放置 OneDrive 資料夾、圖面、合約、報價與照片入口。"
         action={
           <SecondaryLink href={`/projects/${project.id}`}>
@@ -178,7 +178,7 @@ export function ProjectDocumentsClient({ projectId }: { projectId: string }) {
           </div>
           <DocumentForm
             value={draft}
-            submitLabel={submitting ? "新增中" : "新增文件"}
+            submitLabel={submitting ? "新增中" : "新增入口"}
             disabled={submitting}
             onChange={setDraft}
             onSubmit={handleCreate}

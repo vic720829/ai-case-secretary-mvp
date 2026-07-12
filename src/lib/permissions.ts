@@ -45,7 +45,7 @@ export const roleDefinitions: RoleDefinition[] = [
     shortLabel: "最高權限",
     description: "公司負責人或系統最高管理者。可以看全部資料、管理員工、系統設定與敏感紀錄。",
     bestFor: "老闆、系統最高負責人。",
-    canDo: ["全部案件與待辦", "員工管理", "LINE 設定", "AI 學習", "Webhook / 操作紀錄", "所有摘要與案件記憶"],
+    canDo: ["全部案件與待辦", "員工管理", "LINE 設定", "AI 學習", "Webhook / 操作紀錄", "所有摘要與 AI 案件記憶"],
     cannotDo: ["無"]
   },
   {
@@ -72,7 +72,7 @@ export const roleDefinitions: RoleDefinition[] = [
     shortLabel: "一般執行人員",
     description: "只保留日常工作需要的功能，並且只看得到被加入的案件、待辦、工期、備忘錄與文件入口。",
     bestFor: "設計助理、一般設計師、工務執行人員。",
-    canDo: ["被加入案件的案件列表", "被加入案件的待辦", "被加入案件的工期與月曆", "提醒中心", "案件文件入口"],
+    canDo: ["被加入案件的案件列表", "被加入案件的待辦", "被加入案件的工期與月曆", "提醒中心", "文件入口"],
     cannotDo: ["今日風險總覽", "待辦審核", "事件中心", "LINE 設定與對話", "員工管理", "AI 學習", "系統紀錄"]
   },
   {
@@ -81,7 +81,7 @@ export const roleDefinitions: RoleDefinition[] = [
     shortLabel: "只讀檢視",
     description: "只能查看被加入的案件與工期資料，不可新增、修改或刪除。",
     bestFor: "只需要查看進度的人、短期協作人員。",
-    canDo: ["被加入案件的案件列表", "被加入案件的工期總表", "案件文件入口"],
+    canDo: ["被加入案件的案件列表", "被加入案件的工期總表", "文件入口"],
     cannotDo: ["新增 / 修改 / 刪除資料", "LINE 對話", "AI 審核", "員工與系統設定"]
   }
 ];

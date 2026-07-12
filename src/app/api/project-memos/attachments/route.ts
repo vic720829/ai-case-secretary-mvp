@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     if (!canAccessProject(caller, projectSnapshot.data())) {
-      return NextResponse.json({ ok: false, error: "沒有存取此案件附件的權限。" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "沒有存取此備忘錄附件的權限。" }, { status: 403 });
     }
 
     const uploaded: MessageAttachment[] = [];

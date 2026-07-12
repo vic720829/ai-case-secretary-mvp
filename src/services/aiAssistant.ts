@@ -711,9 +711,9 @@ function summarizeProjectMemories(data: AssistantData, projectId: string) {
   const memories = getActiveProjectMemories(data, projectId).slice(0, 4);
   if (!memories.length) return "";
 
-  return ["案件記憶：", ...memories.map((memory) => `- ${memory.title}：${shortText(memory.content, 60)}`)].join("\n");
+  return ["AI 案件記憶：", ...memories.map((memory) => `- ${memory.title}：${shortText(memory.content, 60)}`)].join("\n");
 
-  return ["案件記憶：", ...memories.map((memory) => `- ${memory.title}：${shortText(memory.content, 60)}`)].join("\n");
+  return ["AI 案件記憶：", ...memories.map((memory) => `- ${memory.title}：${shortText(memory.content, 60)}`)].join("\n");
 }
 
 function getActiveProjectMemories(data: AssistantData, projectId: string) {

@@ -13,6 +13,7 @@ import {
 } from "@/services/aiTasks";
 import { answerQuestionFromFirestore, shouldAnswerLineQuestion } from "@/services/aiAssistant";
 import { buildAiDraftReviewLineMessages } from "@/services/aiDraftReviewLineMessages";
+import { trackCommitmentsFromLineMessage } from "@/services/commitmentTracking";
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
 import { claimNotificationCooldown } from "@/services/notificationCooldown";
@@ -222,8 +223,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
   });
 
   if (messageType === "text" && event.message.text) {
-    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
-    const recentMessages = shouldCreateAiDrafts ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
+    const shouldAnalyzeProjectConversation = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldCreateAiDrafts = false;
+    const shouldTrackCommitments = shouldAnalyzeProjectConversation && senderRole === "internal";
+    const recentMessages = shouldTrackCommitments ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
     const nearbyAttachments = shouldCreateAiDrafts
       ? await loadRecentImageAttachments(db, {
           groupId,
@@ -312,7 +315,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           mergedItems: draftResult.mergedItems
         })
       : { sent: 0, failed: 0, groups: 0 };
-    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
+    const shouldNotifyUnboundLine = !isAdminGroup && (!lineGroup || !projectId);
+    const unboundNotification = shouldNotifyUnboundLine
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
           senderName,
@@ -321,6 +325,19 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           reason: getAiSkippedReason(lineGroup, projectId, isAdminGroup)
         })
       : { sent: 0, failed: 0, groups: 0 };
+    const commitmentResult = shouldTrackCommitments
+      ? await trackCommitmentsFromLineMessage(db, {
+          projectId,
+          groupId,
+          sourceMessageId: messageRef.id,
+          sourceLineMessageId: lineMessageId,
+          sourceSenderId: event.source?.userId ?? "",
+          senderName,
+          senderRole,
+          text: event.message.text,
+          recentMessages
+        })
+      : { tracked: 0, keys: [] };
 
     const canReplyInChat = canReplyInLineChat({
       groupType: String(lineGroup?.groupType ?? ""),
@@ -363,12 +380,18 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       assistantReplyError,
       fileUrlSaved: Boolean(fileUrl),
       fileSaveError: savedFile.errorMessage,
-      aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+      commitmentsTracked: commitmentResult.tracked,
+      aiSkippedReason: shouldCreateAiDrafts
+        ? ""
+        : shouldAnalyzeProjectConversation
+          ? "低干擾模式：一般對話不建立 AI 草稿"
+          : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
 
   if (messageType === "audio") {
-    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldAnalyzeProjectConversation = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldCreateAiDrafts = false;
     const currentTimestamp = event.timestamp ? Timestamp.fromMillis(event.timestamp) : null;
     let transcript = "";
     let audioTranscriptionError = "";
@@ -412,7 +435,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
             createdAt: currentTimestamp
           })
         : null;
-    const recentMessages = shouldCreateAiDrafts && transcript ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
+    const shouldTrackCommitments = shouldAnalyzeProjectConversation && senderRole === "internal" && Boolean(transcript);
+    const recentMessages = shouldTrackCommitments ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
     const suggestions =
       shouldCreateAiDrafts && transcript ? await analyzeMessageForAiTasks(transcript, senderRole, { recentMessages }) : [];
     const incidentId =
@@ -479,7 +503,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           mergedItems: draftResult.mergedItems
         })
       : { sent: 0, failed: 0, groups: 0 };
-    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup && transcript
+    const shouldNotifyUnboundLine = !isAdminGroup && (!lineGroup || !projectId);
+    const unboundNotification = shouldNotifyUnboundLine && transcript
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
           senderName,
@@ -488,6 +513,19 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           reason: getAiSkippedReason(lineGroup, projectId, isAdminGroup)
         })
       : { sent: 0, failed: 0, groups: 0 };
+    const commitmentResult = shouldTrackCommitments
+      ? await trackCommitmentsFromLineMessage(db, {
+          projectId,
+          groupId,
+          sourceMessageId: messageRef.id,
+          sourceLineMessageId: lineMessageId,
+          sourceSenderId: event.source?.userId ?? "",
+          senderName,
+          senderRole,
+          text: transcript,
+          recentMessages
+        })
+      : { tracked: 0, keys: [] };
 
     const canReplyInChat = canReplyInLineChat({
       groupType: String(lineGroup?.groupType ?? ""),
@@ -530,12 +568,18 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       assistantReplyError,
       fileUrlSaved: Boolean(fileUrl),
       fileSaveError: savedFile.errorMessage,
-      aiSkippedReason: shouldCreateAiDrafts ? "" : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
+      commitmentsTracked: commitmentResult.tracked,
+      aiSkippedReason: shouldCreateAiDrafts
+        ? ""
+        : shouldAnalyzeProjectConversation
+          ? "低干擾模式：一般對話不建立 AI 草稿"
+          : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
 
   if (messageType === "image" && fileUrl) {
-    const shouldCreateAiDrafts = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldAnalyzeProjectConversation = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldCreateAiDrafts = false;
     const currentTimestamp = event.timestamp ? Timestamp.fromMillis(event.timestamp) : null;
     const nearbyText = shouldCreateAiDrafts
       ? await loadRecentTextForImage(db, {
@@ -636,7 +680,8 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
           mergedItems: draftResult.mergedItems
         })
       : { sent: 0, failed: 0, groups: 0 };
-    const unboundNotification = !shouldCreateAiDrafts && !isAdminGroup
+    const shouldNotifyUnboundLine = !isAdminGroup && (!lineGroup || !projectId);
+    const unboundNotification = shouldNotifyUnboundLine
       ? await notifyAdminGroupsAboutUnboundLineMessage(db, {
           groupId,
           senderName,
@@ -665,7 +710,12 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       aiDraftMerged: Boolean(pendingImageDraft),
       attachmentCount: attachments.length,
       fileUrlSaved: Boolean(fileUrl),
-      fileSaveError: savedFile.errorMessage
+      fileSaveError: savedFile.errorMessage,
+      aiSkippedReason: shouldCreateAiDrafts
+        ? ""
+        : shouldAnalyzeProjectConversation
+          ? "低干擾模式：一般對話不建立 AI 草稿"
+          : getAiSkippedReason(lineGroup, projectId, isAdminGroup)
     };
   }
 
@@ -688,6 +738,7 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
     "snooze_ai_followup",
     "confirm_reminder",
     "snooze_reminder",
+    "cancel_reminder",
     "keep_reminder"
   ];
   if (!supportedActions.includes(action)) {
@@ -761,6 +812,24 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
       return { status: "snoozed" as const, title, snoozedUntil };
     }
 
+    if (action === "cancel_reminder") {
+      transaction.set(
+        reminderRef,
+        {
+          status: "confirmed",
+          confirmedBy: senderName,
+          confirmedAt: FieldValue.serverTimestamp(),
+          snoozedUntil: FieldValue.delete(),
+          lastAction: "cancelled_tracking",
+          actionBy: senderName,
+          updatedAt: FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      return { status: "cancelled" as const, title };
+    }
+
     transaction.set(
       reminderRef,
       {
@@ -811,6 +880,19 @@ async function handleLinePostback(db: FirebaseFirestore.Firestore, event: LineWe
     });
     await replyLineText(event.replyToken, `已延後提醒：${result.title}\n下次提醒日：${result.snoozedUntil.replaceAll("-", "/")}`);
     return { ok: true, action, key, actionBy: senderName, snoozedUntil: result.snoozedUntil, messageText: result.title };
+  }
+
+  if (result.status === "cancelled") {
+    await safeRecordAiFeedbackEvent(db, {
+      action: "cancel_reminder",
+      targetType: "reminder",
+      targetId: key,
+      targetTitle: result.title,
+      actorName: senderName,
+      note: "LINE 後台取消追蹤提醒"
+    });
+    await replyLineText(event.replyToken, `已取消追蹤：${result.title}\n其他後台群再按按鈕不會覆蓋這次結果。`);
+    return { ok: true, action, key, actionBy: senderName, messageText: result.title };
   }
 
   await safeRecordAiFeedbackEvent(db, {

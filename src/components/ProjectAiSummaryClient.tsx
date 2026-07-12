@@ -112,7 +112,7 @@ export function ProjectAiSummaryClient({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <PageHeader
         title={`${project.name} AI 案件摘要`}
-        description={`${project.clientName} / 整理本案件的 LINE 對話、待辦、事件、備忘錄、案件記憶、工期與關鍵節點。`}
+        description={`${project.clientName} / 整理本案件的 LINE 對話、待辦、事件、備忘錄、AI 案件記憶、工期與關鍵節點。`}
         action={
           <>
             <SecondaryLink href={`/projects/${project.id}`}>
@@ -191,7 +191,7 @@ export function ProjectAiSummaryClient({ projectId }: { projectId: string }) {
       ) : (
         <EmptyState
           title="尚未建立 AI 案件摘要"
-          description="按下重新整理摘要後，系統會讀取這個案件的對話、待辦、事件、備忘錄、案件記憶、工期與關鍵節點，整理成內部摘要。"
+          description="按下重新整理摘要後，系統會讀取這個案件的對話、待辦、事件、備忘錄、AI 案件記憶、工期與關鍵節點，整理成內部摘要。"
           action={
             <Button type="button" onClick={() => void handleRefreshSummary()} disabled={refreshing}>
               <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden />

@@ -215,6 +215,7 @@ export default function RiskCenterPage() {
             value={highRiskProjects.length}
             tone="red"
             href="#high-risk-projects"
+            actionLabel="查看案件"
             icon={<BriefcaseBusiness className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -222,6 +223,7 @@ export default function RiskCenterPage() {
             value={highRiskTasks.length}
             tone="red"
             href="#high-risk-tasks"
+            actionLabel="查看待辦"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -229,6 +231,7 @@ export default function RiskCenterPage() {
             value={overdueTasks.length}
             tone="amber"
             href="#overdue-tasks"
+            actionLabel="查看待辦"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -236,6 +239,7 @@ export default function RiskCenterPage() {
             value={dueTodayTasks.length}
             tone="teal"
             href="#due-today-tasks"
+            actionLabel="查看待辦"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -243,6 +247,7 @@ export default function RiskCenterPage() {
             value={upcomingTasks.length}
             tone="teal"
             href="#upcoming-tasks"
+            actionLabel="查看待辦"
             icon={<CalendarClock className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -250,6 +255,7 @@ export default function RiskCenterPage() {
             value={milestoneWarnings.length}
             tone="amber"
             href="#milestone-warnings"
+            actionLabel="查看關鍵點"
             icon={<Flag className="h-5 w-5" aria-hidden />}
           />
         </div>
@@ -262,6 +268,7 @@ export default function RiskCenterPage() {
             value={customerUnansweredReminders.length}
             tone="red"
             href="#customer-unanswered"
+            actionLabel="處理提醒"
             icon={<MessageSquareWarning className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -269,6 +276,7 @@ export default function RiskCenterPage() {
             value={pendingAiDrafts.length}
             tone="amber"
             href="/ai-tasks"
+            actionLabel="前往審核"
             icon={<Bot className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -276,6 +284,7 @@ export default function RiskCenterPage() {
             value={staleAiDrafts.length}
             tone="red"
             href="#ai-review-risks"
+            actionLabel="前往審核"
             icon={<AlertTriangle className="h-5 w-5" aria-hidden />}
           />
           <RiskStatCard
@@ -283,6 +292,7 @@ export default function RiskCenterPage() {
             value={maybeAnsweredAiDrafts.length}
             tone="teal"
             href="#ai-review-risks"
+            actionLabel="確認狀態"
             icon={<AlertCircle className="h-5 w-5" aria-hidden />}
           />
         </div>
@@ -367,7 +377,7 @@ function AiPendingRiskSection({
             <table className="min-w-full divide-y divide-stone-200 text-sm">
               <thead className="bg-stone-50 text-left text-xs font-semibold uppercase tracking-normal text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">AI 草稿</th>
+                  <th className="px-4 py-3">待審草稿</th>
                   <th className="px-4 py-3">案件</th>
                   <th className="px-4 py-3">風險原因</th>
                   <th className="px-4 py-3">建立時間</th>
@@ -454,13 +464,15 @@ function RiskStatCard({
   value,
   icon,
   tone,
-  href
+  href,
+  actionLabel = "前往處理"
 }: {
   title: string;
   value: number;
   icon: React.ReactNode;
   tone: "red" | "amber" | "teal";
   href?: string;
+  actionLabel?: string;
 }) {
   const toneClass = {
     red: "bg-red-50 text-red-700 ring-red-100",
@@ -474,7 +486,7 @@ function RiskStatCard({
         <div>
           <p className="text-sm font-medium text-slate-500">{title}</p>
           <div className="mt-3 text-3xl font-semibold text-slate-950">{value}</div>
-          {href ? <div className="mt-2 text-xs font-medium text-teal-700">查看項目</div> : null}
+          {href ? <div className="mt-2 text-xs font-medium text-teal-700">{actionLabel}</div> : null}
         </div>
         <div
           className={`flex h-11 w-11 items-center justify-center rounded-md ring-1 ring-inset transition group-hover:scale-105 ${toneClass}`}

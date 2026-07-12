@@ -449,6 +449,7 @@ function actionLabel(action: AiFeedbackAction) {
     confirm_reminder: "確認提醒",
     snooze_reminder: "稍後提醒",
     keep_reminder: "保留待處理",
+    cancel_reminder: "取消追蹤",
     resolve_ai_followup: "標記已回覆",
     snooze_ai_followup: "明天追蹤",
     complete_task: "完成待辦"

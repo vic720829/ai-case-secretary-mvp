@@ -146,11 +146,11 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           ) : null}
           <SecondaryLink href={`/projects/${projectId}/attachments`}>
             <ImageIcon className="h-4 w-4" aria-hidden />
-            案件附件
+            LINE 附件
           </SecondaryLink>
           <SecondaryLink href={`/projects/${projectId}/documents`}>
             <FolderOpen className="h-4 w-4" aria-hidden />
-            案件文件
+            文件入口
           </SecondaryLink>
           <SecondaryLink href={`/projects/${projectId}/memos`}>
             <NotebookText className="h-4 w-4" aria-hidden />
@@ -160,7 +160,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             <>
               <SecondaryLink href={`/projects/${projectId}/memory`}>
                 <BrainCircuit className="h-4 w-4" aria-hidden />
-                案件記憶
+                AI 案件記憶
               </SecondaryLink>
               <SecondaryLink href={`/projects/${projectId}/summary`}>
                 <Sparkles className="h-4 w-4" aria-hidden />

@@ -1,8 +1,11 @@
-import { sendAfternoonFollowupReminder } from "../../src/services/workflowReminders";
-
 const handler = async () => {
-  const result = await sendAfternoonFollowupReminder();
-  console.log("Afternoon LINE follow-up result", result);
+  const result = {
+    ok: true,
+    sent: 0,
+    failed: 0,
+    reason: "Afternoon follow-up reminder is disabled. Morning summary and customer unanswered checks remain active."
+  };
+  console.log("Afternoon LINE follow-up skipped", result);
 
   return new Response(JSON.stringify(result), {
     status: 200,

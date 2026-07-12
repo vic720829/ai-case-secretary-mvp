@@ -57,6 +57,31 @@ export async function analyzeMessageForAiTasks(
   return [];
 }
 
+export async function analyzeMessageForCommitments(
+  text: string,
+  senderRole: LineSenderRole = "unknown",
+  context: AiMessageContext = {}
+): Promise<AiTaskSuggestion[]> {
+  const trimmed = text.trim();
+  if (!trimmed || senderRole !== "internal") return [];
+
+  const ruleSuggestions = filterTrackableCommitments(analyzeWithRules(trimmed, senderRole));
+  if (ruleSuggestions.length) {
+    return filterTrackableCommitments(enrichSuggestionsWithContext(ruleSuggestions, trimmed, senderRole, context));
+  }
+
+  const openAiSuggestions = filterTrackableCommitments(await analyzeWithOpenAi(trimmed, senderRole, context));
+  if (openAiSuggestions.length) {
+    return filterTrackableCommitments(enrichSuggestionsWithContext(openAiSuggestions, trimmed, senderRole, context));
+  }
+
+  return [];
+}
+
+function filterTrackableCommitments(suggestions: AiTaskSuggestion[]) {
+  return suggestions.filter((suggestion) => suggestion.taskType === "promise" && Boolean(suggestion.dueDate));
+}
+
 async function analyzeWithOpenAi(
   text: string,
   senderRole: LineSenderRole,

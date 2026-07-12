@@ -118,7 +118,7 @@ async function generateProjectSummaryWithAi(projectId: string, data: SummarySour
       model,
       input: [
         "你是室內設計公司的案件整理秘書。",
-        "請根據同一案件的 LINE 對話、待辦、事件、備忘錄、案件記憶、工期與關鍵節點，整理成內部使用的案件摘要。",
+        "請根據同一案件的 LINE 對話、待辦、事件、備忘錄、AI 案件記憶、工期與關鍵節點，整理成內部使用的案件摘要。",
         "不要編造資料；沒有資料就寫「目前沒有明確紀錄」。",
         "不要寫給客戶看的話術，不要替公司承諾任何事。",
         "請只回 JSON，不要 markdown。",

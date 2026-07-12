@@ -24,6 +24,7 @@ export type ReminderType =
   | "ai_task_pending_review"
   | "customer_followup_unanswered"
   | "customer_message_unanswered"
+  | "commitment_due"
   | "due_today"
   | "overdue"
   | "high_risk";
@@ -50,6 +51,7 @@ export type AiFeedbackAction =
   | "confirm_reminder"
   | "snooze_reminder"
   | "keep_reminder"
+  | "cancel_reminder"
   | "resolve_ai_followup"
   | "snooze_ai_followup"
   | "complete_task";

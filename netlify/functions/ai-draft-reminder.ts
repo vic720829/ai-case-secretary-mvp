@@ -1,9 +1,11 @@
-import type { Config } from "@netlify/functions";
-import { sendPendingAiDraftReviewReminders } from "../../src/services/aiDraftReminder";
-
 const handler = async () => {
-  const result = await sendPendingAiDraftReviewReminders();
-  console.log("Pending AI draft reminder result", result);
+  const result = {
+    ok: true,
+    sent: 0,
+    failed: 0,
+    reason: "Pending AI draft reminder is disabled in low-noise LINE mode."
+  };
+  console.log("Pending AI draft reminder skipped", result);
 
   return new Response(JSON.stringify(result), {
     status: 200,
@@ -14,7 +16,3 @@ const handler = async () => {
 };
 
 export default handler;
-
-export const config: Config = {
-  schedule: "*/10 * * * *"
-};

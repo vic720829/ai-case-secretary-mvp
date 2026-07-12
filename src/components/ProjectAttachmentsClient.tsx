@@ -58,7 +58,7 @@ export function ProjectAttachmentsClient({ projectId }: { projectId: string }) {
   }, [tasks]);
 
   if (loading) {
-    return <LoadingState label="正在讀取案件附件" />;
+    return <LoadingState label="正在讀取 LINE 附件" />;
   }
 
   if (!project) {
@@ -79,8 +79,8 @@ export function ProjectAttachmentsClient({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${project.name} 案件附件`}
-        description={`${project.clientName} / 集中查看 LINE 圖片、照片證據與已掛待辦。`}
+        title={`${project.name} LINE 附件`}
+        description={`${project.clientName} / 集中查看從 LINE 傳進來的圖片、照片證據與已掛待辦。`}
         action={
           <SecondaryLink href={`/projects/${project.id}`}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -144,7 +144,7 @@ export function ProjectAttachmentsClient({ projectId }: { projectId: string }) {
             })}
           </div>
         ) : (
-          <EmptyState title="此案件尚無圖片附件" description="客戶或團隊在 LINE 傳送圖片後，會集中顯示在這裡。" />
+          <EmptyState title="此案件尚無 LINE 附件" description="客戶或團隊在 LINE 傳送圖片後，會集中顯示在這裡。" />
         )}
       </section>
     </div>

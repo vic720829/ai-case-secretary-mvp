@@ -93,7 +93,7 @@ export function ProjectMemoryClient({ projectId }: { projectId: string }) {
       setMemoryType("permanent");
       setImportance("normal");
       setExpiresAt("");
-      setSuccessMessage(`已新增案件記憶：${nextTitle}`);
+      setSuccessMessage(`已新增 AI 案件記憶：${nextTitle}`);
       await loadData();
     } catch (caught) {
       setError(getReadableError(caught));
@@ -113,7 +113,7 @@ export function ProjectMemoryClient({ projectId }: { projectId: string }) {
   }
 
   if (loading) {
-    return <LoadingState label="讀取案件記憶中" />;
+    return <LoadingState label="讀取 AI 案件記憶中" />;
   }
 
   if (!project) {
@@ -134,7 +134,7 @@ export function ProjectMemoryClient({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${project.name} 案件記憶`}
+        title={`${project.name} AI 案件記憶`}
         description={`${project.clientName} / 給 AI 之後判斷案件背景用，分成永久記憶與暫時記憶。`}
         action={
           <SecondaryLink href={`/projects/${project.id}`}>
@@ -163,7 +163,7 @@ export function ProjectMemoryClient({ projectId }: { projectId: string }) {
             <BrainCircuit className="h-5 w-5" aria-hidden />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">新增案件記憶</h2>
+            <h2 className="text-lg font-semibold text-slate-950">新增 AI 案件記憶</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
               永久記憶適合放客戶偏好、已確認變更、長期規則；暫時記憶適合放近期要追蹤、到期後不需要一直參考的事項。
             </p>
@@ -245,7 +245,7 @@ export function ProjectMemoryClient({ projectId }: { projectId: string }) {
       </section>
 
       <MemorySection
-        title="有效案件記憶"
+        title="有效 AI 案件記憶"
         description="AI 之後判斷案件背景時，會優先參考這些記憶。"
         memories={activeMemories}
         onArchive={handleArchive}
@@ -339,7 +339,7 @@ function MemorySection({
                   ) : null}
                   <ConfirmDeleteButton
                     label="刪除"
-                    confirmMessage={`確定刪除案件記憶「${memory.title}」？`}
+                    confirmMessage={`確定刪除 AI 案件記憶「${memory.title}」？`}
                     onConfirm={() => onDelete(memory)}
                   />
                 </div>
@@ -348,7 +348,7 @@ function MemorySection({
           ))}
         </div>
       ) : (
-        <EmptyState title="目前沒有案件記憶" description="新增後，AI 之後可以把這些內容當成案件背景。" />
+        <EmptyState title="目前沒有 AI 案件記憶" description="新增後，AI 之後可以把這些內容當成案件背景。" />
       )}
     </section>
   );
