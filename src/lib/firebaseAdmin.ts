@@ -70,3 +70,15 @@ export async function getAdminAuth() {
   const { getAuth } = await import("firebase-admin/auth");
   return getAuth();
 }
+
+export async function getGoogleCloudAccessToken() {
+  if (!getApps().length) {
+    getAdminDb();
+  }
+
+  const credential = getApps()[0]?.options.credential;
+  if (!credential) throw new Error("Firebase Admin credential 尚未設定。");
+  const token = await credential.getAccessToken();
+  if (!token.access_token) throw new Error("無法取得 Google Cloud access token。");
+  return token.access_token;
+}

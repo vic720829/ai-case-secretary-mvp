@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, BrainCircuit, Edit3, FolderOpen, Gauge, ImageIcon, MessageSquareText, NotebookText, Plus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, BrainCircuit, Edit3, FolderOpen, Gauge, ImageIcon, MessageSquareText, NotebookText, Plus, ScanSearch, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
@@ -151,6 +151,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           <SecondaryLink href={`/projects/${projectId}/documents`}>
             <FolderOpen className="h-4 w-4" aria-hidden />
             文件入口
+          </SecondaryLink>
+          <SecondaryLink href={`/projects/${projectId}/drawing-reviews`}>
+            <ScanSearch className="h-4 w-4" aria-hidden />
+            審圖日誌
           </SecondaryLink>
           <SecondaryLink href={`/projects/${projectId}/memos`}>
             <NotebookText className="h-4 w-4" aria-hidden />

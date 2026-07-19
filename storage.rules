@@ -1,0 +1,69 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserProfile() {
+      return signedIn() && firestore.exists(userPath());
+    }
+
+    function userData() {
+      return firestore.get(userPath()).data;
+    }
+
+    function isActiveUser() {
+      return hasUserProfile() && userData().active != false;
+    }
+
+    function hasFullProjectAccess() {
+      return isActiveUser() && userData().role in ["owner", "admin", "manager"];
+    }
+
+    function canWriteOps() {
+      return isActiveUser() && userData().role in ["owner", "admin", "manager", "staff"];
+    }
+
+    function canManageFiles() {
+      return isActiveUser() && userData().role in ["owner", "admin"];
+    }
+
+    function projectPath(projectId) {
+      return /databases/(default)/documents/projects/$(projectId);
+    }
+
+    function projectExists(projectId) {
+      return projectId != "" && firestore.exists(projectPath(projectId));
+    }
+
+    function canReadProject(projectId) {
+      return isActiveUser() && projectExists(projectId) && (
+        hasFullProjectAccess() || request.auth.uid in firestore.get(projectPath(projectId)).data.memberUserIds
+      );
+    }
+
+    function canWriteProject(projectId) {
+      return canWriteOps() && canReadProject(projectId);
+    }
+
+    match /drawing-reviews/{projectId}/{reviewId}/source/{fileName} {
+      allow read: if canReadProject(projectId);
+      allow create, update: if canWriteProject(projectId) &&
+        request.resource.size > 0 &&
+        request.resource.size <= 50 * 1024 * 1024 &&
+        request.resource.contentType == "application/pdf";
+      allow delete: if canManageFiles() && canReadProject(projectId);
+    }
+
+    match /drawing-reviews/{projectId}/{reviewId}/report/{fileName} {
+      allow read: if canReadProject(projectId);
+      allow write: if false;
+    }
+  }
+}

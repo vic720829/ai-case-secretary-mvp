@@ -129,6 +129,45 @@ service cloud.firestore {
       allow update, delete: if canWriteProjectLinkedData(resource.data.projectId);
     }
 
+    match /drawing_reviews/{reviewId} {
+      allow read: if canReadProject(resource.data.projectId);
+      allow create: if canWriteProjectLinkedData(request.resource.data.projectId) &&
+        request.resource.data.uploadedBy == request.auth.uid &&
+        request.resource.data.status == "queued" &&
+        request.resource.data.resultStatus == "pending" &&
+        request.resource.data.sourceContentType == "application/pdf" &&
+        request.resource.data.sourceSizeBytes > 0 &&
+        request.resource.data.sourceSizeBytes <= 50 * 1024 * 1024;
+      allow update: if hasAnyRole(["owner", "admin", "manager"]) &&
+        canReadProject(resource.data.projectId) &&
+        request.resource.data.projectId == resource.data.projectId &&
+        request.resource.data.sourceStoragePath == resource.data.sourceStoragePath &&
+        request.resource.data.uploadedBy == resource.data.uploadedBy;
+      allow delete: if canManageSystemSettings() && canReadProject(resource.data.projectId);
+    }
+
+    match /drawing_review_findings/{findingId} {
+      allow read: if canReadProject(resource.data.projectId);
+      allow create: if false;
+      allow update: if hasAnyRole(["owner", "admin", "manager"]) &&
+        canReadProject(resource.data.projectId) &&
+        request.resource.data.projectId == resource.data.projectId &&
+        request.resource.data.reviewId == resource.data.reviewId &&
+        request.resource.data.ruleCode == resource.data.ruleCode &&
+        request.resource.data.severity == resource.data.severity;
+      allow delete: if canManageSystemSettings() && canReadProject(resource.data.projectId);
+    }
+
+    match /drawing_rule_sets/{ruleSetId} {
+      allow read: if signedIn() && isActiveUser();
+      allow create, update, delete: if isOwner();
+    }
+
+    match /drawing_rules/{ruleId} {
+      allow read: if signedIn() && isActiveUser();
+      allow create, update, delete: if isOwner();
+    }
+
     match /projectStages/{stageId} {
       allow read: if canReadProject(resource.data.projectId);
       allow create: if canWriteProjectLinkedData(request.resource.data.projectId);
