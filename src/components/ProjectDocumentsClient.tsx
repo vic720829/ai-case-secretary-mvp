@@ -19,6 +19,7 @@ import type { Project, ProjectDocument, ProjectDocumentInput, ProjectDocumentTyp
 const documentTypeOptions: Array<{ value: ProjectDocumentType; label: string }> = [
   { value: "folder", label: "資料夾" },
   { value: "drawing", label: "圖面" },
+  { value: "drawing_review_report", label: "施工圖審查報告" },
   { value: "contract", label: "合約" },
   { value: "quote", label: "報價" },
   { value: "photo", label: "照片" },

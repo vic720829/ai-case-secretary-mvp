@@ -19,6 +19,7 @@ import {
   Newspaper,
   Plus,
   ScrollText,
+  ScanSearch,
   UserCog,
   UsersRound,
   X
@@ -42,6 +43,7 @@ const navItems = [
   { href: "/ai-tasks", label: "待辦審核", icon: Bot, feature: "aiTasks" },
   { href: "/incidents", label: "事件中心", icon: GitBranch, feature: "incidents" },
   { href: "/reminders", label: "提醒中心", icon: Bell, feature: "reminders" },
+  { href: "/drawing-reviews", label: "審圖中心", icon: ScanSearch, feature: "drawingReviews" },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness, feature: "projects" },
   { href: "/calendar", label: "共享月曆", icon: CalendarDays, feature: "calendar" },
   { href: "/schedule", label: "工期總表", icon: CalendarDays, feature: "schedule" },

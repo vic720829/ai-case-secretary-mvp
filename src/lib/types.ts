@@ -15,7 +15,19 @@ export type IncidentStatus = "open" | "resolved" | "ignored";
 export type ProjectMemoryType = "permanent" | "temporary";
 export type ProjectMemoryStatus = "active" | "archived";
 export type ProjectMemoryImportance = "normal" | "high";
-export type ProjectDocumentType = "folder" | "drawing" | "contract" | "quote" | "photo" | "file" | "other";
+export type ProjectDocumentType = "folder" | "drawing" | "drawing_review_report" | "contract" | "quote" | "photo" | "file" | "other";
+export type DrawingReviewStatus =
+  | "queued"
+  | "extracting"
+  | "analyzing"
+  | "validating"
+  | "cross_checking"
+  | "generating_report"
+  | "completed"
+  | "failed";
+export type DrawingReviewResultStatus = "pending" | "needs_revision" | "needs_confirmation" | "passed" | "unable_to_review";
+export type DrawingFindingSeverity = "fatal" | "warning" | "insufficient" | "passed";
+export type DrawingFindingReviewStatus = "pending" | "confirmed" | "false_positive";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task" | "message";
 export type ReminderPriority = "normal" | "high";
 export type ReminderType =
@@ -181,6 +193,68 @@ export type ProjectDocumentInput = {
 export type ProjectDocument = ProjectDocumentInput & {
   id: string;
   createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type DrawingReviewInput = {
+  projectId: string;
+  projectNameSnapshot: string;
+  sourceFileName: string;
+  sourceStoragePath: string;
+  sourceContentType: "application/pdf";
+  sourceSizeBytes: number;
+  sourceSha256: string;
+  status: DrawingReviewStatus;
+  progress: number;
+  statusMessage: string;
+  resultStatus: DrawingReviewResultStatus;
+  fatalCount: number;
+  warningCount: number;
+  insufficientCount: number;
+  passedCount: number;
+  summaryText: string;
+  ruleSetVersion: string;
+  modelVersion: string;
+  uploadedBy: string;
+  uploadedByName: string;
+  note: string;
+  reportFileName: string;
+  reportStoragePath: string;
+  errorMessage: string;
+};
+
+export type DrawingReview = DrawingReviewInput & {
+  id: string;
+  createdAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type DrawingReviewFindingInput = {
+  reviewId: string;
+  projectId: string;
+  ruleCode: string;
+  severity: DrawingFindingSeverity;
+  pageNumber: number;
+  location: string;
+  title: string;
+  description: string;
+  observedValue: string;
+  expectedValue: string;
+  difference: string;
+  evidence: string;
+  confidence: number;
+  recommendation: string;
+  reviewStatus: DrawingFindingReviewStatus;
+  reviewedBy: string;
+  reviewNote: string;
+};
+
+export type DrawingReviewFinding = DrawingReviewFindingInput & {
+  id: string;
+  createdAt: Date | null;
+  reviewedAt: Date | null;
   updatedAt: Date | null;
 };
 

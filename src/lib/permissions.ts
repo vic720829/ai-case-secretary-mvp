@@ -6,6 +6,7 @@ export type FeatureKey =
   | "aiTasks"
   | "incidents"
   | "reminders"
+  | "drawingReviews"
   | "projects"
   | "calendar"
   | "schedule"
@@ -122,6 +123,13 @@ export const featureDefinitions: FeatureDefinition[] = [
     description: "處理到期、逾期、未回覆與工期提醒。",
     roles: ["owner", "admin", "manager", "staff"],
     paths: ["/reminders"]
+  },
+  {
+    key: "drawingReviews",
+    label: "審圖中心",
+    description: "上傳施工圖、追蹤 AI 審圖進度、查看案件審圖日誌與報告。",
+    roles: ["owner", "admin", "manager", "staff", "viewer"],
+    paths: ["/drawing-reviews"]
   },
   {
     key: "projects",

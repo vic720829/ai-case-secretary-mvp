@@ -408,6 +408,7 @@ function projectDocumentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): 
     documentType:
       data.documentType === "folder" ||
       data.documentType === "drawing" ||
+      data.documentType === "drawing_review_report" ||
       data.documentType === "contract" ||
       data.documentType === "quote" ||
       data.documentType === "photo" ||
