@@ -10,46 +10,36 @@ service firebase.storage {
       return /databases/(default)/documents/users/$(request.auth.uid);
     }
 
-    function hasUserProfile() {
-      return signedIn() && firestore.exists(userPath());
-    }
-
-    function userData() {
-      return firestore.get(userPath()).data;
-    }
-
-    function isActiveUser() {
-      return hasUserProfile() && userData().active != false;
-    }
-
-    function hasFullProjectAccess() {
-      return isActiveUser() && userData().role in ["owner", "admin", "manager"];
-    }
-
-    function canWriteOps() {
-      return isActiveUser() && userData().role in ["owner", "admin", "manager", "staff"];
-    }
-
-    function canManageFiles() {
-      return isActiveUser() && userData().role in ["owner", "admin"];
-    }
-
     function projectPath(projectId) {
       return /databases/(default)/documents/projects/$(projectId);
     }
 
-    function projectExists(projectId) {
-      return projectId != "" && firestore.exists(projectPath(projectId));
-    }
-
     function canReadProject(projectId) {
-      return isActiveUser() && projectExists(projectId) && (
-        hasFullProjectAccess() || request.auth.uid in firestore.get(projectPath(projectId)).data.memberUserIds
+      // Storage Rules may read at most two Firestore documents per evaluation.
+      // Read the user and project exactly once instead of exists() followed by get().
+      let user = firestore.get(userPath()).data;
+      let project = firestore.get(projectPath(projectId)).data;
+      return signedIn() && projectId != "" && user.active != false && (
+        user.role in ["owner", "admin", "manager"] ||
+        ("memberUserIds" in project && request.auth.uid in project.memberUserIds)
       );
     }
 
     function canWriteProject(projectId) {
-      return canWriteOps() && canReadProject(projectId);
+      let user = firestore.get(userPath()).data;
+      let project = firestore.get(projectPath(projectId)).data;
+      return signedIn() && projectId != "" && user.active != false &&
+        user.role in ["owner", "admin", "manager", "staff"] && (
+          user.role in ["owner", "admin", "manager"] ||
+          ("memberUserIds" in project && request.auth.uid in project.memberUserIds)
+        );
+    }
+
+    function canManageProjectFiles(projectId) {
+      let user = firestore.get(userPath()).data;
+      let project = firestore.get(projectPath(projectId)).data;
+      return signedIn() && projectId != "" && user.active != false &&
+        user.role in ["owner", "admin"] && project != null;
     }
 
     match /drawing-reviews/{projectId}/{reviewId}/source/{fileName} {
@@ -58,7 +48,7 @@ service firebase.storage {
         request.resource.size > 0 &&
         request.resource.size <= 50 * 1024 * 1024 &&
         request.resource.contentType == "application/pdf";
-      allow delete: if canManageFiles() && canReadProject(projectId);
+      allow delete: if canManageProjectFiles(projectId);
     }
 
     match /drawing-reviews/{projectId}/{reviewId}/report/{fileName} {
