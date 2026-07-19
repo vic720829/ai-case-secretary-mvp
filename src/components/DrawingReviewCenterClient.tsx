@@ -81,12 +81,14 @@ export function DrawingReviewCenterClient() {
       const response = await fetch(`/api/drawing-reviews/${reviewId}/dispatch`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${await user.getIdToken()}`
+          Authorization: `Bearer ${await user.getIdToken(true)}`
         }
       });
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) {
+      const result = await response.json().catch(() => ({})) as { dispatched?: boolean; error?: string; message?: string };
+      if (!response.ok || result.dispatched === false) {
         setError(result.error || "PDF 已上傳，但背景審圖服務暫時無法啟動；工作已保留，可稍後重試。");
+        setSubmitting(false);
+        return;
       }
 
       router.push(`/drawing-reviews/${reviewId}`);

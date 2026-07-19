@@ -36,7 +36,12 @@ export async function verifyApiCaller(request: Request): Promise<
         role
       }
     };
-  } catch {
+  } catch (caught) {
+    const authError = caught as { code?: unknown; message?: unknown };
+    console.error("Firebase ID token verification failed", {
+      code: typeof authError?.code === "string" ? authError.code : "unknown",
+      message: typeof authError?.message === "string" ? authError.message : "Unknown authentication error"
+    });
     return { ok: false, status: 401, error: "登入狀態已失效，請重新登入。" };
   }
 }

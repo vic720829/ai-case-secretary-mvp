@@ -94,7 +94,7 @@ export function DrawingReviewDetailClient({ reviewId }: { reviewId: string }) {
     setError("");
     try {
       const response = await fetch(`/api/drawing-reviews/${reviewId}/file?kind=${kind}`, {
-        headers: { Authorization: `Bearer ${await user.getIdToken()}` }
+        headers: { Authorization: `Bearer ${await user.getIdToken(true)}` }
       });
       const result = await response.json() as { url?: string; error?: string };
       if (!response.ok || !result.url) throw new Error(result.error || "取得檔案失敗。");
@@ -113,7 +113,7 @@ export function DrawingReviewDetailClient({ reviewId }: { reviewId: string }) {
     try {
       const response = await fetch(`/api/drawing-reviews/${reviewId}/dispatch`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${await user.getIdToken()}` }
+        headers: { Authorization: `Bearer ${await user.getIdToken(true)}` }
       });
       const result = await response.json() as { error?: string; message?: string };
       if (!response.ok) throw new Error(result.error || "背景審圖服務暫時無法啟動。");
