@@ -136,6 +136,9 @@ service cloud.firestore {
         request.resource.data.status == "queued" &&
         request.resource.data.resultStatus == "pending" &&
         request.resource.data.ruleSetVersion == "company-v1.1" &&
+        request.resource.data.projectSummaryStatus == "pending" &&
+        request.resource.data.projectSummarySourceUpdatedAt == "" &&
+        request.resource.data.projectRequirementChecks == [] &&
         request.resource.data.sourceContentType == "application/pdf" &&
         request.resource.data.sourceSizeBytes > 0 &&
         request.resource.data.sourceSizeBytes <= 50 * 1024 * 1024;
@@ -145,8 +148,16 @@ service cloud.firestore {
         request.resource.data.sourceStoragePath == resource.data.sourceStoragePath &&
         request.resource.data.uploadedBy == resource.data.uploadedBy &&
         request.resource.data.ruleSetVersion == resource.data.ruleSetVersion &&
-        request.resource.data.get("ruleSnapshot", []) == resource.data.get("ruleSnapshot", []);
+        request.resource.data.get("ruleSnapshot", []) == resource.data.get("ruleSnapshot", []) &&
+        request.resource.data.get("projectSummaryStatus", "not_included") == resource.data.get("projectSummaryStatus", "not_included") &&
+        request.resource.data.get("projectSummarySourceUpdatedAt", "") == resource.data.get("projectSummarySourceUpdatedAt", "") &&
+        request.resource.data.get("projectRequirementChecks", []) == resource.data.get("projectRequirementChecks", []);
       allow delete: if canManageSystemSettings() && canReadProject(resource.data.projectId);
+    }
+
+    match /drawing_review_contexts/{reviewId} {
+      allow read: if canReadProjectManagementData() && canReadProject(resource.data.projectId);
+      allow create, update, delete: if false;
     }
 
     match /drawing_review_findings/{findingId} {

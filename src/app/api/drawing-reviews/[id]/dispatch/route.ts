@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildDrawingProjectSummarySnapshot } from "@/lib/drawingReviewProjectSummary";
 import { getAdminDb, getGoogleCloudAccessToken } from "@/lib/firebaseAdmin";
 import { canAccessProject, canCreateDrawingReview, verifyApiCaller } from "@/lib/serverAuth";
 
@@ -26,6 +27,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!canAccessProject(auth.caller, projectSnapshot.data())) {
     return NextResponse.json({ ok: false, error: "沒有此案件的審圖權限。" }, { status: 403 });
   }
+
+  const projectId = String(review.projectId ?? "");
+  await database.runTransaction(async (transaction) => {
+    const freshReviewDocument = await transaction.get(reviewRef);
+    const freshReview = freshReviewDocument.data();
+    if (!freshReviewDocument.exists || !freshReview) throw new Error("DRAWING_REVIEW_NOT_FOUND");
+    if (freshReview.projectSummaryStatus === "included" || freshReview.projectSummaryStatus === "missing") return;
+
+    const projectSummaryRef = database.collection("project_summaries").doc(projectId);
+    const projectSummaryDocument = await transaction.get(projectSummaryRef);
+    const projectSummarySnapshot = projectSummaryDocument.exists
+      ? buildDrawingProjectSummarySnapshot(projectSummaryDocument.data())
+      : null;
+    const capturedAt = new Date();
+
+    if (projectSummarySnapshot) {
+      transaction.set(database.collection("drawing_review_contexts").doc(id), {
+        reviewId: id,
+        projectId,
+        projectSummarySnapshot,
+        capturedAt,
+        createdAt: capturedAt
+      });
+    }
+    transaction.update(reviewRef, {
+      projectSummaryStatus: projectSummarySnapshot ? "included" : "missing",
+      projectSummarySourceUpdatedAt: projectSummarySnapshot?.sourceUpdatedAt ?? "",
+      projectRequirementChecks: [],
+      projectSummaryCapturedAt: capturedAt,
+      statusMessage: projectSummarySnapshot
+        ? "已鎖定案件摘要快照，準備進行需求與施工圖交叉審查。"
+        : "此案件尚無已生成摘要，將只依公司規則審圖。",
+      updatedAt: capturedAt
+    });
+  });
 
   const cloudRunJob = process.env.DRAWING_REVIEW_CLOUD_RUN_JOB?.trim();
   const workerUrl = process.env.DRAWING_REVIEW_WORKER_URL?.trim();

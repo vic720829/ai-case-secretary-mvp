@@ -7,6 +7,7 @@ import { EmptyState, ErrorMessage, LoadingState } from "@/components/Ui";
 import { useAuth } from "@/components/AuthProvider";
 import { formatDateTime } from "@/lib/date";
 import {
+  drawingProjectSummaryStatusLabel,
   drawingReviewResultLabel,
   drawingReviewStatusLabel
 } from "@/lib/drawingReviewPresentation";
@@ -67,7 +68,7 @@ export function ProjectDrawingReviewLogClient({ projectId }: { projectId: string
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">第 {reviews.length - index} 次審圖 · {formatDateTime(review.createdAt)}</div>
                   <h2 className="mt-1 flex items-center gap-2 text-lg font-semibold text-slate-950"><FileText className="h-5 w-5 text-teal-700" aria-hidden />{review.sourceFileName}</h2>
-                  <p className="mt-2 text-sm text-slate-600">上傳者：{review.uploadedByName || "—"}　規則：{review.ruleSetVersion || "—"}</p>
+                  <p className="mt-2 text-sm text-slate-600">上傳者：{review.uploadedByName || "—"}　規則：{review.ruleSetVersion || "—"}　案件摘要：{drawingProjectSummaryStatusLabel(review.projectSummaryStatus)}</p>
                 </div>
                 <Link className={secondaryButtonClass} href={`/drawing-reviews/${review.id}`}><ScanSearch className="h-4 w-4" aria-hidden />查看結果</Link>
               </div>

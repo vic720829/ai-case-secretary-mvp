@@ -13,7 +13,7 @@
     "test:ai-review-safety": "node scripts/ai-review-policy.test.mjs",
     "test:audio-memos": "node scripts/audio-memo-drafts.test.mjs",
     "test:line-notification-policy": "node scripts/line-notification-policy.test.mjs",
-    "test:drawing-reviews": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/drawing-review-rules.test.mjs",
+    "test:drawing-reviews": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/drawing-review-rules.test.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/drawing-review-project-summary.test.mjs",
     "sync:drawing-review-rules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/sync-drawing-review-rules.mjs"
   },
   "dependencies": {

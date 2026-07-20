@@ -8,13 +8,15 @@ import { ErrorMessage, LoadingState } from "@/components/Ui";
 import { formatDateTime } from "@/lib/date";
 import {
   drawingFindingReviewLabel,
+  drawingProjectSummaryStatusLabel,
+  drawingRequirementCheckStatusLabel,
   drawingReviewResultLabel,
   drawingReviewStatusLabel,
   drawingSeverityLabel,
   formatFileSize,
   isDrawingReviewRunning
 } from "@/lib/drawingReviewPresentation";
-import type { DrawingFindingReviewStatus, DrawingReview, DrawingReviewFinding } from "@/lib/types";
+import type { DrawingFindingReviewStatus, DrawingRequirementCheck, DrawingReview, DrawingReviewFinding } from "@/lib/types";
 import {
   getDrawingReview,
   listDrawingReviewFindings,
@@ -197,6 +199,7 @@ export function DrawingReviewDetailClient({ reviewId }: { reviewId: string }) {
           <Info label="上傳者" value={review.uploadedByName || "—"} />
           <Info label="審圖日期" value={formatDateTime(review.createdAt)} />
           <Info label="規則版本" value={review.ruleSetVersion || "—"} />
+          <Info label="案件摘要" value={drawingProjectSummaryStatusLabel(review.projectSummaryStatus)} />
           <Info label="AI 模型" value={review.modelVersion || "等待分析"} />
         </dl>
         {review.note ? <div className="mt-4 rounded-md bg-stone-50 px-3 py-2 text-sm text-slate-700">圖面備註：{review.note}</div> : null}
@@ -208,6 +211,35 @@ export function DrawingReviewDetailClient({ reviewId }: { reviewId: string }) {
           <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{review.summaryText}</p>
         </section>
       ) : null}
+
+      <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel print:shadow-none">
+        <h2 className="text-lg font-semibold text-slate-950">案件摘要需求核對</h2>
+        {review.projectSummaryStatus === "included" ? (
+          <>
+            <p className="mt-2 text-sm text-slate-600">
+              本次只使用建立審圖時鎖定的案件摘要快照
+              {review.projectSummarySourceUpdatedAt ? `（摘要更新時間：${formatDateTime(new Date(review.projectSummarySourceUpdatedAt))}）` : ""}，不重新讀取 LINE 訊息。
+            </p>
+            {review.projectRequirementChecks.length ? (
+              <div className="mt-4 space-y-3">
+                {review.projectRequirementChecks.map((check, index) => <RequirementCheckCard key={`${check.requirement}-${index}`} check={check} />)}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-md bg-stone-50 px-3 py-3 text-sm text-slate-600">
+                {review.status === "completed" ? "案件摘要中沒有辨識出可由本次施工圖核對的需求。" : "完成圖面分析後會顯示客戶需求核對結果。"}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mt-3 rounded-md bg-stone-50 px-3 py-3 text-sm text-slate-600">
+            {review.projectSummaryStatus === "missing"
+              ? "建立本次審圖時，案件尚無已生成摘要；本次只依公司規則審查。"
+              : review.projectSummaryStatus === "not_included"
+                ? "本審圖建立於案件摘要核對功能啟用前，未使用案件摘要。"
+                : "案件摘要仍在準備中。"}
+          </p>
+        )}
+      </section>
 
       <section className="space-y-5">
         <h2 className="text-lg font-semibold text-slate-950">審查內容結果</h2>
@@ -247,6 +279,29 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: "r
 
 function Info({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-slate-500">{label}</dt><dd className="mt-1 break-words font-medium text-slate-900">{value}</dd></div>;
+}
+
+function RequirementCheckCard({ check }: { check: DrawingRequirementCheck }) {
+  const tones: Record<DrawingRequirementCheck["status"], string> = {
+    matched: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    conflict: "border-red-200 bg-red-50 text-red-800",
+    suspected_missing: "border-amber-200 bg-amber-50 text-amber-800",
+    unable_to_confirm: "border-slate-200 bg-slate-50 text-slate-700",
+    out_of_scope: "border-stone-200 bg-stone-50 text-stone-700"
+  };
+  return (
+    <article className="rounded-md border border-stone-200 p-4 print:break-inside-avoid">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xs text-slate-500">{check.sourceSection || "案件摘要"}{check.pageNumber ? ` · P${check.pageNumber}` : ""}{check.location ? ` · ${check.location}` : ""}</div>
+          <h3 className="mt-1 font-semibold text-slate-950">{check.requirement}</h3>
+        </div>
+        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${tones[check.status]}`}>{drawingRequirementCheckStatusLabel(check.status)}</span>
+      </div>
+      {check.evidence ? <p className="mt-3 text-sm leading-6 text-slate-700">圖面依據：{check.evidence}</p> : null}
+      {check.recommendation ? <p className="mt-2 text-sm leading-6 text-teal-800">建議：{check.recommendation}</p> : null}
+    </article>
+  );
 }
 
 function FindingCard({ finding, canReview, saving, note, onNoteChange, onReview }: { finding: DrawingReviewFinding; canReview: boolean; saving: boolean; note: string; onNoteChange: (value: string) => void; onReview: (status: DrawingFindingReviewStatus) => void }) {
