@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { drawingReviewRules, DRAWING_REVIEW_RULE_SET_VERSION } from "../src/lib/drawingReviewRules.ts";
 
-assert.equal(DRAWING_REVIEW_RULE_SET_VERSION, "company-v1.0");
-assert.equal(drawingReviewRules.length, 10);
+assert.equal(DRAWING_REVIEW_RULE_SET_VERSION, "company-v1.1");
+assert.equal(drawingReviewRules.length, 54);
 assert.equal(new Set(drawingReviewRules.map((rule) => rule.code)).size, drawingReviewRules.length);
 
 for (const rule of drawingReviewRules) {
@@ -16,5 +16,10 @@ assert.match(drawingReviewRules.find((rule) => rule.code === "DESK-HEIGHT-001")?
 assert.match(drawingReviewRules.find((rule) => rule.code === "WARDROBE-HINGED-001")?.check ?? "", /600 mm/);
 assert.match(drawingReviewRules.find((rule) => rule.code === "WARDROBE-SLIDING-001")?.check ?? "", /650 mm/);
 assert.equal(drawingReviewRules.find((rule) => rule.code === "WOOD-FLOOR-001")?.severity, "warning");
+assert.match(drawingReviewRules.find((rule) => rule.code === "SHOE-CABINET-001")?.appliesWhen ?? "", /350–379 mm/);
+assert.match(drawingReviewRules.find((rule) => rule.code === "SHOE-CABINET-001")?.check ?? "", /380 mm/);
+assert.match(drawingReviewRules.find((rule) => rule.code === "SHOE-CABINET-002")?.appliesWhen ?? "", /小於 350 mm/);
+assert.equal(drawingReviewRules.find((rule) => rule.code === "SHOE-CABINET-002")?.severity, "insufficient");
+assert.ok(drawingReviewRules.every((rule) => rule.category && rule.appliesWhen));
 
 console.log("Drawing review rule contract tests passed.");

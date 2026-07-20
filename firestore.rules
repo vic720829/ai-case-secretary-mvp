@@ -135,6 +135,7 @@ service cloud.firestore {
         request.resource.data.uploadedBy == request.auth.uid &&
         request.resource.data.status == "queued" &&
         request.resource.data.resultStatus == "pending" &&
+        request.resource.data.ruleSetVersion == "company-v1.1" &&
         request.resource.data.sourceContentType == "application/pdf" &&
         request.resource.data.sourceSizeBytes > 0 &&
         request.resource.data.sourceSizeBytes <= 50 * 1024 * 1024;
@@ -142,7 +143,9 @@ service cloud.firestore {
         canReadProject(resource.data.projectId) &&
         request.resource.data.projectId == resource.data.projectId &&
         request.resource.data.sourceStoragePath == resource.data.sourceStoragePath &&
-        request.resource.data.uploadedBy == resource.data.uploadedBy;
+        request.resource.data.uploadedBy == resource.data.uploadedBy &&
+        request.resource.data.ruleSetVersion == resource.data.ruleSetVersion &&
+        request.resource.data.get("ruleSnapshot", []) == resource.data.get("ruleSnapshot", []);
       allow delete: if canManageSystemSettings() && canReadProject(resource.data.projectId);
     }
 
