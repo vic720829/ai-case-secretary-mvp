@@ -28,6 +28,13 @@ export type DrawingReviewStatus =
 export type DrawingReviewResultStatus = "pending" | "needs_revision" | "needs_confirmation" | "passed" | "unable_to_review";
 export type DrawingFindingSeverity = "fatal" | "warning" | "insufficient" | "passed";
 export type DrawingFindingReviewStatus = "pending" | "confirmed" | "false_positive";
+export type DrawingProjectSummaryStatus = "pending" | "included" | "missing" | "not_included";
+export type DrawingRequirementCheckStatus =
+  | "matched"
+  | "conflict"
+  | "suspected_missing"
+  | "unable_to_confirm"
+  | "out_of_scope";
 export type ReminderSourceType = "task" | "stage" | "milestone" | "ai_task" | "message";
 export type ReminderPriority = "normal" | "high";
 export type ReminderType =
@@ -196,6 +203,25 @@ export type ProjectDocument = ProjectDocumentInput & {
   updatedAt: Date | null;
 };
 
+export type DrawingProjectSummarySnapshot = {
+  summaryText: string;
+  sections: ProjectSummarySection[];
+  source: "ai" | "system";
+  model: string;
+  refreshedBy: string;
+  sourceUpdatedAt: string;
+};
+
+export type DrawingRequirementCheck = {
+  requirement: string;
+  sourceSection: string;
+  status: DrawingRequirementCheckStatus;
+  pageNumber: number;
+  location: string;
+  evidence: string;
+  recommendation: string;
+};
+
 export type DrawingReviewInput = {
   projectId: string;
   projectNameSnapshot: string;
@@ -214,6 +240,9 @@ export type DrawingReviewInput = {
   passedCount: number;
   summaryText: string;
   ruleSetVersion: string;
+  projectSummaryStatus: DrawingProjectSummaryStatus;
+  projectSummarySourceUpdatedAt: string;
+  projectRequirementChecks: DrawingRequirementCheck[];
   modelVersion: string;
   uploadedBy: string;
   uploadedByName: string;

@@ -1,6 +1,8 @@
 import type {
   DrawingFindingReviewStatus,
   DrawingFindingSeverity,
+  DrawingProjectSummaryStatus,
+  DrawingRequirementCheckStatus,
   DrawingReviewResultStatus,
   DrawingReviewStatus
 } from "@/lib/types";
@@ -45,6 +47,27 @@ export function drawingFindingReviewLabel(status: DrawingFindingReviewStatus) {
     pending: "尚未覆核",
     confirmed: "已確認",
     false_positive: "誤判"
+  };
+  return labels[status];
+}
+
+export function drawingProjectSummaryStatusLabel(status: DrawingProjectSummaryStatus) {
+  const labels: Record<DrawingProjectSummaryStatus, string> = {
+    pending: "等待擷取",
+    included: "已納入既有摘要",
+    missing: "案件尚無摘要",
+    not_included: "未使用摘要功能"
+  };
+  return labels[status];
+}
+
+export function drawingRequirementCheckStatusLabel(status: DrawingRequirementCheckStatus) {
+  const labels: Record<DrawingRequirementCheckStatus, string> = {
+    matched: "已確認符合",
+    conflict: "明確不符",
+    suspected_missing: "疑似漏畫",
+    unable_to_confirm: "圖面無法確認",
+    out_of_scope: "不在本次圖面範圍"
   };
   return labels[status];
 }

@@ -135,7 +135,7 @@ export function DrawingReviewCenterClient() {
             <div className="rounded-md bg-teal-50 p-2 text-teal-700"><ScanSearch className="h-5 w-5" aria-hidden /></div>
             <div>
               <h2 className="text-lg font-semibold text-slate-950">建立新審圖</h2>
-              <p className="mt-1 text-sm text-slate-500">PDF 只會上傳一次，並使用案件編號直接歸檔。</p>
+              <p className="mt-1 text-sm text-slate-500">PDF 只會上傳一次，並使用案件編號直接歸檔；若案件已有摘要，會自動納入需求核對。</p>
             </div>
           </div>
 
@@ -200,7 +200,10 @@ export function DrawingReviewCenterClient() {
             </div>
 
             <div className="flex flex-col gap-3 rounded-md bg-stone-50 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-              <div>規則版本：<span className="font-medium text-slate-900">{DRAWING_REVIEW_RULE_SET_VERSION}</span>（{drawingReviewRules.length} 條核心規則）</div>
+              <div>
+                <div>規則版本：<span className="font-medium text-slate-900">{DRAWING_REVIEW_RULE_SET_VERSION}</span>（{drawingReviewRules.length} 條核心規則）</div>
+                <div className="mt-1 text-xs">案件摘要：自動讀取已生成版本；不重新讀取 LINE 訊息。</div>
+              </div>
               <button
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-5 py-2 font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
                 type="submit"

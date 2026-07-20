@@ -75,6 +75,9 @@ export async function createDrawingReview(options: CreateDrawingReviewOptions) {
     passedCount: 0,
     summaryText: "",
     ruleSetVersion: DRAWING_REVIEW_RULE_SET_VERSION,
+    projectSummaryStatus: "pending",
+    projectSummarySourceUpdatedAt: "",
+    projectRequirementChecks: [],
     modelVersion: "",
     uploadedBy: options.userId,
     uploadedByName: options.userName,
@@ -235,6 +238,9 @@ function drawingReviewFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Dr
     passedCount: Number(data.passedCount ?? 0),
     summaryText: String(data.summaryText ?? ""),
     ruleSetVersion: String(data.ruleSetVersion ?? ""),
+    projectSummaryStatus: normalizeProjectSummaryStatus(data.projectSummaryStatus),
+    projectSummarySourceUpdatedAt: String(data.projectSummarySourceUpdatedAt ?? ""),
+    projectRequirementChecks: normalizeProjectRequirementChecks(data.projectRequirementChecks),
     modelVersion: String(data.modelVersion ?? ""),
     uploadedBy: String(data.uploadedBy ?? ""),
     uploadedByName: String(data.uploadedByName ?? ""),
@@ -247,6 +253,32 @@ function drawingReviewFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): Dr
     completedAt: readTimestamp(data.completedAt),
     updatedAt: readTimestamp(data.updatedAt)
   };
+}
+
+function normalizeProjectSummaryStatus(value: unknown): DrawingReview["projectSummaryStatus"] {
+  if (value === "pending" || value === "included" || value === "missing") return value;
+  return "not_included";
+}
+
+function normalizeProjectRequirementChecks(value: unknown): DrawingReview["projectRequirementChecks"] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const data = item as Record<string, unknown>;
+    const requirement = String(data.requirement ?? "").trim();
+    if (!requirement) return [];
+    const status = data.status === "matched" || data.status === "conflict" || data.status === "suspected_missing" ||
+      data.status === "out_of_scope" ? data.status : "unable_to_confirm";
+    return [{
+      requirement,
+      sourceSection: String(data.sourceSection ?? ""),
+      status,
+      pageNumber: Math.max(0, Number(data.pageNumber ?? 0)),
+      location: String(data.location ?? ""),
+      evidence: String(data.evidence ?? ""),
+      recommendation: String(data.recommendation ?? "")
+    }];
+  });
 }
 
 function drawingFindingFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>): DrawingReviewFinding {
