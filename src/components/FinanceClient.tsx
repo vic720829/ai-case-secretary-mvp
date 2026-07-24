@@ -54,15 +54,19 @@ import {
   saveFinanceAccount,
   saveFinanceAdjustment,
   saveFinanceCost,
+  saveFinanceContract,
   saveFinanceLedger,
   saveFinancePayment,
-  saveFinanceProjectSettings
 } from "@/lib/finance";
 import {
   buildFinanceAccountEntries,
+  financeRecordBelongsToContract,
   financeAccountBalance,
   paymentReceivedAmount,
+  primaryFinanceContract,
+  projectFinanceContracts,
   projectFinanceTotals,
+  projectFinanceTotalsForContracts,
   type FinanceAccountEntry
 } from "@/lib/financeCalculations";
 import { listProjects } from "@/lib/firestore";
@@ -82,10 +86,16 @@ import { cn } from "@/lib/utils";
 type FinanceView = "dashboard" | "drafts" | "projects" | "accounts" | "reconcile" | "data";
 type ProjectTab = "payments" | "adjustments" | "costs";
 type ModalState =
-  | { kind: "project"; project: Project; settings?: FinanceProjectSettings }
-  | { kind: "payment"; projectId: string; item?: FinancePayment }
-  | { kind: "adjustment"; projectId: string; item?: FinanceAdjustment }
-  | { kind: "cost"; projectId: string; item?: FinanceCost }
+  | {
+      kind: "contract";
+      project: Project;
+      settings?: FinanceProjectSettings;
+      isPrimary: boolean;
+      sortOrder: number;
+    }
+  | { kind: "payment"; projectId: string; contractId: string; item?: FinancePayment }
+  | { kind: "adjustment"; projectId: string; contractId: string; item?: FinanceAdjustment }
+  | { kind: "cost"; projectId: string; contractId: string; item?: FinanceCost }
   | { kind: "account"; item?: FinanceAccount }
   | { kind: "ledger"; item?: FinanceLedger; preset?: Partial<FinanceLedger> }
   | null;
@@ -115,6 +125,7 @@ export function FinanceClient() {
   const [data, setData] = useState<FinanceData>(emptyFinanceData);
   const [view, setView] = useState<FinanceView>("dashboard");
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedContractId, setSelectedContractId] = useState("all");
   const [projectTab, setProjectTab] = useState<ProjectTab>("payments");
   const [modal, setModal] = useState<ModalState>(null);
   const [loading, setLoading] = useState(true);
@@ -149,10 +160,13 @@ export function FinanceClient() {
     void load();
   }, [load]);
 
-  const settingsByProject = useMemo(
-    () => new Map(data.projectSettings.map((item) => [item.projectId, item])),
-    [data.projectSettings]
-  );
+  const contractsByProject = useMemo(() => {
+    const grouped = new Map<string, FinanceProjectSettings[]>();
+    projects.forEach((project) => {
+      grouped.set(project.id, projectFinanceContracts(data.projectSettings, project.id));
+    });
+    return grouped;
+  }, [data.projectSettings, projects]);
   const projectsById = useMemo(() => new Map(projects.map((item) => [item.id, item])), [projects]);
   const accountsById = useMemo(() => new Map(data.accounts.map((item) => [item.id, item])), [data.accounts]);
   const accountEntries = useMemo(() => buildFinanceAccountEntries(data), [data]);
@@ -164,6 +178,7 @@ export function FinanceClient() {
 
   function selectProject(projectId: string) {
     setSelectedProjectId(projectId);
+    setSelectedContractId("all");
     setProjectTab("payments");
     setView("projects");
   }
@@ -247,7 +262,7 @@ export function FinanceClient() {
           projects={projects}
           data={data}
           pendingDrafts={pendingDrafts}
-          settingsByProject={settingsByProject}
+          contractsByProject={contractsByProject}
           openDrafts={() => setView("drafts")}
         />
       ) : null}
@@ -257,10 +272,11 @@ export function FinanceClient() {
           drafts={pendingDrafts}
           projectsById={projectsById}
           accounts={data.accounts}
+          contractsByProject={contractsByProject}
           saving={saving}
-          onApprove={(draft, accountId) =>
+          onApprove={(draft, accountId, contractId) =>
             void runAction(
-              () => approveFinanceDraft(draft, accountId, profile?.displayName || user?.email || "", actor),
+              () => approveFinanceDraft(draft, accountId, contractId, profile?.displayName || user?.email || "", actor),
               "財務草稿已確認並正式入帳。"
             )
           }
@@ -277,18 +293,28 @@ export function FinanceClient() {
         <FinanceProjects
           projects={projects}
           data={data}
-          settingsByProject={settingsByProject}
+          contractsByProject={contractsByProject}
           onOpen={selectProject}
-          onEdit={(project) =>
-            setModal({ kind: "project", project, settings: settingsByProject.get(project.id) })
-          }
+          onEdit={(project) => {
+            const contracts = contractsByProject.get(project.id) || [];
+            const settings = primaryFinanceContract(contracts);
+            setModal({
+              kind: "contract",
+              project,
+              settings,
+              isPrimary: true,
+              sortOrder: settings?.sortOrder ?? 0
+            });
+          }}
         />
       ) : null}
 
       {view === "projects" && selectedProject ? (
         <FinanceProjectDetail
           project={selectedProject}
-          settings={settingsByProject.get(selectedProject.id)}
+          contracts={contractsByProject.get(selectedProject.id) || []}
+          selectedContractId={selectedContractId}
+          onSelectContract={setSelectedContractId}
           payments={data.payments.filter((item) => item.projectId === selectedProject.id)}
           adjustments={data.adjustments.filter((item) => item.projectId === selectedProject.id)}
           costs={data.costs.filter((item) => item.projectId === selectedProject.id)}
@@ -296,27 +322,38 @@ export function FinanceClient() {
           projectTab={projectTab}
           setProjectTab={setProjectTab}
           onBack={() => setSelectedProjectId("")}
-          onEditSettings={() =>
+          onAddContract={() => {
+            const contracts = contractsByProject.get(selectedProject.id) || [];
             setModal({
-              kind: "project",
+              kind: "contract",
               project: selectedProject,
-              settings: settingsByProject.get(selectedProject.id)
+              isPrimary: contracts.length === 0,
+              sortOrder: contracts.length
+            });
+          }}
+          onEditContract={(settings) =>
+            setModal({
+              kind: "contract",
+              project: selectedProject,
+              settings,
+              isPrimary: settings.isPrimary,
+              sortOrder: settings.sortOrder
             })
           }
-          onAddPayment={() => setModal({ kind: "payment", projectId: selectedProject.id })}
-          onEditPayment={(item) => setModal({ kind: "payment", projectId: selectedProject.id, item })}
+          onAddPayment={(contractId) => setModal({ kind: "payment", projectId: selectedProject.id, contractId })}
+          onEditPayment={(item, contractId) => setModal({ kind: "payment", projectId: selectedProject.id, contractId, item })}
           onDeletePayment={(item) => {
             if (!window.confirm(`確定刪除收款「${item.name}」？`)) return;
             void runAction(() => deleteFinancePayment(item.id, item.name, actor), "收款已刪除。");
           }}
-          onAddAdjustment={() => setModal({ kind: "adjustment", projectId: selectedProject.id })}
-          onEditAdjustment={(item) => setModal({ kind: "adjustment", projectId: selectedProject.id, item })}
+          onAddAdjustment={(contractId) => setModal({ kind: "adjustment", projectId: selectedProject.id, contractId })}
+          onEditAdjustment={(item, contractId) => setModal({ kind: "adjustment", projectId: selectedProject.id, contractId, item })}
           onDeleteAdjustment={(item) => {
             if (!window.confirm(`確定刪除追加減「${item.name || "未命名項目"}」？`)) return;
             void runAction(() => deleteFinanceAdjustment(item.id, item.name, actor), "追加減已刪除。");
           }}
-          onAddCost={() => setModal({ kind: "cost", projectId: selectedProject.id })}
-          onEditCost={(item) => setModal({ kind: "cost", projectId: selectedProject.id, item })}
+          onAddCost={(contractId) => setModal({ kind: "cost", projectId: selectedProject.id, contractId })}
+          onEditCost={(item, contractId) => setModal({ kind: "cost", projectId: selectedProject.id, contractId, item })}
           onDeleteCost={(item) => {
             if (!window.confirm(`確定刪除成本「${item.item || item.category}」？`)) return;
             void runAction(() => deleteFinanceCost(item.id, item.item || item.category, actor), "成本已刪除。");
@@ -392,6 +429,13 @@ export function FinanceClient() {
         <FinanceModal
           modal={modal}
           accounts={data.accounts}
+          contracts={
+            modal.kind === "contract"
+              ? contractsByProject.get(modal.project.id) || []
+              : "projectId" in modal
+                ? contractsByProject.get(modal.projectId) || []
+                : []
+          }
           saving={saving}
           onClose={() => setModal(null)}
           onSubmit={(event) => {
@@ -409,20 +453,20 @@ function FinanceDashboard({
   projects,
   data,
   pendingDrafts,
-  settingsByProject,
+  contractsByProject,
   openDrafts
 }: {
   projects: Project[];
   data: FinanceData;
   pendingDrafts: FinanceDraft[];
-  settingsByProject: Map<string, FinanceProjectSettings>;
+  contractsByProject: Map<string, FinanceProjectSettings[]>;
   openDrafts: () => void;
 }) {
   const accountEntries = useMemo(() => buildFinanceAccountEntries(data), [data]);
   const years = useMemo(() => {
     const values = new Set<string>([String(new Date().getFullYear())]);
     projects.forEach((project) => {
-      const settings = settingsByProject.get(project.id);
+      const settings = primaryFinanceContract(contractsByProject.get(project.id) || []);
       const value =
         settings?.startDate ||
         project.expectedFinishDate ||
@@ -432,7 +476,7 @@ function FinanceDashboard({
       if (projectYear) values.add(projectYear);
     });
     return [...values].sort((a, b) => b.localeCompare(a));
-  }, [projects, settingsByProject]);
+  }, [contractsByProject, projects]);
   const [year, setYear] = useState(years[0] || String(new Date().getFullYear()));
   const [selectedAccountId, setSelectedAccountId] = useState(
     data.accounts.find((item) => item.defaultForIncome)?.id || data.accounts[0]?.id || ""
@@ -452,7 +496,7 @@ function FinanceDashboard({
 
   const rows = projects
     .filter((project) => {
-      const settings = settingsByProject.get(project.id);
+      const settings = primaryFinanceContract(contractsByProject.get(project.id) || []);
       const value =
         settings?.startDate ||
         project.expectedFinishDate ||
@@ -461,13 +505,14 @@ function FinanceDashboard({
       return value.slice(0, 4) === year;
     })
     .map((project) => {
-      const totals = projectFinanceTotals(
-        settingsByProject.get(project.id),
+      const contracts = contractsByProject.get(project.id) || [];
+      const totals = projectFinanceTotalsForContracts(
+        contracts,
         data.payments.filter((item) => item.projectId === project.id),
         data.adjustments.filter((item) => item.projectId === project.id),
         data.costs.filter((item) => item.projectId === project.id)
       );
-      return { project, settings: settingsByProject.get(project.id), totals };
+      return { project, settings: primaryFinanceContract(contracts), totals };
     });
   const summary = rows.reduce(
     (result, row) => ({
@@ -639,6 +684,7 @@ function FinanceDrafts({
   drafts,
   projectsById,
   accounts,
+  contractsByProject,
   saving,
   onApprove,
   onIgnore
@@ -646,12 +692,14 @@ function FinanceDrafts({
   drafts: FinanceDraft[];
   projectsById: Map<string, Project>;
   accounts: FinanceAccount[];
+  contractsByProject: Map<string, FinanceProjectSettings[]>;
   saving: boolean;
-  onApprove: (draft: FinanceDraft, accountId: string) => void;
+  onApprove: (draft: FinanceDraft, accountId: string, contractId: string) => void;
   onIgnore: (draft: FinanceDraft) => void;
 }) {
   const defaultAccount = accounts.find((item) => item.defaultForIncome) ?? accounts[0];
   const [accountSelections, setAccountSelections] = useState<Record<string, string>>({});
+  const [contractSelections, setContractSelections] = useState<Record<string, string>>({});
 
   if (!drafts.length) {
     return (
@@ -667,6 +715,12 @@ function FinanceDrafts({
       <div className="divide-y divide-stone-200">
         {drafts.map((draft) => {
           const selectedAccount = accountSelections[draft.id] || draft.accountId || defaultAccount?.id || "";
+          const contracts = contractsByProject.get(draft.projectId) || [];
+          const selectedContract =
+            contractSelections[draft.id] ||
+            draft.contractId ||
+            primaryFinanceContract(contracts)?.id ||
+            "";
           return (
             <article key={draft.id} className="grid gap-4 px-4 py-5 lg:grid-cols-[1fr_260px]">
               <div>
@@ -694,6 +748,32 @@ function FinanceDrafts({
                 {draft.duplicateWarning ? <p className="mt-2 text-sm text-amber-700">{draft.duplicateWarning}</p> : null}
               </div>
               <div className="space-y-3">
+                {contracts.length > 1 ? (
+                  <label className="block text-sm font-medium text-slate-700">
+                    所屬合約
+                    <select
+                      className={inputClass}
+                      value={selectedContract}
+                      onChange={(event) =>
+                        setContractSelections((current) => ({
+                          ...current,
+                          [draft.id]: event.target.value
+                        }))
+                      }
+                    >
+                      {contracts.map((contract) => (
+                        <option key={contract.id} value={contract.id}>
+                          {contract.name}
+                          {contract.isPrimary ? "（主合約）" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="rounded-md bg-stone-50 px-3 py-2 text-sm text-slate-600">
+                    合約：{contracts[0]?.name || "尚未建立合約"}
+                  </div>
+                )}
                 {(draft.draftType === "payment" || draft.draftType === "cost") && accounts.length ? (
                   <label className="block text-sm font-medium text-slate-700">
                     {draft.draftType === "payment" ? "入金帳戶" : "出金帳戶"}
@@ -716,8 +796,8 @@ function FinanceDrafts({
                 <Button
                   className="w-full"
                   type="button"
-                  disabled={saving || draft.amountMismatch || !draft.projectId}
-                  onClick={() => onApprove(draft, selectedAccount)}
+                  disabled={saving || draft.amountMismatch || !draft.projectId || !selectedContract}
+                  onClick={() => onApprove(draft, selectedAccount, selectedContract)}
                 >
                   <Check className="h-4 w-4" aria-hidden />
                   確認入帳
@@ -740,13 +820,13 @@ function FinanceDrafts({
 function FinanceProjects({
   projects,
   data,
-  settingsByProject,
+  contractsByProject,
   onOpen,
   onEdit
 }: {
   projects: Project[];
   data: FinanceData;
-  settingsByProject: Map<string, FinanceProjectSettings>;
+  contractsByProject: Map<string, FinanceProjectSettings[]>;
   onOpen: (projectId: string) => void;
   onEdit: (project: Project) => void;
 }) {
@@ -770,8 +850,8 @@ function FinanceProjects({
         </thead>
         <tbody>
           {projects.map((project) => {
-            const totals = projectFinanceTotals(
-              settingsByProject.get(project.id),
+            const totals = projectFinanceTotalsForContracts(
+              contractsByProject.get(project.id) || [],
               data.payments.filter((item) => item.projectId === project.id),
               data.adjustments.filter((item) => item.projectId === project.id),
               data.costs.filter((item) => item.projectId === project.id)
@@ -808,7 +888,9 @@ function FinanceProjects({
 
 function FinanceProjectDetail({
   project,
-  settings,
+  contracts,
+  selectedContractId,
+  onSelectContract,
   payments,
   adjustments,
   costs,
@@ -816,7 +898,8 @@ function FinanceProjectDetail({
   projectTab,
   setProjectTab,
   onBack,
-  onEditSettings,
+  onAddContract,
+  onEditContract,
   onAddPayment,
   onEditPayment,
   onDeletePayment,
@@ -828,7 +911,9 @@ function FinanceProjectDetail({
   onDeleteCost
 }: {
   project: Project;
-  settings?: FinanceProjectSettings;
+  contracts: FinanceProjectSettings[];
+  selectedContractId: string;
+  onSelectContract: (contractId: string) => void;
   payments: FinancePayment[];
   adjustments: FinanceAdjustment[];
   costs: FinanceCost[];
@@ -836,18 +921,46 @@ function FinanceProjectDetail({
   projectTab: ProjectTab;
   setProjectTab: (tab: ProjectTab) => void;
   onBack: () => void;
-  onEditSettings: () => void;
-  onAddPayment: () => void;
-  onEditPayment: (item: FinancePayment) => void;
+  onAddContract: () => void;
+  onEditContract: (settings: FinanceProjectSettings) => void;
+  onAddPayment: (contractId: string) => void;
+  onEditPayment: (item: FinancePayment, contractId: string) => void;
   onDeletePayment: (item: FinancePayment) => void;
-  onAddAdjustment: () => void;
-  onEditAdjustment: (item: FinanceAdjustment) => void;
+  onAddAdjustment: (contractId: string) => void;
+  onEditAdjustment: (item: FinanceAdjustment, contractId: string) => void;
   onDeleteAdjustment: (item: FinanceAdjustment) => void;
-  onAddCost: () => void;
-  onEditCost: (item: FinanceCost) => void;
+  onAddCost: (contractId: string) => void;
+  onEditCost: (item: FinanceCost, contractId: string) => void;
   onDeleteCost: (item: FinanceCost) => void;
 }) {
-  const totals = projectFinanceTotals(settings, payments, adjustments, costs);
+  const primaryContract = primaryFinanceContract(contracts);
+  const selectedContract =
+    selectedContractId === "all"
+      ? undefined
+      : contracts.find((item) => item.id === selectedContractId);
+  const activeContractId = selectedContract?.id || primaryContract?.id || "";
+  const filteredPayments =
+    selectedContractId === "all"
+      ? payments
+      : payments.filter((item) =>
+          financeRecordBelongsToContract(item, activeContractId, contracts)
+        );
+  const filteredAdjustments =
+    selectedContractId === "all"
+      ? adjustments
+      : adjustments.filter((item) =>
+          financeRecordBelongsToContract(item, activeContractId, contracts)
+        );
+  const filteredCosts =
+    selectedContractId === "all"
+      ? costs
+      : costs.filter((item) =>
+          financeRecordBelongsToContract(item, activeContractId, contracts)
+        );
+  const totals =
+    selectedContractId === "all"
+      ? projectFinanceTotalsForContracts(contracts, payments, adjustments, costs)
+      : projectFinanceTotals(selectedContract, filteredPayments, filteredAdjustments, filteredCosts);
 
   return (
     <div className="space-y-5">
@@ -858,14 +971,69 @@ function FinanceProjectDetail({
             回案件財務
           </button>
           <h2 className="mt-3 text-xl font-semibold text-slate-950">{project.name}</h2>
-          <p className="mt-1 text-sm text-slate-500">{project.clientName}｜{settings?.code || "尚未設定財務編號"}</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {project.clientName}｜{selectedContract?.code || `${contracts.length} 份合約`}
+          </p>
         </div>
-        <Button variant="secondary" type="button" onClick={onEditSettings}>
-          <Pencil className="h-4 w-4" aria-hidden />
-          編輯財務資料
+        <Button type="button" onClick={onAddContract}>
+          <Plus className="h-4 w-4" aria-hidden />
+          新增合約
         </Button>
       </div>
 
+      {contracts.length ? (
+        <div className="flex flex-wrap items-center gap-2 border border-stone-200 bg-white p-3">
+          <button
+            className={cn(
+              "min-h-10 rounded-md border px-3 text-sm font-semibold",
+              selectedContractId === "all"
+                ? "border-teal-700 bg-teal-700 text-white"
+                : "border-stone-200 bg-white text-slate-600 hover:bg-stone-50"
+            )}
+            type="button"
+            onClick={() => onSelectContract("all")}
+          >
+            全部合約
+          </button>
+          {contracts.map((contract) => (
+            <button
+              key={contract.id}
+              className={cn(
+                "min-h-10 rounded-md border px-3 text-sm font-semibold",
+                selectedContractId === contract.id
+                  ? "border-teal-700 bg-teal-700 text-white"
+                  : "border-stone-200 bg-white text-slate-600 hover:bg-stone-50"
+              )}
+              type="button"
+              onClick={() => onSelectContract(contract.id)}
+            >
+              {contract.name}
+              {contract.isPrimary ? "（主）" : ""}
+            </button>
+          ))}
+          {selectedContract ? (
+            <IconButton
+              label={`編輯${selectedContract.name}`}
+              icon={Pencil}
+              onClick={() => onEditContract(selectedContract)}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <EmptyState
+          title="尚未建立合約"
+          description="先新增主合約，之後可在同一案件下繼續新增其他合約。"
+          action={
+            <Button type="button" onClick={onAddContract}>
+              <Plus className="h-4 w-4" aria-hidden />
+              新增主合約
+            </Button>
+          }
+        />
+      )}
+
+      {contracts.length ? (
+        <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="合約總額" value={money(totals.contract)} icon={ReceiptText} />
         <Metric label="已收款" value={money(totals.received)} icon={ArrowDownToLine} tone="teal" />
@@ -904,18 +1072,52 @@ function FinanceProjectDetail({
 
       {projectTab === "payments" ? (
         <ProjectPayments
-          payments={payments}
+          payments={filteredPayments}
           accountsById={accountsById}
-          onAdd={onAddPayment}
-          onEdit={onEditPayment}
+          contracts={contracts}
+          showContract={selectedContractId === "all"}
+          onAdd={() => onAddPayment(activeContractId)}
+          onEdit={(item) =>
+            onEditPayment(
+              item,
+              item.contractId || primaryContract?.id || activeContractId
+            )
+          }
           onDelete={onDeletePayment}
         />
       ) : null}
       {projectTab === "adjustments" ? (
-        <ProjectAdjustments adjustments={adjustments} onAdd={onAddAdjustment} onEdit={onEditAdjustment} onDelete={onDeleteAdjustment} />
+        <ProjectAdjustments
+          adjustments={filteredAdjustments}
+          contracts={contracts}
+          showContract={selectedContractId === "all"}
+          onAdd={() => onAddAdjustment(activeContractId)}
+          onEdit={(item) =>
+            onEditAdjustment(
+              item,
+              item.contractId || primaryContract?.id || activeContractId
+            )
+          }
+          onDelete={onDeleteAdjustment}
+        />
       ) : null}
       {projectTab === "costs" ? (
-        <ProjectCosts costs={costs} accountsById={accountsById} onAdd={onAddCost} onEdit={onEditCost} onDelete={onDeleteCost} />
+        <ProjectCosts
+          costs={filteredCosts}
+          accountsById={accountsById}
+          contracts={contracts}
+          showContract={selectedContractId === "all"}
+          onAdd={() => onAddCost(activeContractId)}
+          onEdit={(item) =>
+            onEditCost(
+              item,
+              item.contractId || primaryContract?.id || activeContractId
+            )
+          }
+          onDelete={onDeleteCost}
+        />
+      ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -924,12 +1126,16 @@ function FinanceProjectDetail({
 function ProjectPayments({
   payments,
   accountsById,
+  contracts,
+  showContract,
   onAdd,
   onEdit,
   onDelete
 }: {
   payments: FinancePayment[];
   accountsById: Map<string, FinanceAccount>;
+  contracts: FinanceProjectSettings[];
+  showContract: boolean;
   onAdd: () => void;
   onEdit: (item: FinancePayment) => void;
   onDelete: (item: FinancePayment) => void;
@@ -948,12 +1154,13 @@ function ProjectPayments({
         <Table>
           <thead>
             <tr>
-              <Th>款項名稱</Th><Th>預計日期</Th><Th>實收日期</Th><Th>應收金額</Th><Th>已收金額</Th><Th>入金帳戶</Th><Th>狀態</Th><Th align="right">操作</Th>
+              {showContract ? <Th>合約</Th> : null}<Th>款項名稱</Th><Th>預計日期</Th><Th>實收日期</Th><Th>應收金額</Th><Th>已收金額</Th><Th>入金帳戶</Th><Th>狀態</Th><Th align="right">操作</Th>
             </tr>
           </thead>
           <tbody>
             {payments.map((item) => (
               <tr key={item.id} className="border-t border-stone-100">
+                {showContract ? <Td>{financeContractName(item, contracts)}</Td> : null}
                 <Td><strong>{item.name}</strong><span className="mt-1 block text-xs text-slate-500">{item.notes}</span></Td>
                 <Td>{item.dueDate || "—"}</Td><Td>{item.paidDate || "—"}</Td><Td>{money(item.expectedAmount)}</Td><Td>{money(item.receivedAmount)}</Td>
                 <Td>{accountsById.get(item.accountId)?.name || "未設定"}</Td><Td>{paymentStatusLabel(item.status)}</Td>
@@ -969,11 +1176,15 @@ function ProjectPayments({
 
 function ProjectAdjustments({
   adjustments,
+  contracts,
+  showContract,
   onAdd,
   onEdit,
   onDelete
 }: {
   adjustments: FinanceAdjustment[];
+  contracts: FinanceProjectSettings[];
+  showContract: boolean;
   onAdd: () => void;
   onEdit: (item: FinanceAdjustment) => void;
   onDelete: (item: FinanceAdjustment) => void;
@@ -982,10 +1193,11 @@ function ProjectAdjustments({
     <Section title="追加減金額表單" action={<Button type="button" onClick={onAdd}><Plus className="h-4 w-4" aria-hidden />新增追加減</Button>}>
       {adjustments.length ? (
         <Table>
-          <thead><tr><Th>日期</Th><Th>類型</Th><Th>項目名稱</Th><Th>金額</Th><Th>備註</Th><Th align="right">操作</Th></tr></thead>
+          <thead><tr>{showContract ? <Th>合約</Th> : null}<Th>日期</Th><Th>類型</Th><Th>項目名稱</Th><Th>金額</Th><Th>備註</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
             {adjustments.map((item) => (
               <tr key={item.id} className="border-t border-stone-100">
+                {showContract ? <Td>{financeContractName(item, contracts)}</Td> : null}
                 <Td>{item.date || "—"}</Td>
                 <Td><span className={item.type === "add" ? "text-emerald-700" : "text-red-700"}>{item.type === "add" ? "追加" : "減項"}</span></Td>
                 <Td>{item.name || "未填寫"}</Td><Td>{money(item.amount)}</Td><Td>{item.notes || "—"}</Td>
@@ -1002,12 +1214,16 @@ function ProjectAdjustments({
 function ProjectCosts({
   costs,
   accountsById,
+  contracts,
+  showContract,
   onAdd,
   onEdit,
   onDelete
 }: {
   costs: FinanceCost[];
   accountsById: Map<string, FinanceAccount>;
+  contracts: FinanceProjectSettings[];
+  showContract: boolean;
   onAdd: () => void;
   onEdit: (item: FinanceCost) => void;
   onDelete: (item: FinanceCost) => void;
@@ -1016,10 +1232,11 @@ function ProjectCosts({
     <Section title="工程成本表單" action={<Button type="button" onClick={onAdd}><Plus className="h-4 w-4" aria-hidden />新增成本</Button>}>
       {costs.length ? (
         <Table>
-          <thead><tr><Th>工程分類</Th><Th>細項</Th><Th>廠商／工班</Th><Th>日期</Th><Th>成本金額</Th><Th>出金帳戶</Th><Th>狀態</Th><Th align="right">操作</Th></tr></thead>
+          <thead><tr>{showContract ? <Th>合約</Th> : null}<Th>工程分類</Th><Th>細項</Th><Th>廠商／工班</Th><Th>日期</Th><Th>成本金額</Th><Th>出金帳戶</Th><Th>狀態</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
             {costs.map((item) => (
               <tr key={item.id} className="border-t border-stone-100">
+                {showContract ? <Td>{financeContractName(item, contracts)}</Td> : null}
                 <Td>{item.category || "—"}</Td><Td>{item.item || "—"}</Td><Td>{item.vendor || "—"}</Td><Td>{item.date || "—"}</Td>
                 <Td>{money(item.amount)}</Td><Td>{accountsById.get(item.accountId)?.name || "未設定"}</Td><Td>{item.status === "paid" ? "已付" : "未付"}</Td>
                 <Td align="right"><RowActions onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} /></Td>
@@ -1359,12 +1576,14 @@ function FinanceDataTools({
 function FinanceModal({
   modal,
   accounts,
+  contracts,
   saving,
   onClose,
   onSubmit
 }: {
   modal: Exclude<ModalState, null>;
   accounts: FinanceAccount[];
+  contracts: FinanceProjectSettings[];
   saving: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1379,10 +1598,10 @@ function FinanceModal({
           <IconButton label="關閉" icon={X} onClick={onClose} />
         </div>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
-          {modal.kind === "project" ? <ProjectSettingsFields modal={modal} /> : null}
-          {modal.kind === "payment" ? <PaymentFields item={modal.item} accounts={accounts} defaultAccountId={defaultAccount?.id || ""} /> : null}
-          {modal.kind === "adjustment" ? <AdjustmentFields item={modal.item} /> : null}
-          {modal.kind === "cost" ? <CostFields item={modal.item} accounts={accounts} defaultAccountId={defaultAccount?.id || ""} /> : null}
+          {modal.kind === "contract" ? <ProjectSettingsFields modal={modal} /> : null}
+          {modal.kind === "payment" ? <PaymentFields item={modal.item} accounts={accounts} contracts={contracts} defaultContractId={modal.contractId} defaultAccountId={defaultAccount?.id || ""} /> : null}
+          {modal.kind === "adjustment" ? <AdjustmentFields item={modal.item} contracts={contracts} defaultContractId={modal.contractId} /> : null}
+          {modal.kind === "cost" ? <CostFields item={modal.item} accounts={accounts} contracts={contracts} defaultContractId={modal.contractId} defaultAccountId={defaultAccount?.id || ""} /> : null}
           {modal.kind === "account" ? <AccountFields item={modal.item} /> : null}
           {modal.kind === "ledger" ? <LedgerFields item={modal.item} preset={modal.preset} accounts={accounts} defaultAccountId={defaultAccount?.id || ""} /> : null}
         </div>
@@ -1395,7 +1614,7 @@ function FinanceModal({
   );
 }
 
-function ProjectSettingsFields({ modal }: { modal: Extract<Exclude<ModalState, null>, { kind: "project" }> }) {
+function ProjectSettingsFields({ modal }: { modal: Extract<Exclude<ModalState, null>, { kind: "contract" }> }) {
   const settings = modal.settings;
   const initialContractAmount = Math.max(Number(settings?.contractAmount) || 0, 0);
   const initialEstimatedCost = Math.max(
@@ -1431,7 +1650,14 @@ function ProjectSettingsFields({ modal }: { modal: Extract<Exclude<ModalState, n
     <>
       <ReadOnlyField label="案件名稱" value={modal.project.name} />
       <ReadOnlyField label="客戶名稱" value={modal.project.clientName} />
-      <Field label="案件編號" name="code" defaultValue={settings?.code || ""} placeholder="例如 P-2026-001" />
+      <Field
+        label="合約名稱"
+        name="name"
+        defaultValue={settings?.name || (modal.isPrimary ? "主合約" : "")}
+        placeholder="例如 室內裝修工程、系統櫃工程"
+        required
+      />
+      <Field label="合約編號" name="code" defaultValue={settings?.code || ""} placeholder="例如 C-2026-001" />
       <Field label="地址" name="address" defaultValue={settings?.address || ""} />
       <Field
         label="本案簽約金額"
@@ -1457,15 +1683,22 @@ function ProjectSettingsFields({ modal }: { modal: Extract<Exclude<ModalState, n
           留空或填 0 時，自動以本案簽約金額的 60% 估算；可自行修改。
         </span>
       </label>
-      <Field label="開工日期" name="startDate" type="date" defaultValue={settings?.startDate || ""} />
+      <Field label="簽約日期" name="startDate" type="date" defaultValue={settings?.startDate || ""} />
+      <SelectField label="合約狀態" name="status" defaultValue={settings?.status || "active"}>
+        <option value="active">進行中</option>
+        <option value="completed">已完成</option>
+        <option value="cancelled">已取消</option>
+      </SelectField>
+      <ReadOnlyField label="合約層級" value={modal.isPrimary ? "主合約" : "其他合約"} />
       <TextArea label="備註" name="notes" defaultValue={settings?.notes || ""} wide />
     </>
   );
 }
 
-function PaymentFields({ item, accounts, defaultAccountId }: { item?: FinancePayment; accounts: FinanceAccount[]; defaultAccountId: string }) {
+function PaymentFields({ item, accounts, contracts, defaultContractId, defaultAccountId }: { item?: FinancePayment; accounts: FinanceAccount[]; contracts: FinanceProjectSettings[]; defaultContractId: string; defaultAccountId: string }) {
   return (
     <>
+      <ContractField contracts={contracts} defaultContractId={item?.contractId || defaultContractId} />
       <Field label="款項名稱" name="name" defaultValue={item?.name || ""} placeholder="例如 水電進場款" required />
       <Field label="預計收款日" name="dueDate" type="date" defaultValue={item?.dueDate || today()} />
       <Field label="實際收款日" name="paidDate" type="date" defaultValue={item?.paidDate || ""} />
@@ -1482,9 +1715,10 @@ function PaymentFields({ item, accounts, defaultAccountId }: { item?: FinancePay
   );
 }
 
-function AdjustmentFields({ item }: { item?: FinanceAdjustment }) {
+function AdjustmentFields({ item, contracts, defaultContractId }: { item?: FinanceAdjustment; contracts: FinanceProjectSettings[]; defaultContractId: string }) {
   return (
     <>
+      <ContractField contracts={contracts} defaultContractId={item?.contractId || defaultContractId} />
       <Field label="日期" name="date" type="date" defaultValue={item?.date || today()} />
       <SelectField label="類型" name="type" defaultValue={item?.type || "add"}><option value="add">追加</option><option value="deduct">減項</option></SelectField>
       <Field label="項目名稱（選填）" name="name" defaultValue={item?.name || ""} placeholder="可以留空" wide />
@@ -1494,9 +1728,10 @@ function AdjustmentFields({ item }: { item?: FinanceAdjustment }) {
   );
 }
 
-function CostFields({ item, accounts, defaultAccountId }: { item?: FinanceCost; accounts: FinanceAccount[]; defaultAccountId: string }) {
+function CostFields({ item, accounts, contracts, defaultContractId, defaultAccountId }: { item?: FinanceCost; accounts: FinanceAccount[]; contracts: FinanceProjectSettings[]; defaultContractId: string; defaultAccountId: string }) {
   return (
     <>
+      <ContractField contracts={contracts} defaultContractId={item?.contractId || defaultContractId} />
       <Field label="工程分類" name="category" defaultValue={item?.category || ""} placeholder="例如 木工工程" />
       <Field label="細項名稱" name="item" defaultValue={item?.item || ""} />
       <Field label="廠商／工班" name="vendor" defaultValue={item?.vendor || ""} />
@@ -1508,6 +1743,45 @@ function CostFields({ item, accounts, defaultAccountId }: { item?: FinanceCost; 
       <SelectField label="狀態" name="status" defaultValue={item?.status || "unpaid"}><option value="unpaid">未付</option><option value="paid">已付</option></SelectField>
       <TextArea label="備註" name="notes" defaultValue={item?.notes || ""} wide />
     </>
+  );
+}
+
+function ContractField({
+  contracts,
+  defaultContractId
+}: {
+  contracts: FinanceProjectSettings[];
+  defaultContractId: string;
+}) {
+  const selectedContract =
+    contracts.find((item) => item.id === defaultContractId) ||
+    primaryFinanceContract(contracts);
+
+  if (contracts.length <= 1) {
+    return (
+      <div className="text-sm">
+        <div className="font-medium text-slate-700">所屬合約</div>
+        <input type="hidden" name="contractId" value={selectedContract?.id || ""} />
+        <div className="mt-1.5 rounded-md bg-stone-100 px-3 py-2.5 text-slate-600">
+          {selectedContract?.name || "請先建立合約"}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <SelectField
+      label="所屬合約"
+      name="contractId"
+      defaultValue={selectedContract?.id || contracts[0].id}
+    >
+      {contracts.map((contract) => (
+        <option key={contract.id} value={contract.id}>
+          {contract.name}
+          {contract.isPrimary ? "（主合約）" : ""}
+        </option>
+      ))}
+    </SelectField>
   );
 }
 
@@ -1548,32 +1822,44 @@ async function submitFinanceModal(
   runAction: (action: () => Promise<unknown>, successMessage: string) => Promise<void>,
   data: FinanceData
 ) {
-  if (modal.kind === "project") {
+  if (modal.kind === "contract") {
     await runAction(
       () =>
-        saveFinanceProjectSettings(
+        saveFinanceContract(
+          modal.settings?.id || (modal.isPrimary ? modal.project.id : ""),
           {
             projectId: modal.project.id,
+            name: text(form, "name"),
             code: text(form, "code"),
             address: text(form, "address"),
             contractAmount: amount(form, "contractAmount"),
             estimatedCost: amount(form, "estimatedCost"),
             startDate: text(form, "startDate"),
+            status: text(form, "status") as FinanceProjectSettings["status"],
+            isPrimary: modal.isPrimary,
+            sortOrder: modal.sortOrder,
             notes: text(form, "notes")
           },
           actor
         ),
-      "案件財務資料已儲存。"
+      modal.settings ? "合約資料已更新。" : "合約已建立。"
     );
     return;
   }
   if (modal.kind === "payment") {
+    const contractId = text(form, "contractId") || modal.contractId;
+    const contracts = projectFinanceContracts(data.projectSettings, modal.projectId);
     const status = text(form, "status") as FinancePayment["status"];
     const expectedAmount = amount(form, "expectedAmount");
     const receivedInput = amount(form, "receivedAmount");
     if (
       !confirmDuplicateFinanceEntry(
-        data.payments.filter((item) => item.projectId === modal.projectId && item.id !== modal.item?.id),
+        data.payments.filter(
+          (item) =>
+            item.projectId === modal.projectId &&
+            item.id !== modal.item?.id &&
+            financeRecordBelongsToContract(item, contractId, contracts)
+        ),
         text(form, "name"),
         expectedAmount,
         (item) => item.name,
@@ -1589,6 +1875,7 @@ async function submitFinanceModal(
           modal.item?.id || "",
           {
             projectId: modal.projectId,
+            contractId,
             name: text(form, "name"),
             dueDate: text(form, "dueDate"),
             paidDate: text(form, "paidDate"),
@@ -1607,9 +1894,16 @@ async function submitFinanceModal(
     return;
   }
   if (modal.kind === "adjustment") {
+    const contractId = text(form, "contractId") || modal.contractId;
+    const contracts = projectFinanceContracts(data.projectSettings, modal.projectId);
     if (
       !confirmDuplicateFinanceEntry(
-        data.adjustments.filter((item) => item.projectId === modal.projectId && item.id !== modal.item?.id),
+        data.adjustments.filter(
+          (item) =>
+            item.projectId === modal.projectId &&
+            item.id !== modal.item?.id &&
+            financeRecordBelongsToContract(item, contractId, contracts)
+        ),
         text(form, "name"),
         amount(form, "amount"),
         (item) => item.name,
@@ -1625,6 +1919,7 @@ async function submitFinanceModal(
           modal.item?.id || "",
           {
             projectId: modal.projectId,
+            contractId,
             date: text(form, "date"),
             type: text(form, "type") as FinanceAdjustment["type"],
             name: text(form, "name"),
@@ -1640,9 +1935,16 @@ async function submitFinanceModal(
     return;
   }
   if (modal.kind === "cost") {
+    const contractId = text(form, "contractId") || modal.contractId;
+    const contracts = projectFinanceContracts(data.projectSettings, modal.projectId);
     if (
       !confirmDuplicateFinanceEntry(
-        data.costs.filter((item) => item.projectId === modal.projectId && item.id !== modal.item?.id),
+        data.costs.filter(
+          (item) =>
+            item.projectId === modal.projectId &&
+            item.id !== modal.item?.id &&
+            financeRecordBelongsToContract(item, contractId, contracts)
+        ),
         text(form, "item") || text(form, "category"),
         amount(form, "amount"),
         (item) => item.item || item.category,
@@ -1658,6 +1960,7 @@ async function submitFinanceModal(
           modal.item?.id || "",
           {
             projectId: modal.projectId,
+            contractId,
             category: text(form, "category"),
             item: text(form, "item"),
             vendor: text(form, "vendor"),
@@ -1800,12 +2103,20 @@ function draftTypeLabel(type: FinanceDraft["draftType"]) {
   return "案件收款";
 }
 function modalTitle(modal: Exclude<ModalState, null>) {
-  if (modal.kind === "project") return "案件財務資料";
+  if (modal.kind === "contract") return modal.settings ? "編輯合約" : modal.isPrimary ? "新增主合約" : "新增合約";
   if (modal.kind === "payment") return modal.item ? "編輯收款" : "新增收款";
   if (modal.kind === "adjustment") return modal.item ? "編輯追加減" : "新增追加減";
   if (modal.kind === "cost") return modal.item ? "編輯成本" : "新增成本";
   if (modal.kind === "account") return modal.item ? "編輯帳戶" : "新增帳戶";
   return modal.item ? "編輯手動流水" : "手動入出金";
+}
+
+function financeContractName(
+  record: { contractId: string },
+  contracts: FinanceProjectSettings[]
+) {
+  const contractId = record.contractId || primaryFinanceContract(contracts)?.id || "";
+  return contracts.find((item) => item.id === contractId)?.name || "主合約";
 }
 function csvCell(value: string) {
   return `"${String(value || "").replaceAll('"', '""')}"`;

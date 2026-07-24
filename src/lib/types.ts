@@ -68,6 +68,7 @@ export type FinanceAdjustmentType = "add" | "deduct";
 export type FinanceLedgerType = "in" | "out";
 export type FinanceDraftType = "payment" | "adjustment_add" | "adjustment_deduct" | "cost";
 export type FinanceDraftStatus = "pending" | "approved" | "ignored";
+export type FinanceContractStatus = "active" | "completed" | "cancelled";
 export type AiFeedbackSource = "website" | "line";
 export type AiFeedbackAction =
   | "approve_ai_task"
@@ -114,11 +115,15 @@ export type UserProfile = UserProfileInput & {
 
 export type FinanceProjectSettingsInput = {
   projectId: string;
+  name: string;
   code: string;
   address: string;
   contractAmount: number;
   estimatedCost: number;
   startDate: string;
+  status: FinanceContractStatus;
+  isPrimary: boolean;
+  sortOrder: number;
   notes: string;
 };
 
@@ -145,6 +150,7 @@ export type FinanceAccount = FinanceAccountInput & {
 
 export type FinancePaymentInput = {
   projectId: string;
+  contractId: string;
   name: string;
   dueDate: string;
   paidDate: string;
@@ -165,6 +171,7 @@ export type FinancePayment = FinancePaymentInput & {
 
 export type FinanceAdjustmentInput = {
   projectId: string;
+  contractId: string;
   date: string;
   type: FinanceAdjustmentType;
   name: string;
@@ -182,6 +189,7 @@ export type FinanceAdjustment = FinanceAdjustmentInput & {
 
 export type FinanceCostInput = {
   projectId: string;
+  contractId: string;
   category: string;
   item: string;
   vendor: string;
@@ -219,6 +227,7 @@ export type FinanceLedger = FinanceLedgerInput & {
 export type FinanceDraft = {
   id: string;
   projectId: string;
+  contractId: string;
   draftType: FinanceDraftType;
   title: string;
   amount: number;

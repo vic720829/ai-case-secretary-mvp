@@ -94,6 +94,91 @@ export function projectFinanceTotals(
   };
 }
 
+export function projectFinanceContracts(
+  settings: FinanceProjectSettings[],
+  projectId: string
+) {
+  return settings
+    .filter((item) => item.projectId === projectId)
+    .sort(
+      (a, b) =>
+        Number(b.isPrimary) - Number(a.isPrimary) ||
+        a.sortOrder - b.sortOrder ||
+        (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0) ||
+        a.name.localeCompare(b.name, "zh-Hant")
+    );
+}
+
+export function primaryFinanceContract(contracts: FinanceProjectSettings[]) {
+  return (
+    contracts.find((item) => item.isPrimary) ||
+    contracts.find((item) => item.id === item.projectId) ||
+    contracts[0]
+  );
+}
+
+export function resolvedFinanceContractId(
+  record: { contractId: string },
+  contracts: FinanceProjectSettings[]
+) {
+  return record.contractId || primaryFinanceContract(contracts)?.id || "";
+}
+
+export function financeRecordBelongsToContract(
+  record: { contractId: string },
+  contractId: string,
+  contracts: FinanceProjectSettings[]
+) {
+  return resolvedFinanceContractId(record, contracts) === contractId;
+}
+
+export function projectFinanceTotalsForContracts(
+  contracts: FinanceProjectSettings[],
+  payments: FinancePayment[],
+  adjustments: FinanceAdjustment[],
+  costs: FinanceCost[]
+) {
+  if (!contracts.length) {
+    return projectFinanceTotals(undefined, payments, adjustments, costs);
+  }
+
+  const contractAmount = contracts.reduce(
+    (sum, item) => sum + Math.max(Number(item.contractAmount) || 0, 0),
+    0
+  );
+  const estimatedCost = contracts.reduce(
+    (sum, item) =>
+      sum +
+      Math.max(
+        Number(item.estimatedCost) || Math.round(Math.max(Number(item.contractAmount) || 0, 0) * 0.6),
+        0
+      ),
+    0
+  );
+
+  return projectFinanceTotals(
+    {
+      id: "all",
+      projectId: contracts[0].projectId,
+      name: "全部合約",
+      code: "",
+      address: "",
+      contractAmount,
+      estimatedCost,
+      startDate: "",
+      status: "active",
+      isPrimary: false,
+      sortOrder: 0,
+      notes: "",
+      createdAt: null,
+      updatedAt: null
+    },
+    payments,
+    adjustments,
+    costs
+  );
+}
+
 export function buildFinanceAccountEntries(data: Pick<FinanceData, "payments" | "costs" | "ledger">) {
   const paymentEntries = data.payments
     .map((payment): FinanceAccountEntry | null => {

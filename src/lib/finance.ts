@@ -71,15 +71,22 @@ function booleanValue(value: unknown) {
 
 function financeProjectSettingsFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
   const data = snapshot.data();
+  const projectId = stringValue(data.projectId) || snapshot.id;
+  const status =
+    data.status === "completed" || data.status === "cancelled" ? data.status : "active";
 
   return {
     id: snapshot.id,
-    projectId: stringValue(data.projectId) || snapshot.id,
+    projectId,
+    name: stringValue(data.name) || "主合約",
     code: stringValue(data.code),
     address: stringValue(data.address),
     contractAmount: numberValue(data.contractAmount),
     estimatedCost: numberValue(data.estimatedCost),
     startDate: stringValue(data.startDate),
+    status,
+    isPrimary: data.isPrimary === true || snapshot.id === projectId,
+    sortOrder: numberValue(data.sortOrder),
     notes: stringValue(data.notes),
     createdAt: timestampToDate(data.createdAt),
     updatedAt: timestampToDate(data.updatedAt)
@@ -109,6 +116,7 @@ function financePaymentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
   return {
     id: snapshot.id,
     projectId: stringValue(data.projectId),
+    contractId: stringValue(data.contractId),
     name: stringValue(data.name),
     dueDate: stringValue(data.dueDate),
     paidDate: stringValue(data.paidDate),
@@ -130,6 +138,7 @@ function financeAdjustmentFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>)
   return {
     id: snapshot.id,
     projectId: stringValue(data.projectId),
+    contractId: stringValue(data.contractId),
     date: stringValue(data.date),
     type: data.type === "deduct" ? "deduct" : "add",
     name: stringValue(data.name),
@@ -148,6 +157,7 @@ function financeCostFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
   return {
     id: snapshot.id,
     projectId: stringValue(data.projectId),
+    contractId: stringValue(data.contractId),
     category: stringValue(data.category),
     item: stringValue(data.item),
     vendor: stringValue(data.vendor),
@@ -193,6 +203,7 @@ function financeDraftFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
   return {
     id: snapshot.id,
     projectId: stringValue(data.projectId),
+    contractId: stringValue(data.contractId),
     draftType,
     title: stringValue(data.title),
     amount: numberValue(data.amount),
@@ -228,6 +239,16 @@ function sortFinanceAccounts(items: FinanceAccount[]) {
   );
 }
 
+function sortFinanceContracts(items: FinanceProjectSettings[]) {
+  return items.sort(
+    (a, b) =>
+      Number(b.isPrimary) - Number(a.isPrimary) ||
+      a.sortOrder - b.sortOrder ||
+      (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0) ||
+      a.name.localeCompare(b.name, "zh-Hant")
+  );
+}
+
 export async function listFinanceData(): Promise<FinanceData> {
   const database = requireDb();
   const [
@@ -249,7 +270,7 @@ export async function listFinanceData(): Promise<FinanceData> {
   ]);
 
   return {
-    projectSettings: projectSettingsSnapshot.docs.map(financeProjectSettingsFromDoc),
+    projectSettings: sortFinanceContracts(projectSettingsSnapshot.docs.map(financeProjectSettingsFromDoc)),
     accounts: sortFinanceAccounts(accountsSnapshot.docs.map(financeAccountFromDoc)),
     payments: sortNewest(paymentsSnapshot.docs.map(financePaymentFromDoc)),
     adjustments: sortNewest(adjustmentsSnapshot.docs.map(financeAdjustmentFromDoc)),
@@ -366,13 +387,21 @@ export async function ensureDefaultFinanceAccount(actor?: AuditActor | null) {
 }
 
 export function saveFinanceProjectSettings(input: FinanceProjectSettingsInput, actor?: AuditActor | null) {
+  return saveFinanceContract(input.projectId, input, actor);
+}
+
+export function saveFinanceContract(
+  id: string,
+  input: FinanceProjectSettingsInput,
+  actor?: AuditActor | null
+) {
   return saveRecord(
     FINANCE_PROJECTS_COLLECTION,
-    input.projectId,
+    id,
     input,
     actor,
-    "finance_project_settings",
-    input.code || input.projectId
+    "finance_contract",
+    input.name || input.code || input.projectId
   );
 }
 
@@ -484,6 +513,7 @@ export async function ignoreFinanceDraft(id: string, reviewedBy: string) {
 export async function approveFinanceDraft(
   draft: FinanceDraft,
   accountId: string,
+  contractId: string,
   reviewedBy: string,
   actor?: AuditActor | null
 ) {
@@ -494,6 +524,7 @@ export async function approveFinanceDraft(
   const amount = draft.totalAmount || draft.amount;
   const base = {
     projectId: draft.projectId,
+    contractId,
     notes: draft.notes || `來源：${draft.sourceMessageText}`,
     source: "line" as const,
     sourceMessageId: draft.sourceMessageId,
@@ -539,6 +570,7 @@ export async function approveFinanceDraft(
   batch.update(draftRef, {
     status: "approved",
     accountId,
+    contractId,
     reviewedBy,
     reviewedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
@@ -586,7 +618,7 @@ export async function importFinanceBackup(data: FinanceData, actor?: AuditActor 
   const batch = writeBatch(database);
 
   data.projectSettings.forEach((item) => {
-    batch.set(doc(database, FINANCE_PROJECTS_COLLECTION, item.projectId), {
+    batch.set(doc(database, FINANCE_PROJECTS_COLLECTION, item.id || item.projectId), {
       ...stripDates(item),
       projectId: item.projectId,
       createdAt: serverTimestamp(),
@@ -632,7 +664,8 @@ function stripDates<T extends { id: string; createdAt?: Date | null; updatedAt?:
 
 export async function deleteFinanceProjectData(projectId: string) {
   const database = requireDb();
-  const snapshots = await Promise.all([
+  const [contractsSnapshot, ...relatedSnapshots] = await Promise.all([
+    getDocs(collection(database, FINANCE_PROJECTS_COLLECTION)),
     getDocs(collection(database, FINANCE_PAYMENTS_COLLECTION)),
     getDocs(collection(database, FINANCE_ADJUSTMENTS_COLLECTION)),
     getDocs(collection(database, FINANCE_COSTS_COLLECTION)),
@@ -640,8 +673,12 @@ export async function deleteFinanceProjectData(projectId: string) {
   ]);
   const batch = writeBatch(database);
 
-  batch.delete(doc(database, FINANCE_PROJECTS_COLLECTION, projectId));
-  snapshots.forEach((snapshot) => {
+  contractsSnapshot.docs.forEach((item) => {
+    if (item.data().projectId === projectId || item.id === projectId) {
+      batch.delete(item.ref);
+    }
+  });
+  relatedSnapshots.forEach((snapshot) => {
     snapshot.docs.forEach((item) => {
       if (item.data().projectId === projectId) batch.delete(item.ref);
     });
