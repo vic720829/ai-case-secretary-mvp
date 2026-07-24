@@ -64,4 +64,33 @@ const deductionTotals = projectFinanceTotals(
 
 assert.equal(deductionTotals.received, 280000);
 
+const futureCashTotals = projectFinanceTotals(
+  { projectId: "project-1", contractAmount: 1000000, estimatedCost: 600000, notes: "", createdAt: null, updatedAt: null },
+  [{ ...payment, expectedAmount: 400000, receivedAmount: 400000 }],
+  [],
+  [
+    {
+      id: "cost-1",
+      projectId: "project-1",
+      category: "工程成本",
+      item: "已付工程款",
+      vendor: "廠商",
+      date: "2026-07-24",
+      amount: 200000,
+      accountId: "account-1",
+      status: "paid",
+      notes: "",
+      source: "manual",
+      sourceMessageId: "",
+      createdAt: null,
+      updatedAt: null
+    }
+  ]
+);
+
+assert.equal(futureCashTotals.estimatedCostRemaining, 400000);
+assert.equal(futureCashTotals.estimatedProfit, 600000);
+assert.equal(futureCashTotals.estimatedProfitRate, 0.6);
+assert.equal(futureCashTotals.futureCash, 200000);
+
 console.log("Finance calculation tests passed.");

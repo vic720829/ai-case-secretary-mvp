@@ -874,7 +874,12 @@ function FinanceProjectDetail({
         <Metric label="追加總額" value={money(totals.additions)} icon={Plus} tone="amber" />
         <Metric label="減項總額" value={money(totals.deductions)} icon={Trash2} />
         <Metric label="待收款" value={money(totals.receivable)} icon={CircleDollarSign} tone="amber" />
-        <Metric label="待付款成本" value={money(totals.unpaidCosts)} icon={WalletCards} tone="red" />
+        <Metric
+          label="預估利潤 / 成數"
+          value={`${money(totals.estimatedProfit)} / ${percent(totals.estimatedProfitRate)}`}
+          icon={WalletCards}
+          tone={totals.estimatedProfit >= 0 ? "teal" : "red"}
+        />
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-stone-200">
