@@ -1058,16 +1058,21 @@ function FinanceProjectDetail({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="合約總額" value={money(totals.contract)} icon={ReceiptText} />
         <Metric label="已收款" value={money(totals.received)} icon={ArrowDownToLine} tone="teal" />
-        <Metric label="已付成本" value={money(totals.paidCosts)} icon={ArrowUpFromLine} tone="red" />
-        <Metric label="實際利潤" value={money(totals.actualProfit)} icon={Banknote} />
+        <Metric label="已付款" value={money(totals.paidCosts)} icon={ArrowUpFromLine} tone="red" />
+        <Metric
+          label="利潤 / 成數"
+          value={`${money(totals.profit)} / ${percent(totals.profitRate)}`}
+          icon={Banknote}
+          tone={totals.profit >= 0 ? "teal" : "red"}
+        />
         <Metric label="追加總額" value={money(totals.additions)} icon={Plus} tone="amber" />
         <Metric label="減項總額" value={money(totals.deductions)} icon={Trash2} />
         <Metric label="待收款" value={money(totals.receivable)} icon={CircleDollarSign} tone="amber" />
         <Metric
-          label="預估利潤 / 成數"
-          value={`${money(totals.estimatedProfit)} / ${percent(totals.estimatedProfitRate)}`}
+          label="待付款"
+          value={money(totals.unpaidCosts)}
           icon={WalletCards}
-          tone={totals.estimatedProfit >= 0 ? "teal" : "red"}
+          tone="amber"
         />
       </div>
 
@@ -1398,7 +1403,7 @@ function FinanceAccounts({
         </div>
       </div>
 
-      <Section title="存簿流水" description="收款與已付成本會自動連動；手動流水可以修改或刪除。">
+      <Section title="存簿流水" description="收款與已付款會自動連動；手動流水可以修改或刪除。">
         {entries.length ? (
           <Table>
             <thead><tr><Th>日期</Th><Th>帳戶</Th><Th>類型</Th><Th>分類</Th><Th>案件</Th><Th>項目</Th><Th>入金</Th><Th>出金</Th><Th align="right">操作</Th></tr></thead>

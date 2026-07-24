@@ -19,7 +19,7 @@ export type FinanceProjectTotals = {
   paidCosts: number;
   unpaidCosts: number;
   profit: number;
-  actualProfit: number;
+  profitRate: number;
   estimatedCost: number;
   estimatedCostRemaining: number;
   estimatedProfit: number;
@@ -67,9 +67,14 @@ export function projectFinanceTotals(
   const paymentReceived = payments.reduce((sum, item) => sum + paymentReceivedAmount(item), 0);
   const received = Math.max(paymentReceived + additions - deductions, 0);
   const receivable = Math.max(contract - received, 0);
-  const costsTotal = costs.reduce((sum, item) => sum + Math.max(Number(item.amount) || 0, 0), 0);
   const paidCosts = costs.reduce((sum, item) => sum + paidCostAmount(item), 0);
-  const unpaidCosts = Math.max(costsTotal - paidCosts, 0);
+  const unpaidCosts = costs.reduce(
+    (sum, item) =>
+      sum + (item.status === "unpaid" ? Math.max(Number(item.amount) || 0, 0) : 0),
+    0
+  );
+  const costsTotal = paidCosts + unpaidCosts;
+  const profit = contract - unpaidCosts - paidCosts;
   const estimatedCost = Math.max(Number(settings?.estimatedCost) || Math.round(contract * 0.6), 0);
   const estimatedCostRemaining = estimatedCost - paidCosts;
   const estimatedProfit = contract - estimatedCostRemaining;
@@ -84,8 +89,8 @@ export function projectFinanceTotals(
     costs: costsTotal,
     paidCosts,
     unpaidCosts,
-    profit: contract - costsTotal,
-    actualProfit: contract - paidCosts,
+    profit,
+    profitRate: contract ? profit / contract : 0,
     estimatedCost,
     estimatedCostRemaining,
     estimatedProfit,

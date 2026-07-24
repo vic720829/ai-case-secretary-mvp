@@ -88,10 +88,30 @@ const futureCashTotals = projectFinanceTotals(
       sourceMessageId: "",
       createdAt: null,
       updatedAt: null
+    },
+    {
+      id: "cost-2",
+      projectId: "project-1",
+      category: "工程成本",
+      item: "尚未支付工程款",
+      vendor: "廠商",
+      date: "2026-07-25",
+      amount: 100000,
+      accountId: "",
+      status: "unpaid",
+      notes: "",
+      source: "manual",
+      sourceMessageId: "",
+      createdAt: null,
+      updatedAt: null
     }
   ]
 );
 
+assert.equal(futureCashTotals.paidCosts, 200000);
+assert.equal(futureCashTotals.unpaidCosts, 100000);
+assert.equal(futureCashTotals.profit, 700000);
+assert.equal(futureCashTotals.profitRate, 0.7);
 assert.equal(futureCashTotals.estimatedCostRemaining, 400000);
 assert.equal(futureCashTotals.estimatedProfit, 600000);
 assert.equal(futureCashTotals.estimatedProfitRate, 0.6);
