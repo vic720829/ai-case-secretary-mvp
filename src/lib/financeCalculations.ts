@@ -62,7 +62,8 @@ export function projectFinanceTotals(
     0
   );
   const contract = Math.max(baseContract + additions - deductions, 0);
-  const received = payments.reduce((sum, item) => sum + paymentReceivedAmount(item), 0);
+  const paymentReceived = payments.reduce((sum, item) => sum + paymentReceivedAmount(item), 0);
+  const received = Math.max(paymentReceived + additions - deductions, 0);
   const receivable = Math.max(contract - received, 0);
   const costsTotal = costs.reduce((sum, item) => sum + Math.max(Number(item.amount) || 0, 0), 0);
   const paidCosts = costs.reduce((sum, item) => sum + paidCostAmount(item), 0);
