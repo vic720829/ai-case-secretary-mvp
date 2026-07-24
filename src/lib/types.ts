@@ -117,7 +117,6 @@ export type FinanceProjectSettingsInput = {
   code: string;
   address: string;
   contractAmount: number;
-  collectionAmount: number;
   estimatedCost: number;
   startDate: string;
   notes: string;

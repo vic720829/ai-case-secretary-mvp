@@ -1184,15 +1184,66 @@ function FinanceModal({
 
 function ProjectSettingsFields({ modal }: { modal: Extract<Exclude<ModalState, null>, { kind: "project" }> }) {
   const settings = modal.settings;
+  const initialContractAmount = Math.max(Number(settings?.contractAmount) || 0, 0);
+  const initialEstimatedCost = Math.max(
+    Number(settings?.estimatedCost) || Math.round(initialContractAmount * 0.6),
+    0
+  );
+  const [contractAmount, setContractAmount] = useState(String(initialContractAmount));
+  const [estimatedCost, setEstimatedCost] = useState(String(initialEstimatedCost));
+  const [estimatedCostEdited, setEstimatedCostEdited] = useState(
+    Boolean(Number(settings?.estimatedCost))
+  );
+
+  function handleContractAmountChange(value: string) {
+    setContractAmount(value);
+    if (!estimatedCostEdited) {
+      setEstimatedCost(String(Math.round(Math.max(Number(value) || 0, 0) * 0.6)));
+    }
+  }
+
+  function handleEstimatedCostChange(value: string) {
+    setEstimatedCost(value);
+    setEstimatedCostEdited(Boolean(Number(value)));
+  }
+
+  function restoreEstimatedCostIfEmpty() {
+    if (!Number(estimatedCost)) {
+      setEstimatedCost(String(Math.round(Math.max(Number(contractAmount) || 0, 0) * 0.6)));
+      setEstimatedCostEdited(false);
+    }
+  }
+
   return (
     <>
       <ReadOnlyField label="案件名稱" value={modal.project.name} />
       <ReadOnlyField label="客戶名稱" value={modal.project.clientName} />
       <Field label="案件編號" name="code" defaultValue={settings?.code || ""} placeholder="例如 P-2026-001" />
       <Field label="地址" name="address" defaultValue={settings?.address || ""} />
-      <Field label="本案簽約金額" name="contractAmount" type="number" min="0" defaultValue={settings?.contractAmount || 0} required />
-      <Field label="本案代收金額" name="collectionAmount" type="number" min="0" defaultValue={settings?.collectionAmount || 0} />
-      <Field label="預估總成本" name="estimatedCost" type="number" min="0" defaultValue={settings?.estimatedCost || 0} />
+      <Field
+        label="本案簽約金額"
+        name="contractAmount"
+        type="number"
+        min="0"
+        value={contractAmount}
+        onChange={(event) => handleContractAmountChange(event.target.value)}
+        required
+      />
+      <label className="text-sm font-medium text-slate-700">
+        預估總成本
+        <input
+          className={inputClass}
+          name="estimatedCost"
+          type="number"
+          min="0"
+          value={estimatedCost}
+          onChange={(event) => handleEstimatedCostChange(event.target.value)}
+          onBlur={restoreEstimatedCostIfEmpty}
+        />
+        <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">
+          留空或填 0 時，自動以本案簽約金額的 60% 估算；可自行修改。
+        </span>
+      </label>
       <Field label="開工日期" name="startDate" type="date" defaultValue={settings?.startDate || ""} />
       <TextArea label="備註" name="notes" defaultValue={settings?.notes || ""} wide />
     </>
@@ -1293,7 +1344,6 @@ async function submitFinanceModal(
             code: text(form, "code"),
             address: text(form, "address"),
             contractAmount: amount(form, "contractAmount"),
-            collectionAmount: amount(form, "collectionAmount"),
             estimatedCost: amount(form, "estimatedCost"),
             startDate: text(form, "startDate"),
             notes: text(form, "notes")

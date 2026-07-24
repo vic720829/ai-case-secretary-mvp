@@ -78,7 +78,6 @@ function financeProjectSettingsFromDoc(snapshot: QueryDocumentSnapshot<DocumentD
     code: stringValue(data.code),
     address: stringValue(data.address),
     contractAmount: numberValue(data.contractAmount),
-    collectionAmount: numberValue(data.collectionAmount),
     estimatedCost: numberValue(data.estimatedCost),
     startDate: stringValue(data.startDate),
     notes: stringValue(data.notes),

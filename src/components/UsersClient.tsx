@@ -9,7 +9,7 @@ import { userRoleOptions } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
 import { getReadableError } from "@/lib/errors";
 import { listUserProfiles } from "@/lib/firestore";
-import { getRoleDefinition, roleDefinitions } from "@/lib/permissions";
+import { featureDefinitions, getRoleDefinition, roleDefinitions } from "@/lib/permissions";
 import type { UserProfile, UserProfileInput, UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -502,6 +502,41 @@ function RolePermissionGuide() {
             <p className="mt-1 text-sm leading-6 text-slate-600">{definition.cannotDo.join("、")}</p>
           </article>
         ))}
+      </div>
+
+      <div className="mt-6 overflow-hidden rounded-lg border border-stone-200">
+        <div className="border-b border-stone-200 bg-stone-50 px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-950">功能權限對照</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            系統依員工角色自動開放功能；目前不提供個別員工另外勾選。
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-stone-200 text-sm">
+            <thead className="bg-white text-left text-xs font-semibold text-slate-500">
+              <tr>
+                <th className="px-4 py-3">功能</th>
+                <th className="px-4 py-3">用途</th>
+                <th className="px-4 py-3">可使用角色</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 bg-white">
+              {featureDefinitions.map((feature) => (
+                <tr key={feature.key} className={feature.key === "finance" ? "bg-emerald-50/60" : undefined}>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{feature.label}</td>
+                  <td className="min-w-72 px-4 py-3 leading-6 text-slate-600">{feature.description}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex min-w-64 flex-wrap gap-2">
+                      {feature.roles.map((role) => (
+                        <RoleBadge key={role} role={role} />
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
