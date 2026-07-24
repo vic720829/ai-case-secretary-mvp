@@ -95,7 +95,7 @@ export function projectFinanceTotals(
     estimatedCostRemaining,
     estimatedProfit,
     estimatedProfitRate: contract ? estimatedProfit / contract : 0,
-    futureCash: receivable - estimatedCostRemaining
+    futureCash: receivable - unpaidCosts
   };
 }
 
@@ -250,6 +250,16 @@ export function financeAccountBalance(account: FinanceAccount, entries: FinanceA
       (balance, entry) => balance + (entry.type === "in" ? entry.amount : -entry.amount),
       Number(account.openingBalance) || 0
     );
+}
+
+export function totalFinanceAccountBalance(
+  accounts: FinanceAccount[],
+  entries: FinanceAccountEntry[]
+) {
+  return accounts.reduce(
+    (total, account) => total + financeAccountBalance(account, entries),
+    0
+  );
 }
 
 export function ledgerRecordName(entry: FinanceLedger) {

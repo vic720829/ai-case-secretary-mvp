@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  buildFinanceAccountEntries,
   financeRecordBelongsToContract,
+  totalFinanceAccountBalance,
   projectFinanceTotals,
   projectFinanceTotalsForContracts
 } from "../src/lib/financeCalculations.ts";
@@ -115,7 +117,51 @@ assert.equal(futureCashTotals.profitRate, 0.7);
 assert.equal(futureCashTotals.estimatedCostRemaining, 400000);
 assert.equal(futureCashTotals.estimatedProfit, 600000);
 assert.equal(futureCashTotals.estimatedProfitRate, 0.6);
-assert.equal(futureCashTotals.futureCash, 200000);
+assert.equal(futureCashTotals.futureCash, 500000);
+
+const accountEntries = buildFinanceAccountEntries({
+  projectSettings: [],
+  accounts: [],
+  payments: [
+    {
+      ...payment,
+      receivedAmount: 300000,
+      accountId: "account-1"
+    }
+  ],
+  adjustments: [],
+  costs: [
+    {
+      id: "paid-cost",
+      projectId: "project-1",
+      category: "工程成本",
+      item: "材料款",
+      vendor: "廠商",
+      date: "2026-07-24",
+      amount: 50000,
+      accountId: "account-2",
+      status: "paid",
+      notes: "",
+      source: "manual",
+      sourceMessageId: "",
+      createdAt: null,
+      updatedAt: null
+    }
+  ],
+  ledger: [],
+  drafts: []
+});
+
+assert.equal(
+  totalFinanceAccountBalance(
+    [
+      { id: "account-1", name: "帳戶一", openingBalance: 100000 },
+      { id: "account-2", name: "帳戶二", openingBalance: 200000 }
+    ],
+    accountEntries
+  ),
+  550000
+);
 
 const contracts = [
   {

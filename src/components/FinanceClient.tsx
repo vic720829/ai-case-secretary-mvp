@@ -67,6 +67,7 @@ import {
   projectFinanceContracts,
   projectFinanceTotals,
   projectFinanceTotalsForContracts,
+  totalFinanceAccountBalance,
   type FinanceAccountEntry
 } from "@/lib/financeCalculations";
 import { listProjects } from "@/lib/firestore";
@@ -494,41 +495,42 @@ function FinanceDashboard({
     }
   }, [data.accounts, selectedAccountId]);
 
-  const rows = projects
-    .filter((project) => {
-      const settings = primaryFinanceContract(contractsByProject.get(project.id) || []);
-      const value =
-        settings?.startDate ||
-        project.expectedFinishDate ||
-        project.createdAt?.toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" }) ||
-        "";
-      return value.slice(0, 4) === year;
-    })
-    .map((project) => {
-      const contracts = contractsByProject.get(project.id) || [];
-      const totals = projectFinanceTotalsForContracts(
-        contracts,
-        data.payments.filter((item) => item.projectId === project.id),
-        data.adjustments.filter((item) => item.projectId === project.id),
-        data.costs.filter((item) => item.projectId === project.id)
-      );
-      return { project, settings: primaryFinanceContract(contracts), totals };
-    });
+  const allProjectRows = projects.map((project) => {
+    const contracts = contractsByProject.get(project.id) || [];
+    const totals = projectFinanceTotalsForContracts(
+      contracts,
+      data.payments.filter((item) => item.projectId === project.id),
+      data.adjustments.filter((item) => item.projectId === project.id),
+      data.costs.filter((item) => item.projectId === project.id)
+    );
+    return { project, settings: primaryFinanceContract(contracts), totals };
+  });
+  const rows = allProjectRows.filter(({ project, settings }) => {
+    const value =
+      settings?.startDate ||
+      project.expectedFinishDate ||
+      project.createdAt?.toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" }) ||
+      "";
+    return value.slice(0, 4) === year;
+  });
   const summary = rows.reduce(
     (result, row) => ({
       contract: result.contract + row.totals.contract,
       received: result.received + row.totals.received,
       receivable: result.receivable + row.totals.receivable,
-      profit: result.profit + row.totals.profit,
-      futureCash: result.futureCash + row.totals.futureCash
+      profit: result.profit + row.totals.profit
     }),
-    { contract: 0, received: 0, receivable: 0, profit: 0, futureCash: 0 }
+    { contract: 0, received: 0, receivable: 0, profit: 0 }
   );
   const selectedAccount = data.accounts.find((item) => item.id === selectedAccountId);
   const selectedAccountBalance = selectedAccount
     ? financeAccountBalance(selectedAccount, accountEntries)
     : 0;
-  const futureCompanyBalance = summary.futureCash + selectedAccountBalance;
+  const allProjectsFutureCash = allProjectRows.reduce(
+    (total, row) => total + row.totals.futureCash,
+    0
+  );
+  const futureCompanyBalance = selectedAccountBalance + allProjectsFutureCash;
   const rankedRows = [...rows].sort((a, b) => b.totals.profit - a.totals.profit);
   const projectIds = new Set(rows.map((row) => row.project.id));
   const receivableRows = data.payments
@@ -559,7 +561,7 @@ function FinanceDashboard({
             </select>
           </label>
           <label className="text-xs font-medium text-slate-600">
-            未來公司存簿
+            指定存簿
             <select
               className={cn(inputClass, "mt-1 min-w-48 py-2")}
               value={selectedAccountId}
@@ -1303,6 +1305,10 @@ function FinanceAccounts({
   const ledgerById = new Map(ledger.map((item) => [item.id, item]));
   const [orderedAccounts, setOrderedAccounts] = useState(accounts);
   const [draggedAccountId, setDraggedAccountId] = useState("");
+  const totalAssets = useMemo(
+    () => totalFinanceAccountBalance(orderedAccounts, entries),
+    [entries, orderedAccounts]
+  );
 
   useEffect(() => {
     setOrderedAccounts(accounts);
@@ -1343,6 +1349,24 @@ function FinanceAccounts({
 
   return (
     <div className="space-y-5">
+      <section className="border-y border-stone-200 bg-white px-5 py-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+              <Landmark className="h-5 w-5" aria-hidden />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">總資產</h2>
+              <p className="mt-1 text-sm text-slate-500">所有帳戶目前帳面餘額合計</p>
+            </div>
+          </div>
+          <div className="text-left sm:text-right">
+            <div className="text-3xl font-semibold text-slate-950">{money(totalAssets)}</div>
+            <div className="mt-1 text-xs text-slate-500">共 {orderedAccounts.length} 個帳戶</div>
+          </div>
+        </div>
+      </section>
+
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="secondary" type="button" onClick={onAddAccount}><Plus className="h-4 w-4" aria-hidden />新增帳戶</Button>
         <Button type="button" onClick={onAddLedger}><Plus className="h-4 w-4" aria-hidden />手動入出金</Button>
