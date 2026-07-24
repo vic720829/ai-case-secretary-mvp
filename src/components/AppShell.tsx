@@ -22,6 +22,7 @@ import {
   ScanSearch,
   UserCog,
   UsersRound,
+  WalletCards,
   X
 } from "lucide-react";
 import Link from "next/link";
@@ -45,6 +46,7 @@ const navItems = [
   { href: "/reminders", label: "提醒中心", icon: Bell, feature: "reminders" },
   { href: "/drawing-reviews", label: "審圖中心", icon: ScanSearch, feature: "drawingReviews" },
   { href: "/projects", label: "案件列表", icon: BriefcaseBusiness, feature: "projects" },
+  { href: "/finance", label: "財務管理", icon: WalletCards, feature: "finance" },
   { href: "/calendar", label: "共享月曆", icon: CalendarDays, feature: "calendar" },
   { href: "/schedule", label: "工期總表", icon: CalendarDays, feature: "schedule" },
   { href: "/tasks", label: "待辦列表", icon: ClipboardList, feature: "tasks" },

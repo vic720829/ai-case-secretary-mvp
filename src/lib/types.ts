@@ -62,6 +62,12 @@ export type CalendarEventSource = "manual" | "line" | "ai";
 export type CalendarEventCounterpartyType = "customer" | "vendor" | "internal" | "other";
 export type UserRole = "owner" | "admin" | "manager" | "staff" | "viewer";
 export type AuditAction = "create" | "update" | "delete";
+export type FinancePaymentStatus = "unpaid" | "partial" | "paid";
+export type FinanceCostStatus = "unpaid" | "paid";
+export type FinanceAdjustmentType = "add" | "deduct";
+export type FinanceLedgerType = "in" | "out";
+export type FinanceDraftType = "payment" | "adjustment_add" | "adjustment_deduct" | "cost";
+export type FinanceDraftStatus = "pending" | "approved" | "ignored";
 export type AiFeedbackSource = "website" | "line";
 export type AiFeedbackAction =
   | "approve_ai_task"
@@ -104,6 +110,144 @@ export type UserProfile = UserProfileInput & {
   id: string;
   createdAt: Date | null;
   updatedAt: Date | null;
+};
+
+export type FinanceProjectSettingsInput = {
+  projectId: string;
+  code: string;
+  address: string;
+  contractAmount: number;
+  collectionAmount: number;
+  estimatedCost: number;
+  startDate: string;
+  notes: string;
+};
+
+export type FinanceProjectSettings = FinanceProjectSettingsInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceAccountInput = {
+  name: string;
+  openingBalance: number;
+  notes: string;
+  defaultForIncome: boolean;
+  active: boolean;
+};
+
+export type FinanceAccount = FinanceAccountInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinancePaymentInput = {
+  projectId: string;
+  name: string;
+  dueDate: string;
+  paidDate: string;
+  expectedAmount: number;
+  receivedAmount: number;
+  accountId: string;
+  status: FinancePaymentStatus;
+  notes: string;
+  source: "manual" | "line";
+  sourceMessageId: string;
+};
+
+export type FinancePayment = FinancePaymentInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceAdjustmentInput = {
+  projectId: string;
+  date: string;
+  type: FinanceAdjustmentType;
+  name: string;
+  amount: number;
+  notes: string;
+  source: "manual" | "line";
+  sourceMessageId: string;
+};
+
+export type FinanceAdjustment = FinanceAdjustmentInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceCostInput = {
+  projectId: string;
+  category: string;
+  item: string;
+  vendor: string;
+  date: string;
+  amount: number;
+  accountId: string;
+  status: FinanceCostStatus;
+  notes: string;
+  source: "manual" | "line";
+  sourceMessageId: string;
+};
+
+export type FinanceCost = FinanceCostInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceLedgerInput = {
+  date: string;
+  accountId: string;
+  type: FinanceLedgerType;
+  category: string;
+  amount: number;
+  item: string;
+  notes: string;
+};
+
+export type FinanceLedger = FinanceLedgerInput & {
+  id: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceDraft = {
+  id: string;
+  projectId: string;
+  draftType: FinanceDraftType;
+  title: string;
+  amount: number;
+  totalAmount: number;
+  date: string;
+  accountId: string;
+  notes: string;
+  sourceMessageId: string;
+  sourceMessageText: string;
+  sourceSenderId: string;
+  sourceSenderName: string;
+  confidence: number;
+  amountMismatch: boolean;
+  duplicateWarning: string;
+  status: FinanceDraftStatus;
+  reviewedBy: string;
+  reviewedAt: Date | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type FinanceData = {
+  projectSettings: FinanceProjectSettings[];
+  accounts: FinanceAccount[];
+  payments: FinancePayment[];
+  adjustments: FinanceAdjustment[];
+  costs: FinanceCost[];
+  ledger: FinanceLedger[];
+  drafts: FinanceDraft[];
 };
 
 export type TaskInput = {

@@ -8,6 +8,7 @@ export type FeatureKey =
   | "reminders"
   | "drawingReviews"
   | "projects"
+  | "finance"
   | "calendar"
   | "schedule"
   | "tasks"
@@ -47,7 +48,7 @@ export const roleDefinitions: RoleDefinition[] = [
     shortLabel: "最高權限",
     description: "公司負責人或系統最高管理者。可以看全部資料、管理員工、系統設定與敏感紀錄。",
     bestFor: "老闆、系統最高負責人。",
-    canDo: ["全部案件與待辦", "員工管理", "LINE 設定", "AI 學習", "Webhook / 操作紀錄", "所有摘要與 AI 案件記憶"],
+    canDo: ["全部案件與待辦", "財務管理", "員工管理", "LINE 設定", "AI 學習", "Webhook / 操作紀錄", "所有摘要與 AI 案件記憶"],
     cannotDo: ["無"]
   },
   {
@@ -56,7 +57,7 @@ export const roleDefinitions: RoleDefinition[] = [
     shortLabel: "日常後台管理",
     description: "管理日常營運資料，可設定 LINE 群組、員工帳號與大部分後台功能。",
     bestFor: "核心行政、資深設計師、可協助管理系統的人。",
-    canDo: ["案件與待辦管理", "員工管理", "LINE 群組與成員設定", "待辦審核", "重新生成 AI 摘要"],
+    canDo: ["案件與待辦管理", "財務管理", "員工管理", "LINE 群組與成員設定", "待辦審核", "重新生成 AI 摘要"],
     cannotDo: ["Webhook 紀錄", "操作紀錄", "AI 學習規則"]
   },
   {
@@ -137,6 +138,13 @@ export const featureDefinitions: FeatureDefinition[] = [
     description: "查看案件與案件內功能。下一階段會改成只顯示被加入的案件。",
     roles: ["owner", "admin", "manager", "staff", "viewer"],
     paths: ["/projects"]
+  },
+  {
+    key: "finance",
+    label: "財務管理",
+    description: "管理案件收款、追加減、工程成本、公司存簿與銀行對帳。",
+    roles: ["owner", "admin"],
+    paths: ["/finance"]
   },
   {
     key: "calendar",

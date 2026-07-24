@@ -54,6 +54,10 @@ service cloud.firestore {
       return hasAnyRole(["owner", "admin"]);
     }
 
+    function canManageFinance() {
+      return hasAnyRole(["owner", "admin"]);
+    }
+
     function projectPath(projectId) {
       return /databases/$(database)/documents/projects/$(projectId);
     }
@@ -198,6 +202,34 @@ service cloud.firestore {
       allow read: if canReadProject(resource.data.projectId);
       allow create: if canWriteProjectLinkedData(request.resource.data.projectId);
       allow update, delete: if canWriteProjectLinkedData(resource.data.projectId);
+    }
+
+    match /finance_project_settings/{settingsId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_accounts/{accountId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_payments/{paymentId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_adjustments/{adjustmentId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_costs/{costId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_ledger/{ledgerId} {
+      allow read, create, update, delete: if canManageFinance();
+    }
+
+    match /finance_drafts/{draftId} {
+      allow read, create, update, delete: if canManageFinance();
     }
 
     match /line_groups/{lineGroupId} {

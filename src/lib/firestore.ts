@@ -87,6 +87,11 @@ const USERS_COLLECTION = "users";
 const AUDIT_LOGS_COLLECTION = "audit_logs";
 const AI_FEEDBACK_EVENTS_COLLECTION = "ai_feedback_events";
 const LEARNED_RULES_COLLECTION = "learned_rules";
+const FINANCE_PROJECT_SETTINGS_COLLECTION = "finance_project_settings";
+const FINANCE_PAYMENTS_COLLECTION = "finance_payments";
+const FINANCE_ADJUSTMENTS_COLLECTION = "finance_adjustments";
+const FINANCE_COSTS_COLLECTION = "finance_costs";
+const FINANCE_DRAFTS_COLLECTION = "finance_drafts";
 const DEFAULT_RECENT_LIST_LIMIT = 150;
 const DEFAULT_REVIEWED_AI_TASK_LIMIT = 80;
 
@@ -951,7 +956,12 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     linkedAiTasks,
     linkedIncidents,
     linkedReminderLogs,
-    linkedWebhookLogs
+    linkedWebhookLogs,
+    financeSettingsSnapshot,
+    linkedFinancePayments,
+    linkedFinanceAdjustments,
+    linkedFinanceCosts,
+    linkedFinanceDrafts
   ] = await Promise.all([
     getDoc(doc(database, PROJECTS_COLLECTION, id)),
     getDocs(query(collection(database, TASKS_COLLECTION), where("projectId", "==", id))),
@@ -968,7 +978,12 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
     getDocs(query(collection(database, AI_TASKS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, INCIDENTS_COLLECTION), where("projectId", "==", id))),
     getDocs(query(collection(database, REMINDER_LOGS_COLLECTION), where("projectId", "==", id))),
-    getDocs(query(collection(database, WEBHOOK_LOGS_COLLECTION), where("projectId", "==", id)))
+    getDocs(query(collection(database, WEBHOOK_LOGS_COLLECTION), where("projectId", "==", id))),
+    getDoc(doc(database, FINANCE_PROJECT_SETTINGS_COLLECTION, id)),
+    getDocs(query(collection(database, FINANCE_PAYMENTS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, FINANCE_ADJUSTMENTS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, FINANCE_COSTS_COLLECTION), where("projectId", "==", id))),
+    getDocs(query(collection(database, FINANCE_DRAFTS_COLLECTION), where("projectId", "==", id)))
   ]);
   const project = projectSnapshot.exists() ? projectFromDoc(projectSnapshot as QueryDocumentSnapshot<DocumentData>) : null;
   const batch = writeBatch(database);
@@ -1017,6 +1032,21 @@ export async function deleteProject(id: string, actor?: AuditActor | null) {
   });
   linkedWebhookLogs.docs.forEach((webhookLogSnapshot) => {
     batch.delete(webhookLogSnapshot.ref);
+  });
+  if (financeSettingsSnapshot.exists()) {
+    batch.delete(financeSettingsSnapshot.ref);
+  }
+  linkedFinancePayments.docs.forEach((paymentSnapshot) => {
+    batch.delete(paymentSnapshot.ref);
+  });
+  linkedFinanceAdjustments.docs.forEach((adjustmentSnapshot) => {
+    batch.delete(adjustmentSnapshot.ref);
+  });
+  linkedFinanceCosts.docs.forEach((costSnapshot) => {
+    batch.delete(costSnapshot.ref);
+  });
+  linkedFinanceDrafts.docs.forEach((draftSnapshot) => {
+    batch.delete(draftSnapshot.ref);
   });
   addAuditLogToBatch(batch, {
     actor,
