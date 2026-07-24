@@ -13,6 +13,7 @@ import {
   CircleDollarSign,
   Download,
   FileSpreadsheet,
+  GripVertical,
   Landmark,
   Pencil,
   Plus,
@@ -49,6 +50,7 @@ import {
   ignoreFinanceDraft,
   importFinanceBackup,
   listFinanceData,
+  reorderFinanceAccounts,
   saveFinanceAccount,
   saveFinanceAdjustment,
   saveFinanceCost,
@@ -59,6 +61,7 @@ import {
 import {
   buildFinanceAccountEntries,
   financeAccountBalance,
+  paymentReceivedAmount,
   projectFinanceTotals,
   type FinanceAccountEntry
 } from "@/lib/financeCalculations";
@@ -245,7 +248,6 @@ export function FinanceClient() {
           data={data}
           pendingDrafts={pendingDrafts}
           settingsByProject={settingsByProject}
-          selectProject={selectProject}
           openDrafts={() => setView("drafts")}
         />
       ) : null}
@@ -341,6 +343,12 @@ export function FinanceClient() {
             if (!window.confirm(`確定刪除帳戶「${item.name}」？`)) return;
             void runAction(() => deleteFinanceAccount(item.id, item.name, actor), "帳戶已刪除。");
           }}
+          onReorderAccounts={(accountIds) =>
+            void runAction(
+              () => reorderFinanceAccounts(accountIds, actor),
+              "存簿順序已更新。"
+            )
+          }
           onAddLedger={() => setModal({ kind: "ledger" })}
           onEditLedger={(item) => setModal({ kind: "ledger", item })}
           onDeleteLedger={(item) => {
@@ -402,47 +410,129 @@ function FinanceDashboard({
   data,
   pendingDrafts,
   settingsByProject,
-  selectProject,
   openDrafts
 }: {
   projects: Project[];
   data: FinanceData;
   pendingDrafts: FinanceDraft[];
   settingsByProject: Map<string, FinanceProjectSettings>;
-  selectProject: (projectId: string) => void;
   openDrafts: () => void;
 }) {
-  const rows = projects.map((project) => {
-    const totals = projectFinanceTotals(
-      settingsByProject.get(project.id),
-      data.payments.filter((item) => item.projectId === project.id),
-      data.adjustments.filter((item) => item.projectId === project.id),
-      data.costs.filter((item) => item.projectId === project.id)
-    );
-    return { project, totals };
-  });
+  const accountEntries = useMemo(() => buildFinanceAccountEntries(data), [data]);
+  const years = useMemo(() => {
+    const values = new Set<string>([String(new Date().getFullYear())]);
+    projects.forEach((project) => {
+      const settings = settingsByProject.get(project.id);
+      const value =
+        settings?.startDate ||
+        project.expectedFinishDate ||
+        project.createdAt?.toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" }) ||
+        "";
+      const projectYear = value.slice(0, 4);
+      if (projectYear) values.add(projectYear);
+    });
+    return [...values].sort((a, b) => b.localeCompare(a));
+  }, [projects, settingsByProject]);
+  const [year, setYear] = useState(years[0] || String(new Date().getFullYear()));
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    data.accounts.find((item) => item.defaultForIncome)?.id || data.accounts[0]?.id || ""
+  );
+
+  useEffect(() => {
+    if (!years.includes(year)) setYear(years[0] || String(new Date().getFullYear()));
+  }, [year, years]);
+
+  useEffect(() => {
+    if (!data.accounts.some((item) => item.id === selectedAccountId)) {
+      setSelectedAccountId(
+        data.accounts.find((item) => item.defaultForIncome)?.id || data.accounts[0]?.id || ""
+      );
+    }
+  }, [data.accounts, selectedAccountId]);
+
+  const rows = projects
+    .filter((project) => {
+      const settings = settingsByProject.get(project.id);
+      const value =
+        settings?.startDate ||
+        project.expectedFinishDate ||
+        project.createdAt?.toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" }) ||
+        "";
+      return value.slice(0, 4) === year;
+    })
+    .map((project) => {
+      const totals = projectFinanceTotals(
+        settingsByProject.get(project.id),
+        data.payments.filter((item) => item.projectId === project.id),
+        data.adjustments.filter((item) => item.projectId === project.id),
+        data.costs.filter((item) => item.projectId === project.id)
+      );
+      return { project, settings: settingsByProject.get(project.id), totals };
+    });
   const summary = rows.reduce(
     (result, row) => ({
       contract: result.contract + row.totals.contract,
       received: result.received + row.totals.received,
       receivable: result.receivable + row.totals.receivable,
       profit: result.profit + row.totals.profit,
-      unpaidCosts: result.unpaidCosts + row.totals.unpaidCosts,
       futureCash: result.futureCash + row.totals.futureCash
     }),
-    { contract: 0, received: 0, receivable: 0, profit: 0, unpaidCosts: 0, futureCash: 0 }
+    { contract: 0, received: 0, receivable: 0, profit: 0, futureCash: 0 }
   );
-  const receivableRows = rows.filter((row) => row.totals.receivable > 0).sort((a, b) => b.totals.receivable - a.totals.receivable);
+  const selectedAccount = data.accounts.find((item) => item.id === selectedAccountId);
+  const selectedAccountBalance = selectedAccount
+    ? financeAccountBalance(selectedAccount, accountEntries)
+    : 0;
+  const futureCompanyBalance = summary.futureCash + selectedAccountBalance;
+  const rankedRows = [...rows].sort((a, b) => b.totals.profit - a.totals.profit);
+  const projectIds = new Set(rows.map((row) => row.project.id));
+  const receivableRows = data.payments
+    .filter(
+      (payment) =>
+        projectIds.has(payment.projectId) &&
+        Math.max(Number(payment.expectedAmount) || 0, 0) > paymentReceivedAmount(payment)
+    )
+    .sort(
+      (a, b) =>
+        (a.dueDate || "9999-12-31").localeCompare(b.dueDate || "9999-12-31") ||
+        a.name.localeCompare(b.name, "zh-Hant")
+    );
+  const maxAccountBalance = Math.max(
+    ...data.accounts.map((account) => Math.abs(financeAccountBalance(account, accountEntries))),
+    1
+  );
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-950">年度總覽</h2>
+        <div className="grid min-w-full gap-2 sm:min-w-0 sm:grid-cols-2">
+          <label className="text-xs font-medium text-slate-600">
+            年度
+            <select className={cn(inputClass, "mt-1 min-w-32 py-2")} value={year} onChange={(event) => setYear(event.target.value)}>
+              {years.map((value) => <option key={value} value={value}>{value} 年</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            未來公司存簿
+            <select
+              className={cn(inputClass, "mt-1 min-w-48 py-2")}
+              value={selectedAccountId}
+              onChange={(event) => setSelectedAccountId(event.target.value)}
+              disabled={!data.accounts.length}
+            >
+              {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="合約總額" value={money(summary.contract)} icon={ReceiptText} />
         <Metric label="已收款" value={money(summary.received)} icon={ArrowDownToLine} tone="teal" />
         <Metric label="待收款" value={money(summary.receivable)} icon={CircleDollarSign} tone="amber" />
-        <Metric label="待付款成本" value={money(summary.unpaidCosts)} icon={ArrowUpFromLine} tone="red" />
-        <Metric label="目前利潤" value={money(summary.profit)} icon={Banknote} />
-        <Metric label="未來現金差額" value={money(summary.futureCash)} icon={WalletCards} />
+        <Metric label="未來公司存簿金額" value={money(futureCompanyBalance)} icon={WalletCards} tone={futureCompanyBalance >= 0 ? "teal" : "red"} />
+        <Metric label="利潤" value={money(summary.profit)} icon={Banknote} tone={summary.profit >= 0 ? "teal" : "red"} />
       </div>
 
       {pendingDrafts.length ? (
@@ -462,41 +552,83 @@ function FinanceDashboard({
         </button>
       ) : null}
 
-      <Section title="待收款提醒" description="依案件合約總額、追加減與已收款自動計算。">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Section title="案件盈餘排行">
+          {rankedRows.length ? (
+            <Table>
+              <thead>
+                <tr><Th>案件</Th><Th>合約總額</Th><Th>成本</Th><Th>利潤</Th><Th>獲利成數</Th><Th>待收</Th></tr>
+              </thead>
+              <tbody>
+                {rankedRows.map(({ project, settings, totals }) => (
+                  <tr key={project.id} className="border-t border-stone-100">
+                    <Td>{[settings?.code, project.name].filter(Boolean).join(" ")}</Td>
+                    <Td>{money(totals.contract)}</Td>
+                    <Td>{money(totals.costs)}</Td>
+                    <Td><span className={totals.profit >= 0 ? "text-emerald-700" : "text-red-700"}>{money(totals.profit)}</span></Td>
+                    <Td>{percent(totals.contract ? totals.profit / totals.contract : 0)}</Td>
+                    <Td><span className={totals.receivable ? "text-amber-700" : ""}>{money(totals.receivable)}</span></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : <EmptyState title="尚無案件" description={`${year} 年目前沒有案件財務資料。`} />}
+        </Section>
+
+        <Section title="公司存簿餘額">
+          {data.accounts.length ? (
+            <div className="space-y-4 p-4">
+              {data.accounts.map((account) => {
+                const balance = financeAccountBalance(account, accountEntries);
+                const width = Math.max(2, Math.abs(balance) / maxAccountBalance * 100);
+                return (
+                  <div key={account.id} className="grid items-center gap-2 text-sm sm:grid-cols-[minmax(90px,auto)_1fr_auto]">
+                    <span className="font-medium text-slate-700">{account.name}</span>
+                    <div className="h-2 overflow-hidden rounded bg-stone-100">
+                      <div className={cn("h-full rounded", balance >= 0 ? "bg-teal-600" : "bg-red-500")} style={{ width: `${width}%` }} />
+                    </div>
+                    <span className={cn("font-semibold tabular-nums", balance >= 0 ? "text-emerald-700" : "text-red-700")}>{money(balance)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <EmptyState title="尚無帳戶" description="新增公司存簿後會顯示餘額。" />}
+        </Section>
+      </div>
+
+      <Section title="待收款提醒">
         {receivableRows.length ? (
           <Table>
             <thead>
               <tr>
+                <Th>預計日期</Th>
                 <Th>案件</Th>
-                <Th>合約總額</Th>
-                <Th>已收款</Th>
+                <Th>款項</Th>
+                <Th>應收</Th>
+                <Th>已收</Th>
                 <Th>待收款</Th>
-                <Th align="right">操作</Th>
+                <Th>狀態</Th>
               </tr>
             </thead>
             <tbody>
-              {receivableRows.map(({ project, totals }) => (
-                <tr key={project.id} className="border-t border-stone-100">
-                  <Td>
-                    <strong className="text-slate-950">{project.name}</strong>
-                    <span className="mt-1 block text-xs text-slate-500">{project.clientName}</span>
-                  </Td>
-                  <Td>{money(totals.contract)}</Td>
-                  <Td>{money(totals.received)}</Td>
-                  <Td>
-                    <span className="font-semibold text-amber-700">{money(totals.receivable)}</span>
-                  </Td>
-                  <Td align="right">
-                    <button className="text-sm font-semibold text-teal-700 hover:text-teal-900" type="button" onClick={() => selectProject(project.id)}>
-                      查看收款
-                    </button>
-                  </Td>
+              {receivableRows.map((payment) => {
+                const received = paymentReceivedAmount(payment);
+                return (
+                <tr key={payment.id} className="border-t border-stone-100">
+                  <Td>{payment.dueDate || "—"}</Td>
+                  <Td>{projects.find((project) => project.id === payment.projectId)?.name || "找不到案件"}</Td>
+                  <Td>{payment.name}</Td>
+                  <Td>{money(payment.expectedAmount)}</Td>
+                  <Td>{money(received)}</Td>
+                  <Td><span className="font-semibold text-amber-700">{money(Math.max(payment.expectedAmount - received, 0))}</span></Td>
+                  <Td>{paymentStatusLabel(payment.status)}</Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </Table>
         ) : (
-          <EmptyState title="目前沒有待收款案件" description="建立案件財務資料與收款後，這裡會自動顯示差額。" />
+          <EmptyState title="目前沒有待收款" description={`${year} 年沒有尚未收足的收款項目。`} />
         )}
       </Section>
     </div>
@@ -902,6 +1034,7 @@ function FinanceAccounts({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  onReorderAccounts,
   onAddLedger,
   onEditLedger,
   onDeleteLedger,
@@ -913,22 +1046,73 @@ function FinanceAccounts({
   onAddAccount: () => void;
   onEditAccount: (item: FinanceAccount) => void;
   onDeleteAccount: (item: FinanceAccount) => void;
+  onReorderAccounts: (accountIds: string[]) => void;
   onAddLedger: () => void;
   onEditLedger: (item: FinanceLedger) => void;
   onDeleteLedger: (item: FinanceLedger) => void;
   ledger: FinanceLedger[];
 }) {
   const ledgerById = new Map(ledger.map((item) => [item.id, item]));
+  const [orderedAccounts, setOrderedAccounts] = useState(accounts);
+  const [draggedAccountId, setDraggedAccountId] = useState("");
+
+  useEffect(() => {
+    setOrderedAccounts(accounts);
+  }, [accounts]);
+
+  function commitAccountOrder(nextAccounts: FinanceAccount[]) {
+    setOrderedAccounts(nextAccounts);
+    onReorderAccounts(nextAccounts.map((item) => item.id));
+  }
+
+  function moveAccount(accountId: string, direction: -1 | 1) {
+    const currentIndex = orderedAccounts.findIndex((item) => item.id === accountId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedAccounts.length) return;
+
+    const nextAccounts = [...orderedAccounts];
+    const [account] = nextAccounts.splice(currentIndex, 1);
+    nextAccounts.splice(nextIndex, 0, account);
+    commitAccountOrder(nextAccounts);
+  }
+
+  function dropAccount(targetAccountId: string) {
+    if (!draggedAccountId || draggedAccountId === targetAccountId) {
+      setDraggedAccountId("");
+      return;
+    }
+
+    const sourceIndex = orderedAccounts.findIndex((item) => item.id === draggedAccountId);
+    const targetIndex = orderedAccounts.findIndex((item) => item.id === targetAccountId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const nextAccounts = [...orderedAccounts];
+    const [account] = nextAccounts.splice(sourceIndex, 1);
+    nextAccounts.splice(targetIndex, 0, account);
+    setDraggedAccountId("");
+    commitAccountOrder(nextAccounts);
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="secondary" type="button" onClick={onAddAccount}><Plus className="h-4 w-4" aria-hidden />新增帳戶</Button>
         <Button type="button" onClick={onAddLedger}><Plus className="h-4 w-4" aria-hidden />手動入出金</Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {accounts.map((account) => (
-          <div key={account.id} className="border border-stone-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="mb-2 text-xs text-slate-500">拖曳把手即可自由排序；也可使用上下移動按鈕。順序會儲存並套用到所有財務頁面。</p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {orderedAccounts.map((account, index) => (
+          <div
+            key={account.id}
+            className={cn(
+              "border bg-white p-4 transition-colors",
+              draggedAccountId === account.id ? "border-teal-500 bg-teal-50/40" : "border-stone-200"
+            )}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => dropAccount(account.id)}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-slate-950">{account.name}</h3>
@@ -936,7 +1120,30 @@ function FinanceAccounts({
                 </div>
                 <p className="mt-1 text-xs text-slate-500">{account.notes || "沒有備註"}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1 sm:flex-nowrap">
+                <button
+                  className="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 active:cursor-grabbing"
+                  type="button"
+                  draggable
+                  aria-label={`拖曳調整 ${account.name} 的順序`}
+                  title="拖曳調整順序"
+                  onDragStart={() => setDraggedAccountId(account.id)}
+                  onDragEnd={() => setDraggedAccountId("")}
+                >
+                  <GripVertical className="h-4 w-4" aria-hidden />
+                </button>
+                <IconButton
+                  label="上移"
+                  icon={ArrowUpFromLine}
+                  onClick={() => moveAccount(account.id, -1)}
+                  disabled={index === 0}
+                />
+                <IconButton
+                  label="下移"
+                  icon={ArrowDownToLine}
+                  onClick={() => moveAccount(account.id, 1)}
+                  disabled={index === orderedAccounts.length - 1}
+                />
                 <IconButton label="編輯帳戶" icon={Pencil} onClick={() => onEditAccount(account)} />
                 <IconButton label="刪除帳戶" icon={Trash2} danger onClick={() => onDeleteAccount(account)} />
               </div>
@@ -945,6 +1152,7 @@ function FinanceAccounts({
             <div className="mt-1 text-xs text-slate-500">目前帳面餘額</div>
           </div>
         ))}
+        </div>
       </div>
 
       <Section title="存簿流水" description="收款與已付成本會自動連動；手動流水可以修改或刪除。">
@@ -1472,7 +1680,8 @@ async function submitFinanceModal(
             openingBalance: amount(form, "openingBalance"),
             notes: text(form, "notes"),
             defaultForIncome: form.get("defaultForIncome") === "on",
-            active: form.get("active") === "on"
+            active: form.get("active") === "on",
+            sortOrder: modal.item?.sortOrder ?? data.accounts.length
           },
           actor
         ),
@@ -1535,8 +1744,8 @@ function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => 
   return <div className="flex justify-end gap-2"><IconButton label="編輯" icon={Pencil} onClick={onEdit} /><IconButton label="刪除" icon={Trash2} danger onClick={onDelete} /></div>;
 }
 
-function IconButton({ label, icon: Icon, onClick, danger = false }: { label: string; icon: typeof Pencil; onClick: () => void; danger?: boolean }) {
-  return <button className={cn("inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white", danger ? "border-red-200 text-red-700 hover:bg-red-50" : "border-slate-300 text-slate-600 hover:bg-slate-50")} type="button" onClick={onClick} aria-label={label} title={label}><Icon className="h-4 w-4" aria-hidden /></button>;
+function IconButton({ label, icon: Icon, onClick, danger = false, disabled = false }: { label: string; icon: typeof Pencil; onClick: () => void; danger?: boolean; disabled?: boolean }) {
+  return <button className={cn("inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white disabled:cursor-not-allowed disabled:opacity-35", danger ? "border-red-200 text-red-700 hover:bg-red-50" : "border-slate-300 text-slate-600 hover:bg-slate-50")} type="button" onClick={onClick} aria-label={label} title={label} disabled={disabled}><Icon className="h-4 w-4" aria-hidden /></button>;
 }
 
 function Field({ label, name, wide = false, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string; wide?: boolean }) {
@@ -1562,6 +1771,9 @@ const inputClass = "mt-1.5 w-full rounded-md border border-slate-300 bg-white px
 
 function money(value: number) {
   return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(Number(value) || 0);
+}
+function percent(value: number) {
+  return `${Math.round((Number.isFinite(value) ? value : 0) * 1000) / 10}%`;
 }
 function today() {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" });

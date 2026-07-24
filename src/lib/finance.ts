@@ -96,6 +96,7 @@ function financeAccountFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
     notes: stringValue(data.notes),
     defaultForIncome: booleanValue(data.defaultForIncome),
     active: data.active !== false,
+    sortOrder: numberValue(data.sortOrder),
     createdAt: timestampToDate(data.createdAt),
     updatedAt: timestampToDate(data.updatedAt)
   } satisfies FinanceAccount;
@@ -218,6 +219,15 @@ function sortNewest<T extends { createdAt: Date | null }>(items: T[]) {
   return items.sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
 }
 
+function sortFinanceAccounts(items: FinanceAccount[]) {
+  return items.sort(
+    (a, b) =>
+      (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+      (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0) ||
+      a.name.localeCompare(b.name, "zh-Hant")
+  );
+}
+
 export async function listFinanceData(): Promise<FinanceData> {
   const database = requireDb();
   const [
@@ -240,7 +250,7 @@ export async function listFinanceData(): Promise<FinanceData> {
 
   return {
     projectSettings: projectSettingsSnapshot.docs.map(financeProjectSettingsFromDoc),
-    accounts: sortNewest(accountsSnapshot.docs.map(financeAccountFromDoc)),
+    accounts: sortFinanceAccounts(accountsSnapshot.docs.map(financeAccountFromDoc)),
     payments: sortNewest(paymentsSnapshot.docs.map(financePaymentFromDoc)),
     adjustments: sortNewest(adjustmentsSnapshot.docs.map(financeAdjustmentFromDoc)),
     costs: sortNewest(costsSnapshot.docs.map(financeCostFromDoc)),
@@ -344,7 +354,8 @@ export async function ensureDefaultFinanceAccount(actor?: AuditActor | null) {
       openingBalance: matchingAccount ? numberValue(matchingAccount.data().openingBalance) : 0,
       notes: matchingAccount ? stringValue(matchingAccount.data().notes) : "案件收款預設帳戶",
       defaultForIncome: true,
-      active: true
+      active: true,
+      sortOrder: matchingAccount ? numberValue(matchingAccount.data().sortOrder) : 0
     } satisfies FinanceAccountInput,
     actor,
     "finance_account",
@@ -399,6 +410,28 @@ export async function saveFinanceAccount(id: string, input: FinanceAccountInput,
   await batch.commit();
 
   return ref.id;
+}
+
+export async function reorderFinanceAccounts(accountIds: string[], actor?: AuditActor | null) {
+  const database = requireDb();
+  const batch = writeBatch(database);
+
+  accountIds.forEach((accountId, index) => {
+    batch.update(doc(database, FINANCE_ACCOUNTS_COLLECTION, accountId), {
+      sortOrder: index,
+      updatedAt: serverTimestamp()
+    });
+  });
+  addAudit(
+    batch,
+    database,
+    actor,
+    "update",
+    "finance_account_order",
+    "all",
+    "公司存簿順序"
+  );
+  await batch.commit();
 }
 
 export function deleteFinanceAccount(id: string, name: string, actor?: AuditActor | null) {

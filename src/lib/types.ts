@@ -134,6 +134,7 @@ export type FinanceAccountInput = {
   notes: string;
   defaultForIncome: boolean;
   active: boolean;
+  sortOrder?: number;
 };
 
 export type FinanceAccount = FinanceAccountInput & {
