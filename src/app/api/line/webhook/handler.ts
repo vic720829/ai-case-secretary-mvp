@@ -21,6 +21,10 @@ import {
 import { buildLineAdminWelcomeText } from "@/services/lineAdminWelcome";
 import { listAdminNotificationGroups, type AdminNotificationAudience } from "@/services/lineAdminGroups";
 import { claimNotificationCooldown } from "@/services/notificationCooldown";
+import {
+  createFinanceDraftsFromLineMessage,
+  financeDraftErrorResult
+} from "@/services/financeLineDrafts";
 import { buildIncidentKey, getPrimaryIncidentType, maxRiskLevel } from "@/lib/incidentRules";
 import {
   getAiDraftImmediateNotificationAudience,
@@ -228,6 +232,24 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
 
   if (messageType === "text" && event.message.text) {
     const shouldAnalyzeProjectConversation = Boolean(lineGroup && !isAdminGroup && projectId);
+    const shouldCreateFinanceDrafts = shouldAnalyzeProjectConversation && senderRole === "internal";
+    const financeDraftResult = shouldCreateFinanceDrafts
+      ? await createFinanceDraftsFromLineMessage(db, {
+          projectId,
+          groupId,
+          sourceMessageId: messageRef.id,
+          sourceLineMessageId: lineMessageId,
+          sourceSenderId: event.source?.userId ?? "",
+          sourceSenderName: senderName,
+          text: event.message.text,
+          timestamp: event.timestamp
+        }).catch(financeDraftErrorResult)
+      : {
+          created: 0,
+          draftIds: [],
+          amountMismatch: false,
+          errorMessage: ""
+        };
     const shouldCreateAiDrafts = false;
     const shouldTrackCommitments = shouldAnalyzeProjectConversation && senderRole === "internal";
     const recentMessages = shouldTrackCommitments ? await loadRecentMessageContext(db, groupId, messageRef.id) : [];
@@ -401,6 +423,10 @@ async function handleLineEvent(db: FirebaseFirestore.Firestore, event: LineWebho
       fileUrlSaved: Boolean(fileUrl),
       fileSaveError: savedFile.errorMessage,
       commitmentsTracked: commitmentResult.tracked,
+      financeDrafts: financeDraftResult.created,
+      financeDraftIds: financeDraftResult.draftIds,
+      financeDraftAmountMismatch: financeDraftResult.amountMismatch,
+      financeDraftError: financeDraftResult.errorMessage,
       aiSkippedReason: shouldCreateAiDrafts
         ? ""
         : shouldAnalyzeProjectConversation

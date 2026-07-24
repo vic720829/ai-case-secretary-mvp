@@ -199,6 +199,23 @@ function financeDraftFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
       ? data.draftType
       : "payment";
   const status = data.status === "approved" || data.status === "ignored" ? data.status : "pending";
+  const adjustments = Array.isArray(data.adjustments)
+    ? data.adjustments
+        .map((item: unknown) => {
+          if (!item || typeof item !== "object") return null;
+          const adjustment = item as Record<string, unknown>;
+          const type = adjustment.type === "deduct" ? "deduct" : "add";
+          const amount = numberValue(adjustment.amount);
+          if (amount <= 0) return null;
+
+          return {
+            type,
+            name: stringValue(adjustment.name),
+            amount
+          };
+        })
+        .filter((item): item is { type: "add" | "deduct"; name: string; amount: number } => Boolean(item))
+    : [];
 
   return {
     id: snapshot.id,
@@ -208,6 +225,7 @@ function financeDraftFromDoc(snapshot: QueryDocumentSnapshot<DocumentData>) {
     title: stringValue(data.title),
     amount: numberValue(data.amount),
     totalAmount: numberValue(data.totalAmount),
+    adjustments,
     date: stringValue(data.date),
     accountId: stringValue(data.accountId),
     notes: stringValue(data.notes),
@@ -520,6 +538,9 @@ export async function approveFinanceDraft(
   const database = requireDb();
   const draftRef = doc(database, FINANCE_DRAFTS_COLLECTION, draft.id);
   const targetRef = financeDraftTargetRef(database, draft);
+  const adjustmentRefs = draft.draftType === "payment"
+    ? draft.adjustments.map(() => doc(collection(database, FINANCE_ADJUSTMENTS_COLLECTION)))
+    : [];
   const batch = writeBatch(database);
   const amount = draft.totalAmount || draft.amount;
   const base = {
@@ -545,6 +566,25 @@ export async function approveFinanceDraft(
     } satisfies Omit<FinancePayment, "id" | "createdAt" | "updatedAt"> & {
       createdAt: ReturnType<typeof serverTimestamp>;
       updatedAt: ReturnType<typeof serverTimestamp>;
+    });
+    draft.adjustments.forEach((adjustment, index) => {
+      const adjustmentRef = adjustmentRefs[index];
+      batch.set(adjustmentRef, {
+        ...base,
+        date: draft.date,
+        type: adjustment.type,
+        name: adjustment.name,
+        amount: adjustment.amount
+      });
+      addAudit(
+        batch,
+        database,
+        actor,
+        "create",
+        "finance_adjustment",
+        adjustmentRef.id,
+        adjustment.name || (adjustment.type === "add" ? "LINE 追加" : "LINE 減項")
+      );
     });
   } else if (draft.draftType === "cost") {
     batch.set(targetRef, {

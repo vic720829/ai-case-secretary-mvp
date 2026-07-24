@@ -719,7 +719,7 @@ function FinanceDrafts({
           const selectedContract =
             contractSelections[draft.id] ||
             draft.contractId ||
-            primaryFinanceContract(contracts)?.id ||
+            (contracts.length === 1 ? contracts[0].id : "") ||
             "";
           return (
             <article key={draft.id} className="grid gap-4 px-4 py-5 lg:grid-cols-[1fr_260px]">
@@ -742,6 +742,18 @@ function FinanceDrafts({
                   <div>日期：{draft.date || "未設定"}</div>
                   <div>發話人：{draft.sourceSenderName || "未知"}</div>
                 </dl>
+                {draft.adjustments.length ? (
+                  <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                    <p className="font-semibold">同一則訊息包含追加減</p>
+                    {draft.adjustments.map((adjustment, index) => (
+                      <p key={`${draft.id}-${adjustment.type}-${index}`} className="mt-1">
+                        {adjustment.type === "add" ? "追加" : "減項"}：
+                        {adjustment.name || "項目未填"} {money(adjustment.amount)}
+                      </p>
+                    ))}
+                    <p className="mt-1 text-xs text-amber-800">確認後會同時建立收款與追加減紀錄。</p>
+                  </div>
+                ) : null}
                 <div className="mt-3 border-l-2 border-stone-300 pl-3 text-sm leading-6 text-slate-600">
                   {draft.sourceMessageText || "沒有原始訊息"}
                 </div>
@@ -761,6 +773,7 @@ function FinanceDrafts({
                         }))
                       }
                     >
+                      <option value="">請選擇合約</option>
                       {contracts.map((contract) => (
                         <option key={contract.id} value={contract.id}>
                           {contract.name}
@@ -796,7 +809,13 @@ function FinanceDrafts({
                 <Button
                   className="w-full"
                   type="button"
-                  disabled={saving || draft.amountMismatch || !draft.projectId || !selectedContract}
+                  disabled={
+                    saving ||
+                    draft.amountMismatch ||
+                    !draft.projectId ||
+                    !selectedContract ||
+                    ((draft.draftType === "payment" || draft.draftType === "cost") && !selectedAccount)
+                  }
                   onClick={() => onApprove(draft, selectedAccount, selectedContract)}
                 >
                   <Check className="h-4 w-4" aria-hidden />
@@ -806,7 +825,9 @@ function FinanceDrafts({
                   忽略
                 </Button>
                 {draft.amountMismatch ? (
-                  <p className="text-xs leading-5 text-red-700">原文金額不一致，請先修改草稿後才能入帳。</p>
+                  <p className="text-xs leading-5 text-red-700">
+                    原文金額不一致，請忽略這筆草稿，再到案件財務手動新增正確紀錄。
+                  </p>
                 ) : null}
               </div>
             </article>

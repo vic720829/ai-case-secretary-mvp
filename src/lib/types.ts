@@ -69,6 +69,11 @@ export type FinanceLedgerType = "in" | "out";
 export type FinanceDraftType = "payment" | "adjustment_add" | "adjustment_deduct" | "cost";
 export type FinanceDraftStatus = "pending" | "approved" | "ignored";
 export type FinanceContractStatus = "active" | "completed" | "cancelled";
+export type FinanceDraftAdjustment = {
+  type: FinanceAdjustmentType;
+  name: string;
+  amount: number;
+};
 export type AiFeedbackSource = "website" | "line";
 export type AiFeedbackAction =
   | "approve_ai_task"
@@ -232,6 +237,7 @@ export type FinanceDraft = {
   title: string;
   amount: number;
   totalAmount: number;
+  adjustments: FinanceDraftAdjustment[];
   date: string;
   accountId: string;
   notes: string;
